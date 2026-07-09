@@ -764,6 +764,16 @@ public final class SelfTest {
         check("end city placement grid rejects a non-candidate chunk (0,0)",
                 endGen.testEndCityAt(0, 0) == null);
 
+        // End city real generation confirmed (not just assembled-piece geometry): runs the
+        // ACTUAL generate() code path (VEndGen.materialCountAt, a synthetic GenerationUnit)
+        // across a 7x7 chunk window around the known end city at (-78,-55) and tallies real
+        // end-city-specific material blocks (purpur family, end_stone_bricks, magenta glass/
+        // banner, end_rod, chest/ender_chest) — matches the same real-generation verification
+        // rigor VanillaGen.decoratedData()-based checks already give ancient_city/trial_chambers.
+        int ecMats = endGen.materialCountAt(-78, -55, 3, "purpur", "end_stone_bricks", "magenta", "end_rod", "chest");
+        check("end city real generation confirmed at (-78,-55): " + ecMats + " purpur/end_stone_brick/magenta/end_rod/chest blocks placed",
+                ecMats == 8286);
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }

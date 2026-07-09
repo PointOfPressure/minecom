@@ -3,9 +3,12 @@ package dev.pointofpressure.minecom.worldgen.vanilla;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import net.minestom.server.coordinate.Point;
+import net.minestom.server.coordinate.Vec;
 import net.minestom.server.instance.block.Block;
 import net.minestom.server.instance.generator.GenerationUnit;
 import net.minestom.server.instance.generator.Generator;
+import net.minestom.server.instance.generator.UnitModifier;
 import net.minestom.server.registry.RegistryKey;
 import net.minestom.server.world.biome.Biome;
 
@@ -16,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * The End dimension generator. Reuses the vanilla density-function engine
@@ -176,6 +180,57 @@ public final class VEndGen implements Generator {
         if (pieces == null) return null;
         ECPiece base = pieces.get(0);
         return new int[]{pieces.size(), base.baseX, base.baseY, base.baseZ, base.rotation.ordinal()};
+    }
+
+    /**
+     * Test hook: real end-to-end material verification (not just assembled-piece geometry) —
+     * runs the ACTUAL {@link #generate} code path across a chunk window around the given
+     * center, through a synthetic {@link GenerationUnit}/{@link UnitModifier} implementing only
+     * what {@code generate} actually calls ({@code setBlock}/{@code setBiome}; every other
+     * abstract method is a no-op since this project's generation loop never calls them), and
+     * tallies how many placed blocks contain any of the given name substrings. Matches the same
+     * real-generation verification rigor `VanillaGen.decoratedData()`-based checks give
+     * ancient_city/trial_chambers elsewhere in this project's SelfTest — end_city had no
+     * equivalent until this hook, since {@code VEndGen} doesn't have a cached-chunk-data
+     * accessor the way `VanillaGen` does.
+     */
+    public int materialCountAt(int chunkX, int chunkZ, int radiusChunks, String... nameSubstrings) {
+        int[] count = {0};
+        Consumer<Block> tally = b -> {
+            String name = b.name();
+            for (String s : nameSubstrings) if (name.contains(s)) { count[0]++; return; }
+        };
+        for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
+            for (int dz = -radiusChunks; dz <= radiusChunks; dz++) {
+                generate(fakeUnit(chunkX + dx, chunkZ + dz, tally));
+            }
+        }
+        return count[0];
+    }
+
+    private static GenerationUnit fakeUnit(int cx, int cz, Consumer<Block> tally) {
+        Point start = new Vec(cx << 4, 0, cz << 4);
+        Point size = new Vec(16, HEIGHT, 16);
+        return new GenerationUnit() {
+            public UnitModifier modifier() {
+                return new UnitModifier() {
+                    public void setRelative(int x, int y, int z, Block b) { setBlock(x, y, z, b); }
+                    public void setAll(Supplier s) { }
+                    public void setAllRelative(Supplier s) { }
+                    public void fill(Block b) { }
+                    public void fill(Point a, Point c, Block b) { }
+                    public void fillHeight(int a, int b, Block c) { }
+                    public void fillBiome(RegistryKey<Biome> b) { }
+                    public void setBlock(int x, int y, int z, Block b) { tally.accept(b); }
+                    public void setBiome(int x, int y, int z, RegistryKey<Biome> biome) { }
+                };
+            }
+            public Point size() { return size; }
+            public Point absoluteStart() { return start; }
+            public Point absoluteEnd() { return start.add(size); }
+            public GenerationUnit fork(Point a, Point b) { throw new UnsupportedOperationException(); }
+            public void fork(Consumer<Block.Setter> c) { }
+        };
     }
 
     private List<ECPiece> assembleEndCity(int ccx, int ccz) {
