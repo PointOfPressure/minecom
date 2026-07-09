@@ -2,6 +2,7 @@ target/
 world/
 world_backup_customgen/
 *.log
+!test-logs/*.log
 logs/
 dependency-reduced-pom.xml
 

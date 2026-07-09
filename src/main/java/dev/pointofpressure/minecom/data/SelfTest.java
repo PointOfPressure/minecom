@@ -314,9 +314,9 @@ public final class SelfTest {
                 rp1 != null && rp1[0] == 1 && rp1[1] == 10 && rp1[2] == 8 && rp1[3] == 9
                         && rp1[4] == 640 && rp1[5] == 71);
         int[] rp2 = strongholdGen.structures().testRuinedPortalAt(-19, -39);
-        check("ruined portal (on_land_surface) generates at (-19,-39): rotation=COUNTERCLOCKWISE_90, 8x9x9, 500 blocks, y=63",
+        check("ruined portal (on_land_surface) generates at (-19,-39): rotation=COUNTERCLOCKWISE_90, 8x9x9, 500 blocks, y=57 (mirrored)",
                 rp2 != null && rp2[0] == 3 && rp2[1] == 8 && rp2[2] == 9 && rp2[3] == 9
-                        && rp2[4] == 500 && rp2[5] == 63);
+                        && rp2[4] == 500 && rp2[5] == 57);
         int[] rp3 = strongholdGen.structures().testRuinedPortalAt(5, 42);
         check("ruined portal (underground) generates at (5,42): rotation=CLOCKWISE_180, 9x12x9, 750 blocks, y=20 (well below surface)",
                 rp3 != null && rp3[0] == 2 && rp3[1] == 9 && rp3[2] == 12 && rp3[3] == 9
@@ -336,9 +336,9 @@ public final class SelfTest {
                 rp6 != null && rp6[0] == 1 && rp6[1] == 10 && rp6[2] == 8 && rp6[3] == 9
                         && rp6[4] == 640 && rp6[5] == 128);
         int[] rp7 = strongholdGen.structures().testRuinedPortalAt("mountain", 23, -25);
-        check("ruined portal (mountain) generates at (23,-25): rotation=CLOCKWISE_180, 9x12x9, 750 blocks, y=59",
+        check("ruined portal (mountain) generates at (23,-25): rotation=CLOCKWISE_180, 9x12x9, 750 blocks, y=38 (mirrored)",
                 rp7 != null && rp7[0] == 2 && rp7[1] == 9 && rp7[2] == 12 && rp7[3] == 9
-                        && rp7[4] == 750 && rp7[5] == 59);
+                        && rp7[4] == 750 && rp7[5] == 38);
         int[] rp8 = strongholdGen.structures().testRuinedPortalAt("ocean", -150, 98);
         check("ruined portal (ocean, on_ocean_floor) generates at (-150,98): rotation=CLOCKWISE_180, 14x9x9, 1054 blocks, y=35",
                 rp8 != null && rp8[0] == 2 && rp8[1] == 14 && rp8[2] == 9 && rp8[3] == 9
@@ -383,6 +383,17 @@ public final class SelfTest {
                         && rd7[5] == 3 && rd7[6] == 0);
         check("ruined portal decoration hook returns null for an unknown flavor",
                 strongholdGen.structures().testRuinedPortalDecoratedAt("nonexistent", -38, 5) == null);
+
+        // Ruined portal Mirror (Mirror.FRONT_BACK — position negated-X-before-rotation,
+        // blockstate facing/multiface/rotation-property flip): this chunk is one of the ~50%
+        // that draws mirrored=true (confirmed via the geometry check above, rp2, whose y shifted
+        // 63->57 purely from the mirrored bbox) — decorated material counts differ from the
+        // pre-mirror baseline (198 solid blocks vs the un-mirrored template's raw content),
+        // real evidence the transform is actually being applied, not just consumed for RNG order.
+        int[] rdMirror = strongholdGen.structures().testRuinedPortalDecoratedAt("standard", -19, -39);
+        check("ruined portal (standard, mirrored) decorated at (-19,-39): 198 solid blocks, 1 gold, 10 magma, 8 cracked, 1 crying obsidian",
+                rdMirror != null && rdMirror[0] == 198 && rdMirror[1] == 1 && rdMirror[2] == 10 && rdMirror[3] == 0 && rdMirror[4] == 8
+                        && rdMirror[5] == 1 && rdMirror[6] == 0);
 
         // Mineshaft (all 4 real piece kinds — Room/Corridor/Crossing/Stairs — see
         // VStructureManager's MSPiece javadoc). Real bit-exact piece-tree assembly at
@@ -629,12 +640,18 @@ public final class SelfTest {
         // set is now fully complete). Implemented in NetherGen.java (nether-dimension
         // structure, like nether fossil/bastion), reusing the overworld's PORTAL_TEMPLATES
         // pool. Both normal and GIANT templates verified. seed 20260708.
+        // y values below reflect BOTH the corner-scan (previous entry) and now Mirror (this
+        // entry) — mirroring changes which world positions the corner-scan's 4 corners land on,
+        // so both chunks' Y shifted again; the GIANT chunk's corner-scan now bottoms out at the
+        // real minY+15=15 floor (no solid ground found at the new, mirrored corner positions
+        // down to that bound) — a legitimate real-vanilla fallback outcome, not a bug (real
+        // findSuitableY's corner-scan loop does exactly this when it never finds 3-of-4 solid).
         int[] rpn1 = dev.pointofpressure.minecom.worldgen.NetherGen.testRuinedPortalNetherAt(-75, -25);
-        check("ruined portal (nether) at (-75,-25): rot=COUNTERCLOCKWISE_90, 9x7x9, 510 blocks, y=54",
-                rpn1 != null && rpn1[0] == 3 && rpn1[1] == 9 && rpn1[2] == 7 && rpn1[3] == 9 && rpn1[4] == 510 && rpn1[5] == 54);
+        check("ruined portal (nether) at (-75,-25): rot=COUNTERCLOCKWISE_90, 9x7x9, 510 blocks, y=15",
+                rpn1 != null && rpn1[0] == 3 && rpn1[1] == 9 && rpn1[2] == 7 && rpn1[3] == 9 && rpn1[4] == 510 && rpn1[5] == 15);
         int[] rpn2 = dev.pointofpressure.minecom.worldgen.NetherGen.testRuinedPortalNetherAt(-38, -79);
-        check("ruined portal (nether, GIANT) at (-38,-79): rot=COUNTERCLOCKWISE_90, 11x17x16, 2400 blocks, y=97",
-                rpn2 != null && rpn2[0] == 3 && rpn2[1] == 11 && rpn2[2] == 17 && rpn2[3] == 16 && rpn2[4] == 2400 && rpn2[5] == 97);
+        check("ruined portal (nether, GIANT) at (-38,-79): rot=COUNTERCLOCKWISE_90, 11x17x16, 2400 blocks, y=15 (corner-scan bottomed out)",
+                rpn2 != null && rpn2[0] == 3 && rpn2[1] == 11 && rpn2[2] == 17 && rpn2[3] == 16 && rpn2[4] == 2400 && rpn2[5] == 15);
         check("ruined portal (nether) placement grid rejects a non-candidate chunk (0,0)",
                 dev.pointofpressure.minecom.worldgen.NetherGen.testRuinedPortalNetherAt(0, 0) == null);
 
@@ -642,14 +659,16 @@ public final class SelfTest {
         // overworld flavors, plus BlackstoneReplaceProcessor (real config: mossiness=0.0,
         // can_be_cold=false, replace_with_blackstone=true) — the material swap that makes nether
         // ruined portals look like blackstone rather than plain stone. seed-independent (SEED constant).
+        // Material counts below reflect the same Mirror-driven corner-scan shift as rpn1/rpn2
+        // above (block positions moved, so their position-seeded RuleProcessor draws changed too).
         int[] rdn1 = dev.pointofpressure.minecom.worldgen.NetherGen.testRuinedPortalNetherDecoratedAt(-75, -25);
-        check("ruined portal (nether) decorated at (-75,-25): 510 solid blocks, 2 gold, 15 magma, 1 crying obsidian, 5 blackstone-family",
-                rdn1 != null && rdn1[0] == 510 && rdn1[1] == 2 && rdn1[2] == 15 && rdn1[3] == 0 && rdn1[4] == 0
-                        && rdn1[5] == 1 && rdn1[6] == 5);
+        check("ruined portal (nether) decorated at (-75,-25): 510 solid blocks, 2 gold, 13 magma, 2 crying obsidian, 5 blackstone-family",
+                rdn1 != null && rdn1[0] == 510 && rdn1[1] == 2 && rdn1[2] == 13 && rdn1[3] == 0 && rdn1[4] == 0
+                        && rdn1[5] == 2 && rdn1[6] == 5);
         int[] rdn2 = dev.pointofpressure.minecom.worldgen.NetherGen.testRuinedPortalNetherDecoratedAt(-38, -79);
-        check("ruined portal (nether, GIANT) decorated at (-38,-79): 2400 solid blocks, 2 gold, 15 magma, 9 crying obsidian, 143 blackstone-family",
-                rdn2 != null && rdn2[0] == 2400 && rdn2[1] == 2 && rdn2[2] == 15 && rdn2[3] == 0 && rdn2[4] == 0
-                        && rdn2[5] == 9 && rdn2[6] == 143);
+        check("ruined portal (nether, GIANT) decorated at (-38,-79): 2400 solid blocks, 2 gold, 21 magma, 4 crying obsidian, 143 blackstone-family",
+                rdn2 != null && rdn2[0] == 2400 && rdn2[1] == 2 && rdn2[2] == 21 && rdn2[3] == 0 && rdn2[4] == 0
+                        && rdn2[5] == 4 && rdn2[6] == 143);
 
         // Zombie weapon roll (Zombie.populateDefaultEquipmentSlots): ~1% trigger, then 1/6 sword, 1/6 spear, 4/6 shovel
         double weaponTrigger = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.testZombieWeaponTriggerRate(300000);
@@ -726,6 +745,24 @@ public final class SelfTest {
         });
         check("End spikes: 10 spikes, 2 iron-caged, all on the r=42 ring (caged=" + caged + ")",
                 spikes.size() == 10 && caged == 2 && onRing);
+
+        // End city (17th structure set wired). startHouseTower's fixed 4-piece base_floor/
+        // second_floor_1/third_floor_1/third_roof chain PLUS the full recursive tower/bridge/
+        // fat-tower/house-tower tree (genDepth<=8-bounded, real RNG branching + bounding-box
+        // collision detection) — see VEndGen's placeEndCities javadoc. Real placement-grid +
+        // 4-corner solid-ground Y-search + piece-linking via VTemplate.transform, decompiled
+        // from EndCityStructure/EndCityPieces. Real chunks found via a +-80-chunk probe scan;
+        // piece counts vary a lot by design (10-109 seen across 5 real instances) since they
+        // depend on how many towers/bridges/ships the recursive RNG branching produces — base
+        // position/rotation are geometry from the fixed first 4 pieces only, unaffected by depth.
+        int[] ec1 = endGen.testEndCityAt(-78, -55);
+        check("end city at (-78,-55): 109 pieces (full recursive tree), base=[-1241,62,-873], rotation=NONE",
+                ec1 != null && ec1[0] == 109 && ec1[1] == -1241 && ec1[2] == 62 && ec1[3] == -873 && ec1[4] == 0);
+        int[] ec2 = endGen.testEndCityAt(-74, 42);
+        check("end city at (-74,42): 10 pieces (full recursive tree), base=[-1177,62,679], rotation=CLOCKWISE_180",
+                ec2 != null && ec2[0] == 10 && ec2[1] == -1177 && ec2[2] == 62 && ec2[3] == 679 && ec2[4] == 2);
+        check("end city placement grid rejects a non-candidate chunk (0,0)",
+                endGen.testEndCityAt(0, 0) == null);
 
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();

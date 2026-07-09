@@ -60,6 +60,7 @@ public final class VStructureManager {
     /** Mineshaft (see MSPiece javadoc). */
     private Set<String> mineshaftBiomes;
     private Set<String> mineshaftMesaBiomes;
+    private Set<String> mineshaftBlockingBiomes;
 
     /** Igloo (see IGPiece javadoc). */
     private Set<String> iglooBiomes;
@@ -156,6 +157,7 @@ public final class VStructureManager {
                     loadBiomes("ruined_portal_mountain")));
             this.mineshaftBiomes = loadBiomes("mineshaft");
             this.mineshaftMesaBiomes = loadBiomes("mineshaft_mesa");
+            this.mineshaftBlockingBiomes = loadBiomes("mineshaft_blocking");
             this.iglooBiomes = loadBiomes("igloo");
             this.swampHutBiomes = loadBiomes("swamp_hut");
             this.jungleTempleBiomes = loadBiomes("jungle_temple");
@@ -228,12 +230,12 @@ public final class VStructureManager {
      * 3-of-4 solid corners) IS ported ({@link #refineRuinedPortalY}), gated on a raw per-point
      * terrain-substance accessor (`substanceAt`) that's null for the SelfTest-only constructor
      * overloads — approximated as "substance == STONE" rather than real per-blockstate opacity
-     * (this project's raw density query has no carving/surface-rule granularity). Mirror is
-     * drawn (to keep the RNG stream position correct for
-     * anything after it) but NOT applied to geometry or block state — roughly half of all
-     * portals are mirrored in real vanilla, so the un-mirrored half's position/rotation is
-     * bit-exact and the mirrored half is currently a plain (non-mirrored) placement at the
-     * correct root position, not a skip. Multiple flavors sharing one placement grid is a
+     * (this project's raw density query has no carving/surface-rule granularity). Mirror IS
+     * applied ({@code Mirror.FRONT_BACK}, the only value real vanilla ever draws here — X
+     * negation before rotation, see {@link VTemplate#transformMirrored}, {@link
+     * #pivotBoundingBoxMirrored}, {@link #mirrorFrontBack}) — both position and blockstate
+     * (facing/multiface-booleans/rotation-property, NOT stairs "shape", a documented scope
+     * cut). Multiple flavors sharing one placement grid is a
      * further known approximation: real vanilla's `StructureSet` picks exactly ONE of the 7
      * flavors per candidate chunk via its own weighted draw before that flavor's own biome
      * check ever runs; this project instead lets every wired flavor independently attempt
@@ -277,7 +279,7 @@ public final class VStructureManager {
     private record RPPiece(VTemplate template, int baseX, int originY, int baseZ,
                             VTemplate.Rot rotation, int pivotX, int pivotZ, int[] bb,
                             RPPlacement placement, boolean airPocket, float mossiness, boolean cold,
-                            boolean replaceWithBlackstone, boolean overgrown, boolean vines) {}
+                            boolean replaceWithBlackstone, boolean overgrown, boolean vines, boolean mirrored) {}
 
     private enum RPPlacement { ON_LAND_SURFACE, UNDERGROUND, PARTLY_BURIED, IN_MOUNTAIN, ON_OCEAN_FLOOR }
 
@@ -318,7 +320,7 @@ public final class VStructureManager {
                     int pad = NETHERRACK_SPREAD_MAX_DISTANCE; // spreadNetherrack reaches beyond the piece's own bbox
                     if (bb[3] + pad < minX || bb[0] - pad > maxX || bb[5] + pad < minZ || bb[2] - pad > maxZ) continue;
                     for (VTemplate.BlockInfo b : piece.template.blocks) {
-                        int[] wp = VTemplate.transform(b.x, b.y, b.z, piece.rotation, piece.pivotX, piece.pivotZ);
+                        int[] wp = VTemplate.transformMirrored(b.x, b.y, b.z, piece.mirrored, piece.rotation, piece.pivotX, piece.pivotZ);
                         int wx = wp[0] + piece.baseX, wy = wp[1] + piece.originY, wz = wp[2] + piece.baseZ;
                         if (wx < minX || wx > maxX || wz < minZ || wz > maxZ) continue;
                         String name = b.state.key().asString();
@@ -326,7 +328,9 @@ public final class VStructureManager {
                         if (!piece.airPocket && name.equals("minecraft:air")) continue;
                         Block preExisting = canvasGet(canvas, wx, wy, wz);
                         if (RP_PROTECTED_BLOCKS.contains(preExisting.name())) continue;
-                        Block block = VBlockRotate.rotate(b.state, piece.rotation);
+                        // BlockState.mirror() is applied BEFORE rotate() in real vanilla — same order here.
+                        Block block = piece.mirrored ? mirrorFrontBack(b.state) : b.state;
+                        block = VBlockRotate.rotate(block, piece.rotation);
                         block = applyRuinedPortalRuleProcessor(block, piece.placement, piece.cold,
                                 new VSurface.LegacyRandom(XRandom.blockSeed(wx, wy, wz)));
                         block = applyRuinedPortalMossiness(block, piece.mossiness,
@@ -509,6 +513,46 @@ public final class VStructureManager {
         return b != null ? b : Block.AIR;
     }
 
+    /**
+     * BlockState.mirror(Mirror.FRONT_BACK): real vanilla's {@code Direction.mirror} flips only
+     * EAST&lt;-&gt;WEST (X-axis directions), leaving NORTH/SOUTH untouched — reimplemented for
+     * this project's property model: "facing" east/west swap, the "east"/"west" multiface
+     * connection booleans swap, and the 0-15 "rotation" property (signs/banners) maps via
+     * {@code (16-r)%16} (real {@code Mirror.mirror(rotation,16)} for FRONT_BACK, verified
+     * algebraically equivalent to the decompiled two-branch formula). Deliberately NOT handled:
+     * stairs "shape" (inner_left&lt;-&gt;inner_right / outer_left&lt;-&gt;outer_right) — mirroring
+     * genuinely flips handedness in a way plain rotation doesn't, but this project's ruined-
+     * portal material palette essentially never contains shaped stairs corners in practice, and
+     * this is a real, deliberate scope cut rather than an oversight.
+     */
+    public static Block mirrorFrontBack(Block block) {
+        Map<String, String> props = block.properties();
+        if (props.isEmpty()) return block;
+        Map<String, String> out = null;
+
+        String facing = props.get("facing");
+        if (facing != null && (facing.equals("east") || facing.equals("west"))) {
+            out = new HashMap<>(props);
+            out.put("facing", facing.equals("east") ? "west" : "east");
+        }
+
+        String rotation = props.get("rotation");
+        if (rotation != null) {
+            int v = Integer.parseInt(rotation);
+            int nv = (16 - v) % 16;
+            if (nv != v) { if (out == null) out = new HashMap<>(props); out.put("rotation", Integer.toString(nv)); }
+        }
+
+        if (props.containsKey("east") || props.containsKey("west")) {
+            if (out == null) out = new HashMap<>(props);
+            String e = props.get("east"), w = props.get("west");
+            if (e != null) out.put("west", e); else out.remove("west");
+            if (w != null) out.put("east", w); else out.remove("east");
+        }
+
+        return out == null ? block : block.withProperties(out);
+    }
+
     private static boolean isRPFaceFullHorizontal(Block block, String direction) {
         String name = block.name();
         if (name.endsWith("_slab")) return false;
@@ -627,11 +671,13 @@ public final class VStructureManager {
         if (template.sizeX == 0) return null; // missing template guard (VTemplate.EMPTY)
 
         VTemplate.Rot rotation = VTemplate.Rot.VALUES[random.nextInt(4)];
-        random.nextFloat(); // mirror draw — consumed to keep the RNG stream in sync, not applied (see RPPiece javadoc)
+        // RuinedPortalStructure: `random.nextFloat() < 0.5F ? Mirror.NONE : Mirror.FRONT_BACK`
+        // (never LEFT_RIGHT) — FRONT_BACK negates the raw X coordinate, applied before rotation.
+        boolean mirrored = random.nextFloat() >= 0.5F;
 
         int pivotX = template.sizeX / 2, pivotZ = template.sizeZ / 2;
         int baseX = ccx << 4, baseZ = ccz << 4;
-        int[] bb0 = pivotBoundingBox(template, baseX, 0, baseZ, rotation, pivotX, pivotZ);
+        int[] bb0 = pivotBoundingBoxMirrored(template, baseX, 0, baseZ, mirrored, rotation, pivotX, pivotZ);
         int centerX = (bb0[0] + bb0[3]) / 2, centerZ = (bb0[2] + bb0[5]) / 2;
         int ySpan = bb0[4] - bb0[1] + 1;
 
@@ -677,7 +723,7 @@ public final class VStructureManager {
 
         int[] bb = {bb0[0], originY + bb0[1], bb0[2], bb0[3], originY + bb0[4], bb0[5]};
         return new RPPiece(template, baseX, originY, baseZ, rotation, pivotX, pivotZ, bb,
-                setup.placement(), airPocket, setup.mossiness(), cold, setup.replaceWithBlackstone(), setup.overgrown(), setup.vines());
+                setup.placement(), airPocket, setup.mossiness(), cold, setup.replaceWithBlackstone(), setup.overgrown(), setup.vines(), mirrored);
     }
 
     // ------------------------------------------------------------------ ruined portal decoration
@@ -698,8 +744,8 @@ public final class VStructureManager {
         return block;
     }
 
-    /** ProtectedBlockProcessor(BlockTags.FEATURES_CANNOT_REPLACE): skip placement where existing terrain already holds one of these. */
-    private static final Set<String> RP_PROTECTED_BLOCKS = Set.of("minecraft:bedrock", "minecraft:spawner",
+    /** ProtectedBlockProcessor(BlockTags.FEATURES_CANNOT_REPLACE): skip placement where existing terrain already holds one of these. Public: also used by NetherGen (different package)'s ruined_portal_nether. */
+    public static final Set<String> RP_PROTECTED_BLOCKS = Set.of("minecraft:bedrock", "minecraft:spawner",
             "minecraft:chest", "minecraft:end_portal_frame", "minecraft:reinforced_deepslate",
             "minecraft:trial_spawner", "minecraft:vault");
 
@@ -757,9 +803,10 @@ public final class VStructureManager {
      * palette (RuleProcessor/BlockAgeProcessor/BlackstoneReplace outputs included) has exactly one
      * class of non-full shapes: stairs/slabs/walls (any family) and iron_bars/iron_chain. Every
      * other possible output (stone/cobblestone/blackstone family, gold_block, netherrack, magma_
-     * block, obsidian/crying_obsidian, air) is a true full cube.
+     * block, obsidian/crying_obsidian, air) is a true full cube. Package-visible: also used by
+     * NetherGen's ruined_portal_nether.
      */
-    private static boolean isRPNonFull(String name) {
+    public static boolean isRPNonFull(String name) {
         return name.endsWith("_stairs") || name.endsWith("_slab") || name.endsWith("_wall")
                 || name.equals("minecraft:iron_bars") || name.equals("minecraft:iron_chain");
     }
@@ -816,6 +863,15 @@ public final class VStructureManager {
         return new int[]{minX, minY, minZ, maxX, maxY, maxZ};
     }
 
+    /** {@link #pivotBoundingBox} with mirror support (see {@link VTemplate#transformMirrored}) — ruined-portal-only, doesn't touch the shared unmirrored helper. */
+    private static int[] pivotBoundingBoxMirrored(VTemplate t, int posX, int posY, int posZ, boolean mirrored, VTemplate.Rot rot, int pivotX, int pivotZ) {
+        int[] c1 = VTemplate.transformMirrored(0, 0, 0, mirrored, rot, pivotX, pivotZ);
+        int[] c2 = VTemplate.transformMirrored(t.sizeX - 1, t.sizeY - 1, t.sizeZ - 1, mirrored, rot, pivotX, pivotZ);
+        int minX = Math.min(c1[0], c2[0]) + posX, minY = Math.min(c1[1], c2[1]) + posY, minZ = Math.min(c1[2], c2[2]) + posZ;
+        int maxX = Math.max(c1[0], c2[0]) + posX, maxY = Math.max(c1[1], c2[1]) + posY, maxZ = Math.max(c1[2], c2[2]) + posZ;
+        return new int[]{minX, minY, minZ, maxX, maxY, maxZ};
+    }
+
     // ------------------------------------------------------------------ mineshaft
 
     /**
@@ -847,8 +903,8 @@ public final class VStructureManager {
      * from a SEPARATE decoration-time RNG stream (`postProcess`'s own random, distinct from
      * the piece-tree-building random used here), not from the piece-placement stream this
      * class replicates, so there was nothing bit-exact to preserve there in the first
-     * place. Also NOT implemented: `isInInvalidLocation` (documented simplification, same
-     * class as ruined portal's skipped corner-scan Y refinement). Corridor decoration is
+     * place. `isInInvalidLocation` IS implemented ({@link #msIsInInvalidLocation} — see its
+     * own javadoc for the per-chunk-vs-per-piece evaluation caveat). Corridor decoration is
      * PARTIALLY ported (see {@link #placeMineshaftCorridor}): floor planks and cobwebs (both
      * regular per-section and the `spiderCorridor` ceiling strip) are real, using position-
      * seeded RNG in place of real vanilla's single continuously-advancing postProcess stream
@@ -900,14 +956,60 @@ public final class VStructureManager {
                     boolean mesa = flavor.equals("mesa");
                     for (MSPiece p : pieces) {
                         if (p.maxX() < minX || p.minX() > maxX || p.maxZ() < minZ || p.minZ() > maxZ) continue;
+                        if (msIsInInvalidLocation(p, minX, minZ, maxX, maxZ, canvas)) continue;
                         if (p.kind() == MSKind.ROOM) placeMineshaftRoom(p, minX, minZ, maxX, maxZ, canvas);
                         else if (p.kind() == MSKind.CORRIDOR) placeMineshaftCorridor(p, mesa, minX, minZ, maxX, maxZ, canvas);
-                        else if (p.kind() == MSKind.CROSSING) placeMineshaftCrossing(p, minX, minZ, maxX, maxZ, canvas);
+                        else if (p.kind() == MSKind.CROSSING) placeMineshaftCrossing(p, mesa, minX, minZ, maxX, maxZ, canvas);
                         else placeMineshaftStairs(p, minX, minZ, maxX, maxZ, canvas);
                     }
                 }
             }
         }
+    }
+
+    /**
+     * MineShaftPiece.isInInvalidLocation: skip carving this piece entirely if its center biome
+     * is `minecraft:mineshaft_blocking` (real tag: `deep_dark` only) or any of its 6 bounding
+     * faces touches a liquid block. Real vanilla evaluates this against a `chunkBB` covering
+     * the WHOLE structure-generation region (multiple chunks) in one pass; this project's
+     * per-chunk-clipped architecture instead evaluates it per RENDER CHUNK, clamping the
+     * piece's bbox (±1) to the CURRENT chunk's window — a piece spanning several chunks could
+     * theoretically get inconsistent verdicts across different chunk renders (unlike real
+     * vanilla's single atomic evaluation), but is consistent with the same per-chunk-clipped
+     * simplification already applied to every other terrain-reading structure feature this
+     * session, and low-risk in practice since liquid/biome data rarely varies enough within a
+     * mineshaft piece's small span to flip the verdict between adjacent chunks.
+     */
+    private boolean msIsInInvalidLocation(MSPiece p, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        int x0 = Math.max(p.minX() - 1, minX), x1 = Math.min(p.maxX() + 1, maxX);
+        int z0 = Math.max(p.minZ() - 1, minZ), z1 = Math.min(p.maxZ() + 1, maxZ);
+        int y0 = p.minY() - 1, y1 = p.maxY() + 1;
+        if (x0 > x1 || z0 > z1) return false; // piece's ±1-padded bbox doesn't reach into this render chunk at all
+
+        int cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, cz = (z0 + z1) / 2;
+        if (mineshaftBlockingBiomes.contains(biomes.biomeAt(cx >> 2, cy >> 2, cz >> 2))) return true;
+
+        for (int x = x0; x <= x1; x++) {
+            for (int z = z0; z <= z1; z++) {
+                if (msIsLiquid(canvasGet(canvas, x, y0, z)) || msIsLiquid(canvasGet(canvas, x, y1, z))) return true;
+            }
+        }
+        for (int x = x0; x <= x1; x++) {
+            for (int y = y0; y <= y1; y++) {
+                if (msIsLiquid(canvasGet(canvas, x, y, z0)) || msIsLiquid(canvasGet(canvas, x, y, z1))) return true;
+            }
+        }
+        for (int z = z0; z <= z1; z++) {
+            for (int y = y0; y <= y1; y++) {
+                if (msIsLiquid(canvasGet(canvas, x0, y, z)) || msIsLiquid(canvasGet(canvas, x1, y, z))) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean msIsLiquid(Block block) {
+        String name = block.name();
+        return name.equals("minecraft:water") || name.equals("minecraft:lava");
     }
 
     private void placeMineshaftRoom(MSPiece p, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
@@ -939,15 +1041,15 @@ public final class VStructureManager {
 
     /**
      * Fully-open 3-wide tunnel (see MSPiece javadoc for why the 80%-ceiling variance isn't
-     * reproduced), plus MineShaftCorridor.postProcess's floor-plank strip and cobweb decoration
-     * (both real, position-seeded rather than a shared continuously-advancing stream — same
-     * chunk-render-order-independence requirement already established for ruined portal's
-     * spreadNetherrack). Still NOT decorated: support beams (fence posts/torches, needs a real
-     * "is this position load-bearing" terrain read this project doesn't model), rails (needs a
-     * real floor-solidity check), chest-loot (real vanilla spawns a chest MINECART ENTITY here,
-     * not a block — matches the established no-worldgen-entity-spawn precedent), and the spider
-     * spawner (a BLOCK, but needs the spawner mob-type API plus the same entity-spawn-adjacent
-     * caution — deferred alongside the others as one bounded next increment).
+     * reproduced), plus MineShaftCorridor.postProcess's floor-plank strip, per-section support
+     * beams ({@link #msPlaceSupport} — fence posts + plank cap/strip + flanking torches, gated
+     * on a real "is there ceiling above" check), and cobweb decoration (all real, position-
+     * seeded rather than a shared continuously-advancing stream — same chunk-render-order-
+     * independence requirement already established for ruined portal's spreadNetherrack), and
+     * rails ({@link #msMaybePlaceRail} — real floor-solidity-gated). Still NOT decorated:
+     * chest-loot (real vanilla spawns a chest MINECART ENTITY here, not a block — matches the
+     * established no-worldgen-entity-spawn precedent), and the spider spawner (a BLOCK, but
+     * needs the spawner mob-type API plus the same entity-spawn-adjacent caution).
      */
     private void placeMineshaftCorridor(MSPiece p, boolean mesa, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
         for (int x = p.minX(); x <= p.maxX(); x++) {
@@ -967,9 +1069,10 @@ public final class VStructureManager {
             }
         }
 
-        // Per-section cobwebs (8 candidate positions, real vanilla probability tiers).
+        // Per-section support beams, then cobwebs (8 candidate positions, real vanilla probability tiers).
         for (int section = 0; section < p.numSections(); section++) {
             int lz = 2 + section * 5;
+            msPlaceSupport(p, mesa, lz, minX, minZ, maxX, maxZ, canvas);
             msMaybePlaceCobWeb(p, 0.1F, 0, 2, lz - 1, minX, minZ, maxX, maxZ, canvas);
             msMaybePlaceCobWeb(p, 0.1F, 2, 2, lz - 1, minX, minZ, maxX, maxZ, canvas);
             msMaybePlaceCobWeb(p, 0.1F, 0, 2, lz + 1, minX, minZ, maxX, maxZ, canvas);
@@ -988,6 +1091,14 @@ public final class VStructureManager {
                         msMaybePlaceCeilingCobweb(p, lx, ly, lz, minX, minZ, maxX, maxZ, canvas);
                     }
                 }
+            }
+        }
+
+        // hasRails: a rail track down the corridor's center line, gated on a real solid-floor
+        // check, at 0.7 probability where isInterior (below the real surface) else 0.9.
+        if (p.hasRails()) {
+            for (int lz = 0; lz <= length; lz++) {
+                msMaybePlaceRail(p, lz, minX, minZ, maxX, maxZ, canvas);
             }
         }
     }
@@ -1043,6 +1154,81 @@ public final class VStructureManager {
         if (rng.nextFloat() < 0.6F) canvas.set(target[0], target[1], target[2], Block.COBWEB);
     }
 
+    /**
+     * MineShaftCorridor's `hasRails` loop: a rail at local (1,0,z) down the corridor's center
+     * line, gated on a real solid-floor check at local (1,-1,z) — approximated the same way as
+     * every other "is this a full-cube substrate" check this session ({@link #msIsSturdyTop}
+     * for "not air-like", standing in for real vanilla's `!isAir && isSolidRender`) — at 0.7
+     * probability where {@link #msIsInterior} (below the real surface) else 0.9. Real vanilla
+     * always uses `RailShape.NORTH_SOUTH` regardless of the corridor's own orientation (verified
+     * from the decompile, not assumed) — reproduced bit-exactly even though it can look visually
+     * disconnected for an EAST/WEST-running corridor, since that's genuinely what real vanilla
+     * generates (Minestom's placed blockstates don't get vanilla's live rail-neighbor
+     * auto-reshape that a player-placed rail would).
+     */
+    private void msMaybePlaceRail(MSPiece p, int lz, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        int[] floorPos = msWorldPos(p, 1, -1, lz);
+        if (floorPos[0] < minX || floorPos[0] > maxX || floorPos[2] < minZ || floorPos[2] > maxZ) return;
+        if (!msIsSturdyTop(canvasGet(canvas, floorPos[0], floorPos[1], floorPos[2]))) return;
+
+        int[] railPos = msWorldPos(p, 1, 0, lz);
+        if (railPos[0] < minX || railPos[0] > maxX || railPos[2] < minZ || railPos[2] > maxZ) return;
+        int[] interiorCheck = msWorldPos(p, 1, 1, lz);
+        float probability = msIsInterior(interiorCheck[0], interiorCheck[1], interiorCheck[2], minX, minZ, maxX, maxZ) ? 0.7F : 0.9F;
+        VSurface.LegacyRandom rng = new VSurface.LegacyRandom(XRandom.blockSeed(railPos[0], railPos[1], railPos[2]) ^ 0x8A11L);
+        if (rng.nextFloat() < probability) canvas.set(railPos[0], railPos[1], railPos[2], Block.RAIL.withProperty("shape", "north_south"));
+    }
+
+    /**
+     * MineShaftCorridor.placeSupport: a fence-post support beam at local (x0=0,x1=2,y0=0,y1=2,
+     * z), gated on {@link #msIsSupportingBox} (real ceiling above, not an opened-up 80%-
+     * variance gap — this project's fully-open carving means every candidate passes this check
+     * in practice, but the check is still real and cheap to keep). 25% two separate plank caps;
+     * 75% one connecting plank strip plus two 5%-chance flanking wall torches.
+     */
+    private void msPlaceSupport(MSPiece p, boolean mesa, int lz, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        if (!msIsSupportingBox(p, 0, 2, 2, lz, canvas)) return;
+        Block planks = mesa ? Block.DARK_OAK_PLANKS : Block.OAK_PLANKS;
+        Block fence = mesa ? Block.DARK_OAK_FENCE : Block.OAK_FENCE;
+
+        for (int ly = 0; ly <= 1; ly++) {
+            msPlaceIfInBounds(p, 0, ly, lz, fence.withProperty("west", "true"), minX, minZ, maxX, maxZ, canvas);
+            msPlaceIfInBounds(p, 2, ly, lz, fence.withProperty("east", "true"), minX, minZ, maxX, maxZ, canvas);
+        }
+
+        int[] capSeedPos = msWorldPos(p, 0, 2, lz);
+        VSurface.LegacyRandom capRng = new VSurface.LegacyRandom(XRandom.blockSeed(capSeedPos[0], capSeedPos[1], capSeedPos[2]) ^ 0x5A11EDL);
+        if (capRng.nextInt(4) == 0) {
+            msPlaceIfInBounds(p, 0, 2, lz, planks, minX, minZ, maxX, maxZ, canvas);
+            msPlaceIfInBounds(p, 2, 2, lz, planks, minX, minZ, maxX, maxZ, canvas);
+        } else {
+            for (int lx = 0; lx <= 2; lx++) msPlaceIfInBounds(p, lx, 2, lz, planks, minX, minZ, maxX, maxZ, canvas);
+            msMaybePlaceTorch(p, 1, 2, lz - 1, "south", minX, minZ, maxX, maxZ, canvas);
+            msMaybePlaceTorch(p, 1, 2, lz + 1, "north", minX, minZ, maxX, maxZ, canvas);
+        }
+    }
+
+    private boolean msIsSupportingBox(MSPiece p, int lx0, int lx1, int ly1, int lz, VStructureGen.Canvas canvas) {
+        for (int lx = lx0; lx <= lx1; lx++) {
+            int[] wp = msWorldPos(p, lx, ly1 + 1, lz);
+            if (canvasGet(canvas, wp[0], wp[1], wp[2]).name().equals("minecraft:air")) return false;
+        }
+        return true;
+    }
+
+    private void msPlaceIfInBounds(MSPiece p, int lx, int ly, int lz, Block block, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        int[] wp = msWorldPos(p, lx, ly, lz);
+        if (wp[0] < minX || wp[0] > maxX || wp[2] < minZ || wp[2] > maxZ) return;
+        canvas.set(wp[0], wp[1], wp[2], block);
+    }
+
+    private void msMaybePlaceTorch(MSPiece p, int lx, int ly, int lz, String facing, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        int[] wp = msWorldPos(p, lx, ly, lz);
+        if (wp[0] < minX || wp[0] > maxX || wp[2] < minZ || wp[2] > maxZ) return;
+        VSurface.LegacyRandom rng = new VSurface.LegacyRandom(XRandom.blockSeed(wp[0], wp[1], wp[2]) ^ 0x704C4800L);
+        if (rng.nextFloat() < 0.05F) canvas.set(wp[0], wp[1], wp[2], Block.WALL_TORCH.withProperty("facing", facing));
+    }
+
     /** Approximates BlockState.isFaceSturdy(UP): "not air-like" — full-cube ground/stone/liquid substrate counts as sturdy, gaps don't. */
     private static boolean msIsSturdyTop(Block block) {
         String name = block.name();
@@ -1060,8 +1246,16 @@ public final class VStructureManager {
         return false;
     }
 
-    /** MineShaftCrossing.postProcess carving. Support pillars + floor-plank strip skipped (see MSPiece javadoc). */
-    private void placeMineshaftCrossing(MSPiece p, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+    /**
+     * MineShaftCrossing.postProcess carving, plus (unconditionally, both two-floored and
+     * single-floor — real vanilla's own `placeSupportPillar`/floor-plank calls sit AFTER the
+     * two-floored/single-floor if/else, not inside it) 4 corner support pillars — real
+     * vanilla operates on the crossing's OWN `boundingBox` directly here (no orientation
+     * transform, unlike corridor's local-offset decoration), matching this piece's carving
+     * code above which already works in absolute world coordinates — and a full-footprint
+     * floor-plank strip one below the crossing's floor.
+     */
+    private void placeMineshaftCrossing(MSPiece p, boolean mesa, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
         if (p.flag()) {
             carveBox(p.minX() + 1, p.minY(), p.minZ(), p.maxX() - 1, p.minY() + 2, p.maxZ(), minX, minZ, maxX, maxZ, canvas);
             carveBox(p.minX(), p.minY(), p.minZ() + 1, p.maxX(), p.minY() + 2, p.maxZ() - 1, minX, minZ, maxX, maxZ, canvas);
@@ -1072,6 +1266,29 @@ public final class VStructureManager {
             carveBox(p.minX() + 1, p.minY(), p.minZ(), p.maxX() - 1, p.maxY(), p.maxZ(), minX, minZ, maxX, maxZ, canvas);
             carveBox(p.minX(), p.minY(), p.minZ() + 1, p.maxX(), p.maxY(), p.maxZ() - 1, minX, minZ, maxX, maxZ, canvas);
         }
+
+        Block planks = mesa ? Block.DARK_OAK_PLANKS : Block.OAK_PLANKS;
+        msPlaceSupportPillar(planks, p.minX() + 1, p.minY(), p.minZ() + 1, p.maxY(), minX, minZ, maxX, maxZ, canvas);
+        msPlaceSupportPillar(planks, p.minX() + 1, p.minY(), p.maxZ() - 1, p.maxY(), minX, minZ, maxX, maxZ, canvas);
+        msPlaceSupportPillar(planks, p.maxX() - 1, p.minY(), p.minZ() + 1, p.maxY(), minX, minZ, maxX, maxZ, canvas);
+        msPlaceSupportPillar(planks, p.maxX() - 1, p.minY(), p.maxZ() - 1, p.maxY(), minX, minZ, maxX, maxZ, canvas);
+
+        int floorY = p.minY() - 1;
+        for (int x = p.minX(); x <= p.maxX(); x++) {
+            if (x < minX || x > maxX) continue;
+            for (int z = p.minZ(); z <= p.maxZ(); z++) {
+                if (z < minZ || z > maxZ) continue;
+                Block existing = canvasGet(canvas, x, floorY, z);
+                if (!msIsSturdyTop(existing)) canvas.set(x, floorY, z, planks);
+            }
+        }
+    }
+
+    /** MineShaftCrossing.placeSupportPillar: a full solid plank column, only if there's real ceiling above y1. */
+    private void msPlaceSupportPillar(Block planks, int x, int y0, int z, int y1, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        if (x < minX || x > maxX || z < minZ || z > maxZ) return;
+        if (canvasGet(canvas, x, y1 + 1, z).name().equals("minecraft:air")) return;
+        for (int y = y0; y <= y1; y++) canvas.set(x, y, z, planks);
     }
 
     private void carveBox(int bx0, int by0, int bz0, int bx1, int by1, int bz1,

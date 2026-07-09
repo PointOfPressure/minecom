@@ -97,6 +97,17 @@ public final class VTemplate {
         };
     }
 
+    /**
+     * StructureTemplate.transform(pos, mirror, rotation, pivot): mirror is applied BEFORE
+     * rotation, negating the raw (pre-pivot) X coordinate — real vanilla's {@code Mirror.
+     * FRONT_BACK} case ({@code Mirror.LEFT_RIGHT} negates Z instead, but no structure in this
+     * project ever draws that value, so only FRONT_BACK's X-negation is implemented here).
+     * Delegates to {@link #transform} unmirrored, so every existing caller is untouched.
+     */
+    public static int[] transformMirrored(int x, int y, int z, boolean mirrorFrontBack, Rot rot, int pivotX, int pivotZ) {
+        return transform(mirrorFrontBack ? -x : x, y, z, rot, pivotX, pivotZ);
+    }
+
     // -------------------------------------------------------------- records
 
     /** A placed jigsaw connector after rotation + translation. */

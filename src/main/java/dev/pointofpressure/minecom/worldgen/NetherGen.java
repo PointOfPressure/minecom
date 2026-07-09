@@ -365,9 +365,27 @@ public final class NetherGen implements Generator {
             "minecraft:nether_wastes", "minecraft:soul_sand_valley", "minecraft:crimson_forest",
             "minecraft:warped_forest", "minecraft:basalt_deltas");
 
-    private record RuinedPortalPiece(VTemplate template, int baseX, int originY, int baseZ, VTemplate.Rot rotation, int pivotX, int pivotZ, boolean airPocket) {}
+    private record RuinedPortalPiece(VTemplate template, int baseX, int originY, int baseZ, VTemplate.Rot rotation, int pivotX, int pivotZ, boolean airPocket, boolean mirrored) {}
 
     private static final Map<Long, RuinedPortalPiece> RUINED_PORTAL_CACHE = java.util.Collections.synchronizedMap(new java.util.HashMap<>());
+
+    /**
+     * Pure, no-write replica of {@link #generate}'s main per-column terrain decision (bedrock
+     * shells, carved cavern/lava-sea, else {@link #material}) — lets ruined_portal_nether do
+     * real terrain reads (ProtectedBlockProcessor/LavaSubmergedBlockProcessor) despite
+     * Minestom's {@code UnitModifier} being write-only, the same limitation every other Nether
+     * structure feature this session has been blocked on. Deliberately does NOT account for
+     * decoration (ores/glowstone/etc) or earlier-placed structures within the SAME chunk render
+     * — a real, bounded simplification (base terrain substance only), sufficient for what
+     * Protected/LavaSubmerged actually need to check (is there a protected block or lava here),
+     * not a full read-back of everything this generator could ever write.
+     */
+    private static Block netherBaseTerrainAt(int x, int y, int z) {
+        if (y <= 4 && h(mix(x, y, z)) < (5 - y) / 5.0) return Block.BEDROCK;
+        if (y >= CEILING - 4 && h(mix(x, y * 3, z)) < (y - (CEILING - 5)) / 5.0) return Block.BEDROCK;
+        if (carved(x, y, z)) return y <= LAVA_SEA ? Block.LAVA : Block.AIR;
+        return material(x, y, z);
+    }
 
     private static void ruinedPortalNether(net.minestom.server.instance.generator.UnitModifier mod, int baseX, int baseZ) {
         int chunkX = baseX >> 4, chunkZ = baseZ >> 4;
@@ -382,16 +400,21 @@ public final class NetherGen implements Generator {
                 RUINED_PORTAL_CACHE.put(key, piece);
                 if (piece == null) continue;
                 for (VTemplate.BlockInfo b : piece.template().blocks) {
-                    int[] wp = VTemplate.transform(b.x, b.y, b.z, piece.rotation(), piece.pivotX(), piece.pivotZ());
+                    int[] wp = VTemplate.transformMirrored(b.x, b.y, b.z, piece.mirrored(), piece.rotation(), piece.pivotX(), piece.pivotZ());
                     int wx = wp[0] + piece.baseX(), wy = wp[1] + piece.originY(), wz = wp[2] + piece.baseZ();
                     if (wx < minX || wx > maxX || wz < minZ || wz > maxZ) continue;
                     String name = b.state.key().asString();
                     if (name.equals("minecraft:structure_block") || name.equals("minecraft:structure_void")) continue;
                     if (!piece.airPocket() && name.equals("minecraft:air")) continue;
-                    Block block = VBlockRotate.rotate(b.state, piece.rotation());
+                    Block preExisting = netherBaseTerrainAt(wx, wy, wz);
+                    if (VStructureManager.RP_PROTECTED_BLOCKS.contains(preExisting.name())) continue;
+                    // BlockState.mirror() is applied BEFORE rotate() in real vanilla — same order as the overworld flavors.
+                    Block block = piece.mirrored() ? VStructureManager.mirrorFrontBack(b.state) : b.state;
+                    block = VBlockRotate.rotate(block, piece.rotation());
                     block = applyRuinedPortalNetherRules(block, new VSurface.LegacyRandom(XRandom.blockSeed(wx, wy, wz)));
                     // ruined_portal_nether: mossiness=0.0, can_be_cold=false, replace_with_blackstone=true
                     block = VStructureManager.applyRuinedPortalMossiness(block, 0.0F, new VSurface.LegacyRandom(XRandom.blockSeed(wx, wy, wz)));
+                    if (preExisting.name().equals("minecraft:lava") && VStructureManager.isRPNonFull(block.name())) block = Block.LAVA;
                     block = VStructureManager.applyBlackstoneReplace(block);
                     mod.setBlock(wx, wy, wz, block);
                 }
@@ -440,6 +463,22 @@ public final class NetherGen implements Generator {
         return new int[]{total, gold, magma, mossy, cracked, cryingObsidian, blackstoneFamily};
     }
 
+    /** RuinedPortalStructure.findSuitableY's trailing corner-scan, Nether-terrain version (see call site javadoc). */
+    private static int refineRuinedPortalNetherY(int minX, int minZ, int maxX, int maxZ, int startY) {
+        int[][] corners = {{minX, minZ}, {maxX, minZ}, {minX, maxZ}, {maxX, maxZ}};
+        int minY = 15; // Nether MIN_Y (0) + 15, matching real heightAccessor.getMinY()+15
+        int projectedY = startY;
+        for (; projectedY > minY; projectedY--) {
+            int solidCount = 0;
+            for (int[] c : corners) {
+                String name = netherBaseTerrainAt(c[0], projectedY, c[1]).name();
+                boolean solid = !name.equals("minecraft:air") && !name.equals("minecraft:lava");
+                if (solid && ++solidCount == 3) return projectedY;
+            }
+        }
+        return projectedY;
+    }
+
     private static RuinedPortalPiece assembleRuinedPortalNether(int ccx, int ccz) {
         VSurface.LegacyRandom random = new VSurface.LegacyRandom(0L);
         random.setLargeFeatureSeed(SEED, ccx, ccz);
@@ -452,16 +491,17 @@ public final class NetherGen implements Generator {
         if (template.sizeX == 0) return null;
 
         VTemplate.Rot rotation = VTemplate.Rot.VALUES[random.nextInt(4)];
-        random.nextFloat(); // mirror draw — consumed, not applied (matches every overworld flavor)
+        boolean mirrored = random.nextFloat() >= 0.5F; // Mirror.FRONT_BACK, same draw/formula as the overworld flavors
 
         int pivotX = template.sizeX / 2, pivotZ = template.sizeZ / 2;
         int baseX = ccx << 4, baseZ = ccz << 4;
-        int[] c1 = VTemplate.transform(0, 0, 0, rotation, pivotX, pivotZ);
-        int[] c2 = VTemplate.transform(template.sizeX - 1, template.sizeY - 1, template.sizeZ - 1, rotation, pivotX, pivotZ);
+        int[] c1 = VTemplate.transformMirrored(0, 0, 0, mirrored, rotation, pivotX, pivotZ);
+        int[] c2 = VTemplate.transformMirrored(template.sizeX - 1, template.sizeY - 1, template.sizeZ - 1, mirrored, rotation, pivotX, pivotZ);
         int centerX = baseX + (Math.min(c1[0], c2[0]) + Math.max(c1[0], c2[0])) / 2;
         int centerZ = baseZ + (Math.min(c1[2], c2[2]) + Math.max(c1[2], c2[2])) / 2;
 
-        // findSuitableY(IN_NETHER): pure RNG range, no heightmap/terrain read at all.
+        // findSuitableY(IN_NETHER): pure RNG range, no heightmap/terrain read at all (unlike
+        // every overworld placement kind, whose initial Y comes from a heightmap sample).
         int originY;
         if (airPocket) {
             originY = 32 + random.nextInt(100 - 32 + 1);
@@ -471,9 +511,19 @@ public final class NetherGen implements Generator {
             originY = 29 + random.nextInt(100 - 29 + 1);
         }
 
+        // findSuitableY's trailing 4-corner solid-ground corner-scan DOES still apply after the
+        // above (real vanilla runs it unconditionally for every VerticalPlacement) — now
+        // reachable thanks to netherBaseTerrainAt (see its own javadoc), matching the overworld
+        // flavors' refineRuinedPortalY (VStructureManager) exactly, just using real Nether
+        // terrain substances (bedrock/netherrack/soul_sand/gravel/blackstone = solid; air/lava =
+        // not) in place of the overworld's coarse VAquifer.STONE check.
+        int minX = baseX + Math.min(c1[0], c2[0]), maxX = baseX + Math.max(c1[0], c2[0]);
+        int minZ = baseZ + Math.min(c1[2], c2[2]), maxZ = baseZ + Math.max(c1[2], c2[2]);
+        originY = refineRuinedPortalNetherY(minX, minZ, maxX, maxZ, originY);
+
         if (!RUINED_PORTAL_NETHER_BIOMES.contains(biomeAt(centerX, centerZ))) return null;
 
-        return new RuinedPortalPiece(template, baseX, originY, baseZ, rotation, pivotX, pivotZ, airPocket);
+        return new RuinedPortalPiece(template, baseX, originY, baseZ, rotation, pivotX, pivotZ, airPocket, mirrored);
     }
 
     /**
