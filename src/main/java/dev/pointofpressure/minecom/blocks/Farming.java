@@ -1,0 +1,196 @@
+package dev.pointofpressure.minecom.blocks;
+
+import dev.pointofpressure.minecom.data.Items;
+import net.minestom.server.MinecraftServer;
+import net.minestom.server.coordinate.Point;
+import net.minestom.server.coordinate.Vec;
+import net.minestom.server.entity.GameMode;
+import net.minestom.server.entity.Player;
+import net.minestom.server.event.GlobalEventHandler;
+import net.minestom.server.event.player.PlayerBlockPlaceEvent;
+import net.minestom.server.event.player.PlayerUseItemOnBlockEvent;
+import net.minestom.server.instance.Instance;
+import net.minestom.server.instance.block.Block;
+import net.minestom.server.item.ItemStack;
+import net.minestom.server.item.Material;
+import net.minestom.server.timer.TaskSchedule;
+
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Farming: hoes till farmland, seeds plant crops, crops grow over time (tracked
+ * positions, persisted), bone meal accelerates, saplings grow into trees.
+ */
+public final class Farming {
+    private Farming() {}
+
+    private static final Random RANDOM = new Random();
+    private static Instance instance;
+
+    /** Planted crop positions as "x,y,z"; exposed for persistence. */
+    public static final Set<String> CROPS = ConcurrentHashMap.newKeySet();
+
+    private static final Map<Material, Block> SEEDS = Map.of(
+            Material.WHEAT_SEEDS, Block.WHEAT,
+            Material.BEETROOT_SEEDS, Block.BEETROOTS,
+            Material.CARROT, Block.CARROTS,
+            Material.POTATO, Block.POTATOES);
+
+    public static void start(Instance overworld) {
+        instance = overworld;
+        MinecraftServer.getSchedulerManager().buildTask(Farming::growthTick)
+                .repeat(TaskSchedule.tick(100))
+                .schedule();
+    }
+
+    public static void register(GlobalEventHandler events) {
+        events.addListener(PlayerUseItemOnBlockEvent.class, Farming::useOnBlock);
+        events.addListener(PlayerBlockPlaceEvent.class, e -> {
+            String key = e.getBlock().key().value();
+            if (key.endsWith("_sapling")) {
+                schedulSaplingGrowth(e.getInstance(), e.getBlockPosition(), 1200 + RANDOM.nextInt(1200));
+            }
+        });
+    }
+
+    private static void useOnBlock(PlayerUseItemOnBlockEvent e) {
+        Material held = e.getItemStack().material();
+        Player player = e.getPlayer();
+        Point pos = e.getPosition();
+        Block clicked = e.getInstance().getBlock(pos);
+        String clickedKey = clicked.key().value();
+
+        if (held.key().value().endsWith("_hoe")) {
+            if ((clickedKey.equals("grass_block") || clickedKey.equals("dirt") || clickedKey.equals("dirt_path"))
+                    && e.getInstance().getBlock(pos.add(0, 1, 0)).isAir()) {
+                e.getInstance().setBlock(pos, Block.FARMLAND);
+                player.setItemInHand(e.getHand(), Items.damageItem(player, e.getItemStack(), 1));
+            }
+            return;
+        }
+
+        Block crop = SEEDS.get(held);
+        if (crop != null && clickedKey.equals("farmland")) {
+            Point above = pos.add(0, 1, 0);
+            if (!e.getInstance().getBlock(above).isAir()) return;
+            e.getInstance().setBlock(above, crop.withProperty("age", "0"));
+            CROPS.add(key(above));
+            consume(player, e);
+            return;
+        }
+
+        if (held == Material.BONE_MEAL) {
+            Block target = clicked;
+            String age = target.getProperty("age");
+            if (age != null && CROPS.contains(key(pos))) {
+                int max = maxAge(target);
+                int newAge = Math.min(max, Integer.parseInt(age) + 2 + RANDOM.nextInt(2));
+                e.getInstance().setBlock(pos, target.withProperty("age", String.valueOf(newAge)));
+                consume(player, e);
+            } else if (clickedKey.endsWith("_sapling")) {
+                growTree(e.getInstance(), pos, target);
+                consume(player, e);
+            }
+        }
+    }
+
+    private static void consume(Player player, PlayerUseItemOnBlockEvent e) {
+        if (player.getGameMode() != GameMode.CREATIVE) {
+            player.setItemInHand(e.getHand(), e.getItemStack().consume(1));
+        }
+    }
+
+    private static String key(Point p) {
+        return p.blockX() + "," + p.blockY() + "," + p.blockZ();
+    }
+
+    private static int maxAge(Block crop) {
+        return crop.key().value().equals("beetroots") ? 3 : 7;
+    }
+
+    private static void growthTick() {
+        if (instance == null) return;
+        for (String key : CROPS) {
+            String[] parts = key.split(",");
+            int x = Integer.parseInt(parts[0]), y = Integer.parseInt(parts[1]), z = Integer.parseInt(parts[2]);
+            if (!instance.isChunkLoaded(x >> 4, z >> 4)) continue;
+            Block block = instance.getBlock(x, y, z);
+            String age = block.getProperty("age");
+            if (age == null) {
+                CROPS.remove(key);
+                continue;
+            }
+            int current = Integer.parseInt(age);
+            int max = maxAge(block);
+            if (current < max && RANDOM.nextDouble() < 0.20) {
+                instance.setBlock(x, y, z, block.withProperty("age", String.valueOf(current + 1)));
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ saplings
+
+    private static void schedulSaplingGrowth(Instance inst, Point pos, int delayTicks) {
+        inst.scheduler().buildTask(() -> {
+            Block block = inst.getBlock(pos);
+            if (block.key().value().endsWith("_sapling")) {
+                growTree(inst, pos, block);
+            }
+        }).delay(TaskSchedule.tick(delayTicks)).schedule();
+    }
+
+    private static void growTree(Instance inst, Point pos, Block sapling) {
+        String kind = sapling.key().value().replace("_sapling", "");
+        Block log = switch (kind) {
+            case "birch" -> Block.BIRCH_LOG;
+            case "spruce" -> Block.SPRUCE_LOG;
+            default -> Block.OAK_LOG;
+        };
+        Block leaves = switch (kind) {
+            case "birch" -> Block.BIRCH_LEAVES;
+            case "spruce" -> Block.SPRUCE_LEAVES;
+            default -> Block.OAK_LEAVES;
+        };
+        boolean spruce = kind.equals("spruce");
+        int x = pos.blockX(), y = pos.blockY(), z = pos.blockZ();
+        int trunk = spruce ? 6 + RANDOM.nextInt(3) : 4 + RANDOM.nextInt(3);
+
+        for (int dy = 0; dy < trunk; dy++) setIfSoft(inst, x, y + dy, z, log);
+        int top = y + trunk;
+        if (spruce) {
+            for (int layer = 0; layer < trunk - 2; layer++) {
+                int radius = (layer % 2 == 0) ? 1 + layer / 3 : 0;
+                for (int lx = -radius; lx <= radius; lx++) {
+                    for (int lz = -radius; lz <= radius; lz++) {
+                        if (lx == 0 && lz == 0) continue;
+                        setIfSoft(inst, x + lx, top - layer, z + lz, leaves);
+                    }
+                }
+            }
+        } else {
+            for (int lx = -2; lx <= 2; lx++) {
+                for (int lz = -2; lz <= 2; lz++) {
+                    for (int ly = -2; ly <= 0; ly++) {
+                        if (lx == 0 && lz == 0 && ly < 0) continue;
+                        if (Math.abs(lx) == 2 && Math.abs(lz) == 2) continue;
+                        if (ly == 0 && (Math.abs(lx) > 1 || Math.abs(lz) > 1)) continue;
+                        setIfSoft(inst, x + lx, top + ly, z + lz, leaves);
+                    }
+                }
+            }
+        }
+        setIfSoft(inst, x, top + 1, z, leaves);
+        inst.setBlock(new Vec(x, y, z), log); // trunk base replaces the sapling
+    }
+
+    private static void setIfSoft(Instance inst, int x, int y, int z, Block block) {
+        Block existing = inst.getBlock(x, y, z);
+        if (existing.isAir() || existing.registry().isReplaceable()
+                || existing.key().value().endsWith("_sapling")) {
+            inst.setBlock(x, y, z, block);
+        }
+    }
+}
