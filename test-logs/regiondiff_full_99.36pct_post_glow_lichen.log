@@ -1,0 +1,58 @@
+progress: 100 chunks compared, 126827ms elapsed, running match rate 99.6577%
+progress: 200 chunks compared, 214148ms elapsed, running match rate 99.6458%
+progress: 300 chunks compared, 303636ms elapsed, running match rate 99.6094%
+progress: 400 chunks compared, 395171ms elapsed, running match rate 99.5638%
+progress: 500 chunks compared, 485248ms elapsed, running match rate 99.4990%
+progress: 600 chunks compared, 576500ms elapsed, running match rate 99.4747%
+progress: 700 chunks compared, 672464ms elapsed, running match rate 99.4434%
+progress: 800 chunks compared, 767063ms elapsed, running match rate 99.4274%
+progress: 900 chunks compared, 862086ms elapsed, running match rate 99.4082%
+progress: 1000 chunks compared, 960023ms elapsed, running match rate 99.3683%
+progress: 1100 chunks compared, 1054719ms elapsed, running match rate 99.3591%
+progress: 1200 chunks compared, 1149459ms elapsed, running match rate 99.3513%
+=== FINAL RESULT ===
+chunks compared: 1296, chunks missing/not-full: 0
+total blocks: 127401984
+matched: 126587468
+bit-exact match rate: 99.360672%
+--- top 40 mismatch classes ---
+162162  minecraft:deepslate<-minecraft:sculk
+72175  minecraft:air<-minecraft:sculk_vein
+57992  minecraft:air<-minecraft:spruce_leaves
+46385  minecraft:oak_leaves<-minecraft:air
+41589  minecraft:air<-minecraft:oak_leaves
+29339  minecraft:stone<-minecraft:coal_ore
+29328  minecraft:coal_ore<-minecraft:stone
+22692  minecraft:snow<-minecraft:air
+19001  minecraft:air<-minecraft:leaf_litter
+17865  minecraft:air<-minecraft:snow
+16940  minecraft:air<-minecraft:short_grass
+16848  minecraft:spruce_leaves<-minecraft:air
+15509  minecraft:air<-minecraft:water
+14315  minecraft:tuff<-minecraft:sculk
+11607  minecraft:stone<-minecraft:sculk
+9090  minecraft:glow_lichen<-minecraft:air
+8680  minecraft:birch_leaves<-minecraft:air
+7938  minecraft:air<-minecraft:birch_leaves
+6316  minecraft:air<-minecraft:spruce_log
+5529  minecraft:diorite<-minecraft:dirt
+5171  minecraft:stone<-minecraft:cave_air
+4870  minecraft:leaf_litter<-minecraft:air
+4412  minecraft:andesite<-minecraft:dirt
+4389  minecraft:andesite<-minecraft:gravel
+4169  minecraft:granite<-minecraft:dirt
+3924  minecraft:diorite<-minecraft:gravel
+3910  minecraft:air<-minecraft:lava
+3888  minecraft:tuff<-minecraft:gravel
+3854  minecraft:tuff<-minecraft:air
+3679  minecraft:oak_log<-minecraft:air
+3664  minecraft:stone<-minecraft:dripstone_block
+3522  minecraft:air<-minecraft:oak_log
+3332  minecraft:granite<-minecraft:gravel
+3075  minecraft:gravel<-minecraft:sculk
+2929  minecraft:tuff<-minecraft:tuff_bricks
+2708  minecraft:deepslate<-minecraft:cave_air
+2649  minecraft:deepslate_bricks<-minecraft:sculk
+2576  minecraft:stone<-minecraft:moss_block
+2466  minecraft:diorite<-minecraft:coal_ore
+2357  minecraft:air<-minecraft:glow_lichen
