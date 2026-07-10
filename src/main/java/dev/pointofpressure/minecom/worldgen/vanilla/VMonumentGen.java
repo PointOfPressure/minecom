@@ -36,7 +36,7 @@ public final class VMonumentGen {
         public static final Dir3[] VALUES = values();
     }
 
-    public enum Shape { CORE, ENTRY, SIMPLE, SIMPLE_TOP, DOUBLE_X, DOUBLE_Y, DOUBLE_Z, DOUBLE_XY, DOUBLE_YZ, ROOF, LEFT_WING, RIGHT_WING }
+    public enum Shape { CORE, ENTRY, SIMPLE, SIMPLE_TOP, DOUBLE_X, DOUBLE_Y, DOUBLE_Z, DOUBLE_XY, DOUBLE_YZ, ROOF, LEFT_WING, RIGHT_WING, PENTHOUSE_MARKER }
 
     public static final class RoomDefinition {
         public final int index;
@@ -45,6 +45,9 @@ public final class VMonumentGen {
         public boolean claimed;
         public boolean isSource;
         public Shape shape;
+        /** SIMPLE: random.nextInt(3) design 0-2, drawn at construction (graph-fitting) time,
+         *  same as real vanilla's OceanMonumentSimpleRoom constructor. Unused by other shapes. */
+        public int mainDesign;
         private int scanIndex;
 
         RoomDefinition(int index) { this.index = index; }
@@ -197,7 +200,7 @@ public final class VMonumentGen {
 
     private interface Fitter {
         boolean fits(RoomDefinition def);
-        void apply(RoomDefinition def);
+        void apply(RoomDefinition def, VSurface.LegacyRandom random);
     }
 
     private static final Fitter FIT_DOUBLE_XY = new Fitter() {
@@ -207,7 +210,7 @@ public final class VMonumentGen {
             RoomDefinition east = def.connections[Dir3.EAST.ordinal()];
             return east.hasOpening[Dir3.UP.ordinal()] && !east.connections[Dir3.UP.ordinal()].claimed;
         }
-        public void apply(RoomDefinition def) {
+        public void apply(RoomDefinition def, VSurface.LegacyRandom random) {
             def.claimed = true;
             def.connections[Dir3.EAST.ordinal()].claimed = true;
             def.connections[Dir3.UP.ordinal()].claimed = true;
@@ -222,7 +225,7 @@ public final class VMonumentGen {
             RoomDefinition north = def.connections[Dir3.NORTH.ordinal()];
             return north.hasOpening[Dir3.UP.ordinal()] && !north.connections[Dir3.UP.ordinal()].claimed;
         }
-        public void apply(RoomDefinition def) {
+        public void apply(RoomDefinition def, VSurface.LegacyRandom random) {
             def.claimed = true;
             def.connections[Dir3.NORTH.ordinal()].claimed = true;
             def.connections[Dir3.UP.ordinal()].claimed = true;
@@ -234,7 +237,7 @@ public final class VMonumentGen {
         public boolean fits(RoomDefinition def) {
             return def.hasOpening[Dir3.NORTH.ordinal()] && !def.connections[Dir3.NORTH.ordinal()].claimed;
         }
-        public void apply(RoomDefinition def) {
+        public void apply(RoomDefinition def, VSurface.LegacyRandom random) {
             RoomDefinition source = def;
             if (!def.hasOpening[Dir3.NORTH.ordinal()] || def.connections[Dir3.NORTH.ordinal()].claimed) {
                 source = def.connections[Dir3.SOUTH.ordinal()];
@@ -248,7 +251,7 @@ public final class VMonumentGen {
         public boolean fits(RoomDefinition def) {
             return def.hasOpening[Dir3.EAST.ordinal()] && !def.connections[Dir3.EAST.ordinal()].claimed;
         }
-        public void apply(RoomDefinition def) {
+        public void apply(RoomDefinition def, VSurface.LegacyRandom random) {
             def.claimed = true;
             def.connections[Dir3.EAST.ordinal()].claimed = true;
             def.shape = Shape.DOUBLE_X;
@@ -258,7 +261,7 @@ public final class VMonumentGen {
         public boolean fits(RoomDefinition def) {
             return def.hasOpening[Dir3.UP.ordinal()] && !def.connections[Dir3.UP.ordinal()].claimed;
         }
-        public void apply(RoomDefinition def) {
+        public void apply(RoomDefinition def, VSurface.LegacyRandom random) {
             def.claimed = true;
             def.connections[Dir3.UP.ordinal()].claimed = true;
             def.shape = Shape.DOUBLE_Y;
@@ -269,24 +272,33 @@ public final class VMonumentGen {
             return !def.hasOpening[Dir3.WEST.ordinal()] && !def.hasOpening[Dir3.EAST.ordinal()]
                     && !def.hasOpening[Dir3.NORTH.ordinal()] && !def.hasOpening[Dir3.SOUTH.ordinal()] && !def.hasOpening[Dir3.UP.ordinal()];
         }
-        public void apply(RoomDefinition def) { def.claimed = true; def.shape = Shape.SIMPLE_TOP; }
+        public void apply(RoomDefinition def, VSurface.LegacyRandom random) { def.claimed = true; def.shape = Shape.SIMPLE_TOP; }
     };
     private static final Fitter FIT_SIMPLE = new Fitter() {
         public boolean fits(RoomDefinition def) { return true; }
-        public void apply(RoomDefinition def) { def.claimed = true; def.shape = Shape.SIMPLE; }
+        public void apply(RoomDefinition def, VSurface.LegacyRandom random) { def.claimed = true; def.shape = Shape.SIMPLE; }
     };
     private static final Fitter[] FITTERS = {FIT_DOUBLE_XY, FIT_DOUBLE_YZ, FIT_DOUBLE_Z, FIT_DOUBLE_X, FIT_DOUBLE_Y, FIT_SIMPLE_TOP, FIT_SIMPLE};
 
     /** MonumentBuilding constructor's fitter-assignment loop, in the real fixed priority order. */
-    public static void fitRoomShapes(Graph graph) {
+    public static void fitRoomShapes(Graph graph, VSurface.LegacyRandom random) {
         graph.sourceRoom.claimed = true;
         graph.sourceRoom.shape = Shape.ENTRY;
         graph.coreRoom.shape = Shape.CORE;
         for (RoomDefinition def : graph.rooms) {
             if (def.claimed || def.isSpecial()) continue;
             for (Fitter fitter : FITTERS) {
-                if (fitter.fits(def)) { fitter.apply(def); break; }
+                if (fitter.fits(def)) { fitter.apply(def, random); break; }
             }
+        }
+        // real vanilla: `int wingRandom = random.nextInt();` drawn AFTER the fitter loop, one
+        // full-range draw whose low bit decides each WingRoom's mainDesign (leftWing gets
+        // wingRandom, rightWing gets wingRandom+1 - consumes no additional random draws).
+        int wingRandom = random.next(32);
+        for (RoomDefinition def : graph.rooms) {
+            if (def.index == 1001) { def.shape = Shape.LEFT_WING; def.mainDesign = wingRandom & 1; }
+            else if (def.index == 1002) { def.shape = Shape.RIGHT_WING; def.mainDesign = (wingRandom + 1) & 1; }
+            else if (def.index == 1003) { def.shape = Shape.ROOF; }
         }
     }
 
@@ -432,6 +444,29 @@ public final class VMonumentGen {
         }
     }
 
+    /** OceanMonumentPiece.generateBoxOnFillOnly: replace only cells currently filled with water. */
+    private static void genBoxOnFillOnly(Building b, Sink sink, int[] clip, int x0, int y0, int z0, int x1, int y1, int z1, Block target) {
+        for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) for (int z = z0; z <= z1; z++) {
+            if (readLocal(b, sink, clip, x, y, z).compare(FILL_BLOCK)) place(b, sink, clip, target, x, y, z);
+        }
+    }
+
+    /** OceanMonumentPiece.generateDefaultFloor: an 8x8 gray floor, with a cross-shaped light-trim opening when downOpening. */
+    private static void generateDefaultFloor(Building b, Sink sink, int[] clip, int xOff, int zOff, boolean downOpening) {
+        if (downOpening) {
+            genBox(b, sink, clip, xOff, 0, zOff, xOff + 2, 0, zOff + 7, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, xOff + 5, 0, zOff, xOff + 7, 0, zOff + 7, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, xOff + 3, 0, zOff, xOff + 4, 0, zOff + 2, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, xOff + 3, 0, zOff + 5, xOff + 4, 0, zOff + 7, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, xOff + 3, 0, zOff + 2, xOff + 4, 0, zOff + 2, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, xOff + 3, 0, zOff + 5, xOff + 4, 0, zOff + 5, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, xOff + 2, 0, zOff + 3, xOff + 2, 0, zOff + 4, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, xOff + 5, 0, zOff + 3, xOff + 5, 0, zOff + 4, BASE_LIGHT, BASE_LIGHT, false);
+        } else {
+            genBox(b, sink, clip, xOff, 0, zOff, xOff + 7, 0, zOff + 7, BASE_GRAY, BASE_GRAY, false);
+        }
+    }
+
     /** Pure perf pre-check (no behavioral effect — individual place() calls already clip). */
     private static boolean chunkIntersects(Building b, int[] clip, int x0, int z0, int x1, int z1) {
         int wx0 = worldX(b, x0, z0), wz0 = worldZ(b, x0, z0);
@@ -493,6 +528,721 @@ public final class VMonumentGen {
             y--;
             if (worldY(b, y) <= -63) break; // world floor guard (real: level.getMinY()+1)
         }
+    }
+
+    // ------------------------------------------------------------------ room-content dispatch (stage 3)
+
+    /** Grid-room world dimensions (width,height,depth in room-grid units) per shape, matching each real piece's own super() call. */
+    private static int[] roomDims(Shape shape) {
+        return switch (shape) {
+            case CORE -> new int[]{2, 2, 2};
+            case ENTRY, SIMPLE, SIMPLE_TOP -> new int[]{1, 1, 1};
+            case DOUBLE_X -> new int[]{2, 1, 1};
+            case DOUBLE_Y -> new int[]{1, 2, 1};
+            case DOUBLE_Z -> new int[]{1, 1, 2};
+            case DOUBLE_XY -> new int[]{2, 2, 1};
+            case DOUBLE_YZ -> new int[]{1, 2, 2};
+            default -> new int[]{1, 1, 1}; // ROOF/LEFT_WING/RIGHT_WING unused (raw BoundingBox, not grid-based)
+        };
+    }
+
+    /**
+     * OceanMonumentPiece's private makeBoundingBox(orientation, roomDefinition, w,h,d): the raw
+     * (building-local, pre-offset) room box. Ported literally (not derived via the generic
+     * worldX/Y/Z transform) since it's a direct per-orientation switch in the decompile, not
+     * guaranteed algebraically identical to this file's other transform helpers.
+     */
+    private static int[] roomLocalBox(VTemplate.Dir orientation, int roomIndex, int rw, int rh, int rd) {
+        int roomX = roomIndex % 5, roomZ = (roomIndex / 5) % 5, roomY = roomIndex / 25;
+        int[] bb = makeBoundingBox(0, 0, 0, orientation, rw * 8, rh * 4, rd * 8);
+        int dx, dy, dz;
+        switch (orientation) {
+            case NORTH -> { dx = roomX * 8; dy = roomY * 4; dz = -(roomZ + rd) * 8 + 1; }
+            case WEST -> { dx = -(roomZ + rd) * 8 + 1; dy = roomY * 4; dz = roomX * 8; }
+            case EAST -> { dx = roomZ * 8; dy = roomY * 4; dz = roomX * 8; }
+            default -> { dx = roomX * 8; dy = roomY * 4; dz = roomZ * 8; } // SOUTH
+        }
+        return new int[]{bb[0] + dx, bb[1] + dy, bb[2] + dz, bb[3] + dx, bb[4] + dy, bb[5] + dz};
+    }
+
+    /** A resolved room-content piece: its own oriented box (sharing the building's orientation) + shape + backing RoomDefinition. */
+    public static final class RoomPiece {
+        public final Building box;
+        public final Shape shape;
+        public final int mainDesign;
+        public final RoomDefinition def; // null for ROOF (unrendered — real vanilla never gives it a piece either)
+        RoomPiece(Building box, Shape shape, int mainDesign, RoomDefinition def) {
+            this.box = box; this.shape = shape; this.mainDesign = mainDesign; this.def = def;
+        }
+    }
+
+    private static Building childBox(Building building, int[] localBox) {
+        int ox = worldX(building, 9, 22), oy = worldY(building, 0), oz = worldZ(building, 9, 22);
+        Building c = new Building();
+        c.minX = localBox[0] + ox; c.minY = localBox[1] + oy; c.minZ = localBox[2] + oz;
+        c.maxX = localBox[3] + ox; c.maxY = localBox[4] + oy; c.maxZ = localBox[5] + oz;
+        c.orientation = building.orientation; c.mirrorLR = building.mirrorLR; c.rotation = building.rotation;
+        return c;
+    }
+
+    /**
+     * MonumentBuilding's childPieces resolution: room-grid pieces get their raw box moved by the
+     * building's getWorldPos(9,0,22) offset; the two wings + penthouse are computed via
+     * getWorldPos directly (already final world coords, no extra offset — real vanilla builds
+     * them AFTER the offset-move loop already ran, confirmed from the decompile's exact
+     * statement order).
+     */
+    public static List<RoomPiece> resolveRoomPieces(Building building, Graph graph) {
+        List<RoomPiece> pieces = new ArrayList<>();
+        for (RoomDefinition def : graph.rooms) {
+            if (def.shape == null || def.shape == Shape.ROOF || def.shape == Shape.LEFT_WING || def.shape == Shape.RIGHT_WING) continue;
+            int[] dims = roomDims(def.shape);
+            int[] local = roomLocalBox(building.orientation, def.index, dims[0], dims[1], dims[2]);
+            pieces.add(new RoomPiece(childBox(building, local), def.shape, def.mainDesign, def));
+        }
+        RoomDefinition leftWing = null, rightWing = null;
+        for (RoomDefinition def : graph.rooms) {
+            if (def.index == 1001) leftWing = def;
+            else if (def.index == 1002) rightWing = def;
+        }
+        pieces.add(new RoomPiece(rawBox(building, 1, 1, 1, 23, 8, 21), Shape.LEFT_WING, leftWing != null ? leftWing.mainDesign : 0, null));
+        pieces.add(new RoomPiece(rawBox(building, 34, 1, 1, 56, 8, 21), Shape.RIGHT_WING, rightWing != null ? rightWing.mainDesign : 0, null));
+        pieces.add(new RoomPiece(rawBox(building, 22, 13, 22, 35, 17, 35), Shape.PENTHOUSE_MARKER, 0, null));
+        return pieces;
+    }
+
+    /** BoundingBox.fromCorners(building.getWorldPos(x0,y0,z0), building.getWorldPos(x1,y1,z1)). */
+    private static Building rawBox(Building building, int x0, int y0, int z0, int x1, int y1, int z1) {
+        int wx0 = worldX(building, x0, z0), wy0 = worldY(building, y0), wz0 = worldZ(building, x0, z0);
+        int wx1 = worldX(building, x1, z1), wy1 = worldY(building, y1), wz1 = worldZ(building, x1, z1);
+        Building c = new Building();
+        c.minX = Math.min(wx0, wx1); c.minY = Math.min(wy0, wy1); c.minZ = Math.min(wz0, wz1);
+        c.maxX = Math.max(wx0, wx1); c.maxY = Math.max(wy0, wy1); c.maxZ = Math.max(wz0, wz1);
+        c.orientation = building.orientation; c.mirrorLR = building.mirrorLR; c.rotation = building.rotation;
+        return c;
+    }
+
+    /** Renders every room-content piece intersecting the given chunk. Position-seeded RNG per piece (same chunk-render-order-independence tradeoff as stronghold's decoration). */
+    public static void renderRooms(List<RoomPiece> pieces, long seed, Sink sink, int seaLevel, int chunkX, int chunkZ) {
+        int cMinX = chunkX << 4, cMinZ = chunkZ << 4;
+        int[] clip = {cMinX, cMinZ, cMinX + 15, cMinZ + 15};
+        for (RoomPiece p : pieces) {
+            Building b = p.box;
+            if (b.maxX < clip[0] || b.minX > clip[2] || b.maxZ < clip[1] || b.minZ > clip[3]) continue;
+            long pieceSeed = seed ^ (b.minX * 341873128712L) ^ (b.minY * 132897987541L) ^ (b.minZ * 2971215073L) ^ p.shape.ordinal();
+            VSurface.LegacyRandom random = new VSurface.LegacyRandom(pieceSeed);
+            switch (p.shape) {
+                case CORE -> renderCoreRoom(b, sink, clip);
+                case ENTRY -> renderEntryRoom(b, sink, clip, p.def);
+                case SIMPLE -> renderSimpleRoom(b, sink, clip, p, random);
+                case SIMPLE_TOP -> renderSimpleTopRoom(b, sink, clip, p, random);
+                case DOUBLE_X -> renderDoubleXRoom(b, sink, clip, p);
+                case DOUBLE_Y -> renderDoubleYRoom(b, sink, clip, p);
+                case DOUBLE_Z -> renderDoubleZRoom(b, sink, clip, p);
+                case DOUBLE_XY -> renderDoubleXYRoom(b, sink, clip, p);
+                case DOUBLE_YZ -> renderDoubleYZRoom(b, sink, clip, p);
+                case LEFT_WING -> renderWingRoom(b, sink, clip, p.mainDesign, false);
+                case RIGHT_WING -> renderWingRoom(b, sink, clip, p.mainDesign, true);
+                case PENTHOUSE_MARKER -> renderPenthouse(b, sink, clip, seaLevel);
+                default -> { /* ROOF: real vanilla never gives it a piece either */ }
+            }
+        }
+    }
+
+    private static void renderCoreRoom(Building b, Sink sink, int[] clip) {
+        genBoxOnFillOnly(b, sink, clip, 1, 8, 0, 14, 8, 14, BASE_GRAY);
+        Block block = BASE_LIGHT;
+        genBox(b, sink, clip, 0, 7, 0, 0, 7, 15, block, block, false);
+        genBox(b, sink, clip, 15, 7, 0, 15, 7, 15, block, block, false);
+        genBox(b, sink, clip, 1, 7, 0, 15, 7, 0, block, block, false);
+        genBox(b, sink, clip, 1, 7, 15, 14, 7, 15, block, block, false);
+        for (int y = 1; y <= 6; y++) {
+            block = (y == 2 || y == 6) ? BASE_GRAY : BASE_LIGHT;
+            for (int x = 0; x <= 15; x += 15) {
+                genBox(b, sink, clip, x, y, 0, x, y, 1, block, block, false);
+                genBox(b, sink, clip, x, y, 6, x, y, 9, block, block, false);
+                genBox(b, sink, clip, x, y, 14, x, y, 15, block, block, false);
+            }
+            genBox(b, sink, clip, 1, y, 0, 1, y, 0, block, block, false);
+            genBox(b, sink, clip, 6, y, 0, 9, y, 0, block, block, false);
+            genBox(b, sink, clip, 14, y, 0, 14, y, 0, block, block, false);
+            genBox(b, sink, clip, 1, y, 15, 14, y, 15, block, block, false);
+        }
+        genBox(b, sink, clip, 6, 3, 6, 9, 6, 9, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 7, 4, 7, 8, 5, 8, Block.GOLD_BLOCK, Block.GOLD_BLOCK, false);
+        for (int y = 3; y <= 6; y += 3) {
+            for (int x = 6; x <= 9; x += 3) {
+                place(b, sink, clip, LAMP_BLOCK, x, y, 6);
+                place(b, sink, clip, LAMP_BLOCK, x, y, 9);
+            }
+        }
+        genBox(b, sink, clip, 5, 1, 6, 5, 2, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 1, 9, 5, 2, 9, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 1, 6, 10, 2, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 1, 9, 10, 2, 9, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 1, 5, 6, 2, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 9, 1, 5, 9, 2, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 1, 10, 6, 2, 10, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 9, 1, 10, 9, 2, 10, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 2, 5, 5, 6, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 2, 10, 5, 6, 10, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 2, 5, 10, 6, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 2, 10, 10, 6, 10, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 7, 1, 5, 7, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 7, 1, 10, 7, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 7, 9, 5, 7, 14, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 7, 9, 10, 7, 14, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 7, 5, 6, 7, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 7, 10, 6, 7, 10, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 9, 7, 5, 14, 7, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 9, 7, 10, 14, 7, 10, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 2, 1, 2, 2, 1, 3, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 3, 1, 2, 3, 1, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 13, 1, 2, 13, 1, 3, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 12, 1, 2, 12, 1, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 2, 1, 12, 2, 1, 13, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 3, 1, 13, 3, 1, 13, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 13, 1, 12, 13, 1, 13, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 12, 1, 13, 12, 1, 13, BASE_LIGHT, BASE_LIGHT, false);
+    }
+
+    private static void renderSimpleRoom(Building b, Sink sink, int[] clip, RoomPiece p, VSurface.LegacyRandom random) {
+        RoomDefinition def = p.def;
+        if (def.index / 25 > 0) generateDefaultFloor(b, sink, clip, 0, 0, def.hasOpening[Dir3.DOWN.ordinal()]);
+        if (def.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 4, 1, 6, 4, 6, BASE_GRAY);
+        boolean centerPillar = p.mainDesign != 0 && random.nextBoolean()
+                && !def.hasOpening[Dir3.DOWN.ordinal()] && !def.hasOpening[Dir3.UP.ordinal()] && def.countOpenings() > 1;
+        if (p.mainDesign == 0) {
+            genBox(b, sink, clip, 0, 1, 0, 2, 1, 2, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 3, 0, 2, 3, 2, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 2, 0, 0, 2, 2, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, 1, 2, 0, 2, 2, 0, BASE_GRAY, BASE_GRAY, false);
+            place(b, sink, clip, LAMP_BLOCK, 1, 2, 1);
+            genBox(b, sink, clip, 5, 1, 0, 7, 1, 2, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 5, 3, 0, 7, 3, 2, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 2, 0, 7, 2, 2, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, 5, 2, 0, 6, 2, 0, BASE_GRAY, BASE_GRAY, false);
+            place(b, sink, clip, LAMP_BLOCK, 6, 2, 1);
+            genBox(b, sink, clip, 0, 1, 5, 2, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 3, 5, 2, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 2, 5, 0, 2, 7, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, 1, 2, 7, 2, 2, 7, BASE_GRAY, BASE_GRAY, false);
+            place(b, sink, clip, LAMP_BLOCK, 1, 2, 6);
+            genBox(b, sink, clip, 5, 1, 5, 7, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 5, 3, 5, 7, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 2, 5, 7, 2, 7, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, 5, 2, 7, 6, 2, 7, BASE_GRAY, BASE_GRAY, false);
+            place(b, sink, clip, LAMP_BLOCK, 6, 2, 6);
+            if (def.hasOpening[Dir3.SOUTH.ordinal()]) {
+                genBox(b, sink, clip, 3, 3, 0, 4, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+            } else {
+                genBox(b, sink, clip, 3, 3, 0, 4, 3, 1, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 3, 2, 0, 4, 2, 0, BASE_GRAY, BASE_GRAY, false);
+                genBox(b, sink, clip, 3, 1, 0, 4, 1, 1, BASE_LIGHT, BASE_LIGHT, false);
+            }
+            if (def.hasOpening[Dir3.NORTH.ordinal()]) {
+                genBox(b, sink, clip, 3, 3, 7, 4, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+            } else {
+                genBox(b, sink, clip, 3, 3, 6, 4, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 3, 2, 7, 4, 2, 7, BASE_GRAY, BASE_GRAY, false);
+                genBox(b, sink, clip, 3, 1, 6, 4, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            }
+            if (def.hasOpening[Dir3.WEST.ordinal()]) {
+                genBox(b, sink, clip, 0, 3, 3, 0, 3, 4, BASE_LIGHT, BASE_LIGHT, false);
+            } else {
+                genBox(b, sink, clip, 0, 3, 3, 1, 3, 4, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 0, 2, 3, 0, 2, 4, BASE_GRAY, BASE_GRAY, false);
+                genBox(b, sink, clip, 0, 1, 3, 1, 1, 4, BASE_LIGHT, BASE_LIGHT, false);
+            }
+            if (def.hasOpening[Dir3.EAST.ordinal()]) {
+                genBox(b, sink, clip, 7, 3, 3, 7, 3, 4, BASE_LIGHT, BASE_LIGHT, false);
+            } else {
+                genBox(b, sink, clip, 6, 3, 3, 7, 3, 4, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 7, 2, 3, 7, 2, 4, BASE_GRAY, BASE_GRAY, false);
+                genBox(b, sink, clip, 6, 1, 3, 7, 1, 4, BASE_LIGHT, BASE_LIGHT, false);
+            }
+        } else if (p.mainDesign == 1) {
+            genBox(b, sink, clip, 2, 1, 2, 2, 3, 2, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 2, 1, 5, 2, 3, 5, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 5, 1, 5, 5, 3, 5, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 5, 1, 2, 5, 3, 2, BASE_LIGHT, BASE_LIGHT, false);
+            place(b, sink, clip, LAMP_BLOCK, 2, 2, 2);
+            place(b, sink, clip, LAMP_BLOCK, 2, 2, 5);
+            place(b, sink, clip, LAMP_BLOCK, 5, 2, 5);
+            place(b, sink, clip, LAMP_BLOCK, 5, 2, 2);
+            genBox(b, sink, clip, 0, 1, 0, 1, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 1, 1, 0, 3, 1, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 1, 7, 1, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 1, 6, 0, 3, 6, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 6, 1, 7, 7, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 1, 6, 7, 3, 6, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 6, 1, 0, 7, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 1, 1, 7, 3, 1, BASE_LIGHT, BASE_LIGHT, false);
+            place(b, sink, clip, BASE_GRAY, 1, 2, 0);
+            place(b, sink, clip, BASE_GRAY, 0, 2, 1);
+            place(b, sink, clip, BASE_GRAY, 1, 2, 7);
+            place(b, sink, clip, BASE_GRAY, 0, 2, 6);
+            place(b, sink, clip, BASE_GRAY, 6, 2, 7);
+            place(b, sink, clip, BASE_GRAY, 7, 2, 6);
+            place(b, sink, clip, BASE_GRAY, 6, 2, 0);
+            place(b, sink, clip, BASE_GRAY, 7, 2, 1);
+            if (!def.hasOpening[Dir3.SOUTH.ordinal()]) {
+                genBox(b, sink, clip, 1, 3, 0, 6, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 1, 2, 0, 6, 2, 0, BASE_GRAY, BASE_GRAY, false);
+                genBox(b, sink, clip, 1, 1, 0, 6, 1, 0, BASE_LIGHT, BASE_LIGHT, false);
+            }
+            if (!def.hasOpening[Dir3.NORTH.ordinal()]) {
+                genBox(b, sink, clip, 1, 3, 7, 6, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 1, 2, 7, 6, 2, 7, BASE_GRAY, BASE_GRAY, false);
+                genBox(b, sink, clip, 1, 1, 7, 6, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            }
+            if (!def.hasOpening[Dir3.WEST.ordinal()]) {
+                genBox(b, sink, clip, 0, 3, 1, 0, 3, 6, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 0, 2, 1, 0, 2, 6, BASE_GRAY, BASE_GRAY, false);
+                genBox(b, sink, clip, 0, 1, 1, 0, 1, 6, BASE_LIGHT, BASE_LIGHT, false);
+            }
+            if (!def.hasOpening[Dir3.EAST.ordinal()]) {
+                genBox(b, sink, clip, 7, 3, 1, 7, 3, 6, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 7, 2, 1, 7, 2, 6, BASE_GRAY, BASE_GRAY, false);
+                genBox(b, sink, clip, 7, 1, 1, 7, 1, 6, BASE_LIGHT, BASE_LIGHT, false);
+            }
+        } else if (p.mainDesign == 2) {
+            genBox(b, sink, clip, 0, 1, 0, 0, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 1, 0, 7, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 1, 1, 0, 6, 1, 0, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 1, 1, 7, 6, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 2, 0, 0, 2, 7, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 7, 2, 0, 7, 2, 7, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 1, 2, 0, 6, 2, 0, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 1, 2, 7, 6, 2, 7, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 0, 3, 0, 0, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 3, 0, 7, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 1, 3, 0, 6, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 1, 3, 7, 6, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 0, 1, 3, 0, 2, 4, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 7, 1, 3, 7, 2, 4, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 3, 1, 0, 4, 2, 0, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 3, 1, 7, 4, 2, 7, BASE_BLACK, BASE_BLACK, false);
+            if (def.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 0, 4, 2, 0);
+            if (def.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 7, 4, 2, 7);
+            if (def.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 1, 3, 0, 2, 4);
+            if (def.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 7, 1, 3, 7, 2, 4);
+        }
+        if (centerPillar) {
+            genBox(b, sink, clip, 3, 1, 3, 4, 1, 4, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 3, 2, 3, 4, 2, 4, BASE_GRAY, BASE_GRAY, false);
+            genBox(b, sink, clip, 3, 3, 3, 4, 3, 4, BASE_LIGHT, BASE_LIGHT, false);
+        }
+    }
+
+    private static void renderSimpleTopRoom(Building b, Sink sink, int[] clip, RoomPiece p, VSurface.LegacyRandom random) {
+        RoomDefinition def = p.def;
+        if (def.index / 25 > 0) generateDefaultFloor(b, sink, clip, 0, 0, def.hasOpening[Dir3.DOWN.ordinal()]);
+        if (def.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 4, 1, 6, 4, 6, BASE_GRAY);
+        for (int x = 1; x <= 6; x++) {
+            for (int z = 1; z <= 6; z++) {
+                if (random.nextInt(3) != 0) {
+                    int y0 = 2 + (random.nextInt(4) == 0 ? 0 : 1);
+                    genBox(b, sink, clip, x, y0, z, x, 3, z, Block.WET_SPONGE, Block.WET_SPONGE, false);
+                }
+            }
+        }
+        genBox(b, sink, clip, 0, 1, 0, 0, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 7, 1, 0, 7, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 0, 6, 1, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 7, 6, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 0, 2, 0, 0, 2, 7, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 7, 2, 0, 7, 2, 7, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 1, 2, 0, 6, 2, 0, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 1, 2, 7, 6, 2, 7, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 0, 3, 0, 0, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 7, 3, 0, 7, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 3, 0, 6, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 3, 7, 6, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 0, 1, 3, 0, 2, 4, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 7, 1, 3, 7, 2, 4, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 3, 1, 0, 4, 2, 0, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 3, 1, 7, 4, 2, 7, BASE_BLACK, BASE_BLACK, false);
+        if (def.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 0, 4, 2, 0);
+    }
+
+    private static void renderEntryRoom(Building b, Sink sink, int[] clip, RoomDefinition def) {
+        genBox(b, sink, clip, 0, 3, 0, 2, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 3, 0, 7, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 0, 2, 0, 1, 2, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 2, 0, 7, 2, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 0, 1, 0, 0, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 7, 1, 0, 7, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 0, 1, 7, 7, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 0, 2, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 1, 0, 6, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+        if (def.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 7, 4, 2, 7);
+        if (def.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 1, 3, 1, 2, 4);
+        if (def.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 6, 1, 3, 7, 2, 4);
+    }
+
+    private static void renderDoubleXRoom(Building b, Sink sink, int[] clip, RoomPiece p) {
+        RoomDefinition west = p.def, east = west.connections[Dir3.EAST.ordinal()];
+        if (west.index / 25 > 0) {
+            generateDefaultFloor(b, sink, clip, 8, 0, east.hasOpening[Dir3.DOWN.ordinal()]);
+            generateDefaultFloor(b, sink, clip, 0, 0, west.hasOpening[Dir3.DOWN.ordinal()]);
+        }
+        if (west.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 4, 1, 7, 4, 6, BASE_GRAY);
+        if (east.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 8, 4, 1, 14, 4, 6, BASE_GRAY);
+        genBox(b, sink, clip, 0, 3, 0, 0, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 15, 3, 0, 15, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 3, 0, 15, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 3, 7, 14, 3, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 0, 2, 0, 0, 2, 7, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 15, 2, 0, 15, 2, 7, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 1, 2, 0, 15, 2, 0, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 1, 2, 7, 14, 2, 7, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 0, 1, 0, 0, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 15, 1, 0, 15, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 0, 15, 1, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 7, 14, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 1, 0, 10, 1, 4, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 2, 0, 9, 2, 3, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 5, 3, 0, 10, 3, 4, BASE_LIGHT, BASE_LIGHT, false);
+        place(b, sink, clip, LAMP_BLOCK, 6, 2, 3);
+        place(b, sink, clip, LAMP_BLOCK, 9, 2, 3);
+        if (west.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 0, 4, 2, 0);
+        if (west.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 7, 4, 2, 7);
+        if (west.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 1, 3, 0, 2, 4);
+        if (east.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 11, 1, 0, 12, 2, 0);
+        if (east.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 11, 1, 7, 12, 2, 7);
+        if (east.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 15, 1, 3, 15, 2, 4);
+    }
+
+    private static void renderDoubleXYRoom(Building b, Sink sink, int[] clip, RoomPiece p) {
+        RoomDefinition west = p.def, east = west.connections[Dir3.EAST.ordinal()];
+        RoomDefinition westUp = west.connections[Dir3.UP.ordinal()], eastUp = east.connections[Dir3.UP.ordinal()];
+        if (west.index / 25 > 0) {
+            generateDefaultFloor(b, sink, clip, 8, 0, east.hasOpening[Dir3.DOWN.ordinal()]);
+            generateDefaultFloor(b, sink, clip, 0, 0, west.hasOpening[Dir3.DOWN.ordinal()]);
+        }
+        if (westUp.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 8, 1, 7, 8, 6, BASE_GRAY);
+        if (eastUp.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 8, 8, 1, 14, 8, 6, BASE_GRAY);
+        for (int y = 1; y <= 7; y++) {
+            Block block = (y == 2 || y == 6) ? BASE_GRAY : BASE_LIGHT;
+            genBox(b, sink, clip, 0, y, 0, 0, y, 7, block, block, false);
+            genBox(b, sink, clip, 15, y, 0, 15, y, 7, block, block, false);
+            genBox(b, sink, clip, 1, y, 0, 15, y, 0, block, block, false);
+            genBox(b, sink, clip, 1, y, 7, 14, y, 7, block, block, false);
+        }
+        genBox(b, sink, clip, 2, 1, 3, 2, 7, 4, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 3, 1, 2, 4, 7, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 3, 1, 5, 4, 7, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 13, 1, 3, 13, 7, 4, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 11, 1, 2, 12, 7, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 11, 1, 5, 12, 7, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 1, 3, 5, 3, 4, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 1, 3, 10, 3, 4, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 7, 2, 10, 7, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 5, 2, 5, 7, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 5, 2, 10, 7, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 5, 5, 5, 7, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 10, 5, 5, 10, 7, 5, BASE_LIGHT, BASE_LIGHT, false);
+        place(b, sink, clip, BASE_LIGHT, 6, 6, 2);
+        place(b, sink, clip, BASE_LIGHT, 9, 6, 2);
+        place(b, sink, clip, BASE_LIGHT, 6, 6, 5);
+        place(b, sink, clip, BASE_LIGHT, 9, 6, 5);
+        genBox(b, sink, clip, 5, 4, 3, 6, 4, 4, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 9, 4, 3, 10, 4, 4, BASE_LIGHT, BASE_LIGHT, false);
+        place(b, sink, clip, LAMP_BLOCK, 5, 4, 2);
+        place(b, sink, clip, LAMP_BLOCK, 5, 4, 5);
+        place(b, sink, clip, LAMP_BLOCK, 10, 4, 2);
+        place(b, sink, clip, LAMP_BLOCK, 10, 4, 5);
+        if (west.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 0, 4, 2, 0);
+        if (west.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 7, 4, 2, 7);
+        if (west.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 1, 3, 0, 2, 4);
+        if (east.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 11, 1, 0, 12, 2, 0);
+        if (east.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 11, 1, 7, 12, 2, 7);
+        if (east.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 15, 1, 3, 15, 2, 4);
+        if (westUp.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 5, 0, 4, 6, 0);
+        if (westUp.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 5, 7, 4, 6, 7);
+        if (westUp.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 5, 3, 0, 6, 4);
+        if (eastUp.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 11, 5, 0, 12, 6, 0);
+        if (eastUp.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 11, 5, 7, 12, 6, 7);
+        if (eastUp.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 15, 5, 3, 15, 6, 4);
+    }
+
+    private static void renderDoubleYRoom(Building b, Sink sink, int[] clip, RoomPiece p) {
+        RoomDefinition definition = p.def;
+        if (definition.index / 25 > 0) generateDefaultFloor(b, sink, clip, 0, 0, definition.hasOpening[Dir3.DOWN.ordinal()]);
+        RoomDefinition above = definition.connections[Dir3.UP.ordinal()];
+        if (above.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 8, 1, 6, 8, 6, BASE_GRAY);
+        genBox(b, sink, clip, 0, 4, 0, 0, 4, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 7, 4, 0, 7, 4, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 4, 0, 6, 4, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 4, 7, 6, 4, 7, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 2, 4, 1, 2, 4, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 4, 2, 1, 4, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 4, 1, 5, 4, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 4, 2, 6, 4, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 2, 4, 5, 2, 4, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 4, 5, 1, 4, 5, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 4, 5, 5, 4, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 4, 5, 6, 4, 5, BASE_LIGHT, BASE_LIGHT, false);
+        for (int y = 1; y <= 5; y += 4) {
+            int z = 0;
+            if (definition.hasOpening[Dir3.SOUTH.ordinal()]) {
+                genBox(b, sink, clip, 2, y, z, 2, y + 2, z, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 5, y, z, 5, y + 2, z, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 3, y + 2, z, 4, y + 2, z, BASE_LIGHT, BASE_LIGHT, false);
+            } else {
+                genBox(b, sink, clip, 0, y, z, 7, y + 2, z, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 0, y + 1, z, 7, y + 1, z, BASE_GRAY, BASE_GRAY, false);
+            }
+            int z1 = 7;
+            if (definition.hasOpening[Dir3.NORTH.ordinal()]) {
+                genBox(b, sink, clip, 2, y, z1, 2, y + 2, z1, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 5, y, z1, 5, y + 2, z1, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 3, y + 2, z1, 4, y + 2, z1, BASE_LIGHT, BASE_LIGHT, false);
+            } else {
+                genBox(b, sink, clip, 0, y, z1, 7, y + 2, z1, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, 0, y + 1, z1, 7, y + 1, z1, BASE_GRAY, BASE_GRAY, false);
+            }
+            int x = 0;
+            if (definition.hasOpening[Dir3.WEST.ordinal()]) {
+                genBox(b, sink, clip, x, y, 2, x, y + 2, 2, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, x, y, 5, x, y + 2, 5, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, x, y + 2, 3, x, y + 2, 4, BASE_LIGHT, BASE_LIGHT, false);
+            } else {
+                genBox(b, sink, clip, x, y, 0, x, y + 2, 7, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, x, y + 1, 0, x, y + 1, 7, BASE_GRAY, BASE_GRAY, false);
+            }
+            int x1 = 7;
+            if (definition.hasOpening[Dir3.EAST.ordinal()]) {
+                genBox(b, sink, clip, x1, y, 2, x1, y + 2, 2, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, x1, y, 5, x1, y + 2, 5, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, x1, y + 2, 3, x1, y + 2, 4, BASE_LIGHT, BASE_LIGHT, false);
+            } else {
+                genBox(b, sink, clip, x1, y, 0, x1, y + 2, 7, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, x1, y + 1, 0, x1, y + 1, 7, BASE_GRAY, BASE_GRAY, false);
+            }
+            definition = above;
+        }
+    }
+
+    private static void renderDoubleYZRoom(Building b, Sink sink, int[] clip, RoomPiece p) {
+        RoomDefinition south = p.def, north = south.connections[Dir3.NORTH.ordinal()];
+        RoomDefinition southUp = south.connections[Dir3.UP.ordinal()], northUp = north.connections[Dir3.UP.ordinal()];
+        if (south.index / 25 > 0) {
+            generateDefaultFloor(b, sink, clip, 0, 8, north.hasOpening[Dir3.DOWN.ordinal()]);
+            generateDefaultFloor(b, sink, clip, 0, 0, south.hasOpening[Dir3.DOWN.ordinal()]);
+        }
+        if (southUp.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 8, 1, 6, 8, 7, BASE_GRAY);
+        if (northUp.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 8, 8, 6, 8, 14, BASE_GRAY);
+        for (int y = 1; y <= 7; y++) {
+            Block block = (y == 2 || y == 6) ? BASE_GRAY : BASE_LIGHT;
+            genBox(b, sink, clip, 0, y, 0, 0, y, 15, block, block, false);
+            genBox(b, sink, clip, 7, y, 0, 7, y, 15, block, block, false);
+            genBox(b, sink, clip, 1, y, 0, 6, y, 0, block, block, false);
+            genBox(b, sink, clip, 1, y, 15, 6, y, 15, block, block, false);
+        }
+        for (int y = 1; y <= 7; y++) {
+            Block block = (y == 2 || y == 6) ? LAMP_BLOCK : BASE_BLACK;
+            genBox(b, sink, clip, 3, y, 7, 4, y, 8, block, block, false);
+        }
+        if (south.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 0, 4, 2, 0);
+        if (south.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 7, 1, 3, 7, 2, 4);
+        if (south.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 1, 3, 0, 2, 4);
+        if (north.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 15, 4, 2, 15);
+        if (north.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 1, 11, 0, 2, 12);
+        if (north.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 7, 1, 11, 7, 2, 12);
+        if (southUp.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 5, 0, 4, 6, 0);
+        if (southUp.hasOpening[Dir3.EAST.ordinal()]) {
+            genWaterBox(b, sink, clip, 63, 7, 5, 3, 7, 6, 4);
+            genBox(b, sink, clip, 5, 4, 2, 6, 4, 5, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 6, 1, 2, 6, 3, 2, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 6, 1, 5, 6, 3, 5, BASE_LIGHT, BASE_LIGHT, false);
+        }
+        if (southUp.hasOpening[Dir3.WEST.ordinal()]) {
+            genWaterBox(b, sink, clip, 63, 0, 5, 3, 0, 6, 4);
+            genBox(b, sink, clip, 1, 4, 2, 2, 4, 5, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 1, 1, 2, 1, 3, 2, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 1, 1, 5, 1, 3, 5, BASE_LIGHT, BASE_LIGHT, false);
+        }
+        if (northUp.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 5, 15, 4, 6, 15);
+        if (northUp.hasOpening[Dir3.WEST.ordinal()]) {
+            genWaterBox(b, sink, clip, 63, 0, 5, 11, 0, 6, 12);
+            genBox(b, sink, clip, 1, 4, 10, 2, 4, 13, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 1, 1, 10, 1, 3, 10, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 1, 1, 13, 1, 3, 13, BASE_LIGHT, BASE_LIGHT, false);
+        }
+        if (northUp.hasOpening[Dir3.EAST.ordinal()]) {
+            genWaterBox(b, sink, clip, 63, 7, 5, 11, 7, 6, 12);
+            genBox(b, sink, clip, 5, 4, 10, 6, 4, 13, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 6, 1, 10, 6, 3, 10, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 6, 1, 13, 6, 3, 13, BASE_LIGHT, BASE_LIGHT, false);
+        }
+    }
+
+    private static void renderDoubleZRoom(Building b, Sink sink, int[] clip, RoomPiece p) {
+        RoomDefinition south = p.def, north = south.connections[Dir3.NORTH.ordinal()];
+        if (south.index / 25 > 0) {
+            generateDefaultFloor(b, sink, clip, 0, 8, north.hasOpening[Dir3.DOWN.ordinal()]);
+            generateDefaultFloor(b, sink, clip, 0, 0, south.hasOpening[Dir3.DOWN.ordinal()]);
+        }
+        if (south.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 4, 1, 6, 4, 7, BASE_GRAY);
+        if (north.connections[Dir3.UP.ordinal()] == null) genBoxOnFillOnly(b, sink, clip, 1, 4, 8, 6, 4, 14, BASE_GRAY);
+        genBox(b, sink, clip, 0, 3, 0, 0, 3, 15, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 7, 3, 0, 7, 3, 15, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 3, 0, 7, 3, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 3, 15, 6, 3, 15, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 0, 2, 0, 0, 2, 15, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 7, 2, 0, 7, 2, 15, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 1, 2, 0, 7, 2, 0, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 1, 2, 15, 6, 2, 15, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 0, 1, 0, 0, 1, 15, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 7, 1, 0, 7, 1, 15, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 0, 7, 1, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 15, 6, 1, 15, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 1, 1, 1, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 1, 1, 6, 1, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 3, 1, 1, 3, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 3, 1, 6, 3, 2, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 1, 13, 1, 1, 14, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 1, 13, 6, 1, 14, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 3, 13, 1, 3, 14, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, 3, 13, 6, 3, 14, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 2, 1, 6, 2, 3, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 1, 6, 5, 3, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 2, 1, 9, 2, 3, 9, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 1, 9, 5, 3, 9, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 3, 2, 6, 4, 2, 6, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 3, 2, 9, 4, 2, 9, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 2, 2, 7, 2, 2, 8, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 5, 2, 7, 5, 2, 8, BASE_LIGHT, BASE_LIGHT, false);
+        place(b, sink, clip, LAMP_BLOCK, 2, 2, 5);
+        place(b, sink, clip, LAMP_BLOCK, 5, 2, 5);
+        place(b, sink, clip, LAMP_BLOCK, 2, 2, 10);
+        place(b, sink, clip, LAMP_BLOCK, 5, 2, 10);
+        place(b, sink, clip, BASE_LIGHT, 2, 3, 5);
+        place(b, sink, clip, BASE_LIGHT, 5, 3, 5);
+        place(b, sink, clip, BASE_LIGHT, 2, 3, 10);
+        place(b, sink, clip, BASE_LIGHT, 5, 3, 10);
+        if (south.hasOpening[Dir3.SOUTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 0, 4, 2, 0);
+        if (south.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 7, 1, 3, 7, 2, 4);
+        if (south.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 1, 3, 0, 2, 4);
+        if (north.hasOpening[Dir3.NORTH.ordinal()]) genWaterBox(b, sink, clip, 63, 3, 1, 15, 4, 2, 15);
+        if (north.hasOpening[Dir3.WEST.ordinal()]) genWaterBox(b, sink, clip, 63, 0, 1, 11, 0, 2, 12);
+        if (north.hasOpening[Dir3.EAST.ordinal()]) genWaterBox(b, sink, clip, 63, 7, 1, 11, 7, 2, 12);
+    }
+
+    private static void renderWingRoom(Building b, Sink sink, int[] clip, int mainDesign, boolean flipped) {
+        if (mainDesign == 0) {
+            for (int i = 0; i < 4; i++) genBox(b, sink, clip, 10 - i, 3 - i, 20 - i, 12 + i, 3 - i, 20, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 0, 6, 15, 0, 16, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 6, 0, 6, 6, 3, 20, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 16, 0, 6, 16, 3, 20, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 1, 7, 7, 1, 20, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 15, 1, 7, 15, 1, 20, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 7, 1, 6, 9, 3, 6, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 13, 1, 6, 15, 3, 6, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 8, 1, 7, 9, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 13, 1, 7, 14, 1, 7, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 9, 0, 5, 13, 0, 5, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 10, 0, 7, 12, 0, 7, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 8, 0, 10, 8, 0, 12, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 14, 0, 10, 14, 0, 12, BASE_BLACK, BASE_BLACK, false);
+            for (int z = 18; z >= 7; z -= 3) {
+                place(b, sink, clip, LAMP_BLOCK, 6, 3, z);
+                place(b, sink, clip, LAMP_BLOCK, 16, 3, z);
+            }
+            place(b, sink, clip, LAMP_BLOCK, 10, 0, 10);
+            place(b, sink, clip, LAMP_BLOCK, 12, 0, 10);
+            place(b, sink, clip, LAMP_BLOCK, 10, 0, 12);
+            place(b, sink, clip, LAMP_BLOCK, 12, 0, 12);
+            place(b, sink, clip, LAMP_BLOCK, 8, 3, 6);
+            place(b, sink, clip, LAMP_BLOCK, 14, 3, 6);
+            place(b, sink, clip, BASE_LIGHT, 4, 2, 4);
+            place(b, sink, clip, LAMP_BLOCK, 4, 1, 4);
+            place(b, sink, clip, BASE_LIGHT, 4, 0, 4);
+            place(b, sink, clip, BASE_LIGHT, 18, 2, 4);
+            place(b, sink, clip, LAMP_BLOCK, 18, 1, 4);
+            place(b, sink, clip, BASE_LIGHT, 18, 0, 4);
+            place(b, sink, clip, BASE_LIGHT, 4, 2, 18);
+            place(b, sink, clip, LAMP_BLOCK, 4, 1, 18);
+            place(b, sink, clip, BASE_LIGHT, 4, 0, 18);
+            place(b, sink, clip, BASE_LIGHT, 18, 2, 18);
+            place(b, sink, clip, LAMP_BLOCK, 18, 1, 18);
+            place(b, sink, clip, BASE_LIGHT, 18, 0, 18);
+            place(b, sink, clip, BASE_LIGHT, 9, 7, 20);
+            place(b, sink, clip, BASE_LIGHT, 13, 7, 20);
+            genBox(b, sink, clip, 6, 0, 21, 7, 4, 21, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 15, 0, 21, 16, 4, 21, BASE_LIGHT, BASE_LIGHT, false);
+            // spawnElder(11,2,16) omitted: established no-worldgen-entity-spawn precedent
+        } else {
+            genBox(b, sink, clip, 9, 3, 18, 13, 3, 20, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 9, 0, 18, 9, 2, 18, BASE_LIGHT, BASE_LIGHT, false);
+            genBox(b, sink, clip, 13, 0, 18, 13, 2, 18, BASE_LIGHT, BASE_LIGHT, false);
+            int x = 9;
+            for (int i = 0; i < 2; i++) {
+                place(b, sink, clip, BASE_LIGHT, x, 6, 20);
+                place(b, sink, clip, LAMP_BLOCK, x, 5, 20);
+                place(b, sink, clip, BASE_LIGHT, x, 4, 20);
+                x = 13;
+            }
+            genBox(b, sink, clip, 7, 3, 7, 15, 3, 14, BASE_LIGHT, BASE_LIGHT, false);
+            int cx = 10;
+            for (int i = 0; i < 2; i++) {
+                genBox(b, sink, clip, cx, 0, 10, cx, 6, 10, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, cx, 0, 12, cx, 6, 12, BASE_LIGHT, BASE_LIGHT, false);
+                place(b, sink, clip, LAMP_BLOCK, cx, 0, 10);
+                place(b, sink, clip, LAMP_BLOCK, cx, 0, 12);
+                place(b, sink, clip, LAMP_BLOCK, cx, 4, 10);
+                place(b, sink, clip, LAMP_BLOCK, cx, 4, 12);
+                cx = 12;
+            }
+            int cx2 = 8;
+            for (int i = 0; i < 2; i++) {
+                genBox(b, sink, clip, cx2, 0, 7, cx2, 2, 7, BASE_LIGHT, BASE_LIGHT, false);
+                genBox(b, sink, clip, cx2, 0, 14, cx2, 2, 14, BASE_LIGHT, BASE_LIGHT, false);
+                cx2 = 14;
+            }
+            genBox(b, sink, clip, 8, 3, 8, 8, 3, 13, BASE_BLACK, BASE_BLACK, false);
+            genBox(b, sink, clip, 14, 3, 8, 14, 3, 13, BASE_BLACK, BASE_BLACK, false);
+            // spawnElder(11,5,13) omitted: established no-worldgen-entity-spawn precedent
+        }
+    }
+
+    private static void renderPenthouse(Building b, Sink sink, int[] clip, int seaLevel) {
+        genBox(b, sink, clip, 2, -1, 2, 11, -1, 11, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 0, -1, 0, 1, -1, 11, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 12, -1, 0, 13, -1, 11, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 2, -1, 0, 11, -1, 1, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 2, -1, 12, 11, -1, 13, BASE_GRAY, BASE_GRAY, false);
+        genBox(b, sink, clip, 0, 0, 0, 0, 0, 13, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 13, 0, 0, 13, 0, 13, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 0, 0, 12, 0, 0, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 1, 0, 13, 12, 0, 13, BASE_LIGHT, BASE_LIGHT, false);
+        for (int i = 2; i <= 11; i += 3) {
+            place(b, sink, clip, LAMP_BLOCK, 0, 0, i);
+            place(b, sink, clip, LAMP_BLOCK, 13, 0, i);
+            place(b, sink, clip, LAMP_BLOCK, i, 0, 0);
+        }
+        genBox(b, sink, clip, 2, 0, 3, 4, 0, 9, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 9, 0, 3, 11, 0, 9, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 4, 0, 9, 9, 0, 11, BASE_LIGHT, BASE_LIGHT, false);
+        place(b, sink, clip, BASE_LIGHT, 5, 0, 8);
+        place(b, sink, clip, BASE_LIGHT, 8, 0, 8);
+        place(b, sink, clip, BASE_LIGHT, 10, 0, 10);
+        place(b, sink, clip, BASE_LIGHT, 3, 0, 10);
+        genBox(b, sink, clip, 3, 0, 3, 3, 0, 7, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 10, 0, 3, 10, 0, 7, BASE_BLACK, BASE_BLACK, false);
+        genBox(b, sink, clip, 6, 0, 10, 7, 0, 10, BASE_BLACK, BASE_BLACK, false);
+        int x = 3;
+        for (int i = 0; i < 2; i++) {
+            for (int z = 2; z <= 8; z += 3) genBox(b, sink, clip, x, 0, z, x, 2, z, BASE_LIGHT, BASE_LIGHT, false);
+            x = 10;
+        }
+        genBox(b, sink, clip, 5, 0, 10, 5, 2, 10, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 8, 0, 10, 8, 2, 10, BASE_LIGHT, BASE_LIGHT, false);
+        genBox(b, sink, clip, 6, -1, 7, 7, -1, 8, BASE_BLACK, BASE_BLACK, false);
+        genWaterBox(b, sink, clip, seaLevel, 6, -1, 3, 7, -1, 4);
+        // spawnElder(6,1,6) omitted: established no-worldgen-entity-spawn precedent
     }
 
     private static void generateWing(Building b, Sink sink, int[] clip, int seaLevel, boolean isFlipped, int xoff) {
@@ -732,7 +1482,7 @@ public final class VMonumentGen {
         VSurface.LegacyRandom random = new VSurface.LegacyRandom(0L);
         random.setLargeFeatureSeed(seed, chunkX, chunkZ);
         Graph graph = generateRoomGraph(random);
-        fitRoomShapes(graph);
+        fitRoomShapes(graph, random);
         return graph;
     }
 
@@ -742,6 +1492,40 @@ public final class VMonumentGen {
         for (int cx = minCX; cx <= maxCX; cx++) {
             for (int cz = minCZ; cz <= maxCZ; cz++) {
                 renderShell(b, sink, seaLevel, cx, cz);
+            }
+        }
+    }
+
+    /**
+     * Test hook: renders shell + every room-content piece across the whole monument (58x58 shell
+     * + wings/penthouse extending beyond it). Draws orientation THEN the room graph from one
+     * continuous random stream, matching real vanilla's exact construction order
+     * (OceanMonumentStructure.createTopPiece draws orientation, then passes the SAME random into
+     * the MonumentBuilding constructor for generateRoomGraph + the fitter loop).
+     */
+    public static void testRenderFull(long seed, int chunkX, int chunkZ, int west, int minY, int north, Sink sink, int seaLevel) {
+        VSurface.LegacyRandom random = new VSurface.LegacyRandom(0L);
+        random.setLargeFeatureSeed(seed, chunkX, chunkZ);
+        VTemplate.Dir orientation = switch (random.nextInt(4)) {
+            case 0 -> VTemplate.Dir.SOUTH;
+            case 1 -> VTemplate.Dir.WEST;
+            case 2 -> VTemplate.Dir.NORTH;
+            default -> VTemplate.Dir.EAST;
+        };
+        Graph graph = generateRoomGraph(random);
+        fitRoomShapes(graph, random);
+
+        Building building = makeBuilding(west, minY, north, orientation);
+        List<RoomPiece> rooms = resolveRoomPieces(building, graph);
+        int minCX = building.minX >> 4, maxCX = building.maxX >> 4, minCZ = building.minZ >> 4, maxCZ = building.maxZ >> 4;
+        for (RoomPiece p : rooms) {
+            minCX = Math.min(minCX, p.box.minX >> 4); maxCX = Math.max(maxCX, p.box.maxX >> 4);
+            minCZ = Math.min(minCZ, p.box.minZ >> 4); maxCZ = Math.max(maxCZ, p.box.maxZ >> 4);
+        }
+        for (int cx = minCX; cx <= maxCX; cx++) {
+            for (int cz = minCZ; cz <= maxCZ; cz++) {
+                renderShell(building, sink, seaLevel, cx, cz);
+                renderRooms(rooms, seed, sink, seaLevel, cx, cz);
             }
         }
     }

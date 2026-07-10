@@ -931,6 +931,63 @@ public final class SelfTest {
             check("ocean monument shell real generation: re-rendering the same chunk range is idempotent", placed.equals(placed2));
         }
 
+        // Ocean monument FULL generation: shell + all ~15 room-content piece types, dispatched by
+        // real room shape. Orientation is drawn THEN the room graph, from one continuous random
+        // stream, matching real vanilla's exact construction order (OceanMonumentStructure.
+        // createTopPiece draws orientation, then passes the SAME random into the MonumentBuilding
+        // constructor for generateRoomGraph + the fitter loop). gold_block is a clean deterministic
+        // regression anchor: CoreRoom is always exactly one per monument and its gold box is a
+        // fixed 2x2x2, so it must be exactly 8 regardless of seed (confirmed across 5 seeds via a
+        // standalone probe before writing this check).
+        {
+            var placed = new java.util.HashMap<String, Block>();
+            var sink = new dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.Sink() {
+                public Block get(int x, int y, int z) {
+                    Block bl = placed.get(x + "," + y + "," + z);
+                    return bl == null ? Block.AIR : bl;
+                }
+                public void set(int x, int y, int z, Block bl) { placed.put(x + "," + y + "," + z, bl); }
+            };
+            dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.testRenderFull(20260710L, 0, 0, 0, 30, 0, sink, 63);
+            long gold = placed.values().stream().filter(bl -> bl.compare(Block.GOLD_BLOCK)).count();
+            long lanterns = placed.values().stream().filter(bl -> bl.compare(Block.SEA_LANTERN)).count();
+            long prismarineBricks = placed.values().stream().filter(bl -> bl.compare(Block.PRISMARINE_BRICKS)).count();
+            check("ocean monument full real generation: gold_block=" + gold + " (CoreRoom's fixed 2x2x2 box, always exactly 8)",
+                    gold == 8);
+            check("ocean monument full real generation: sea_lantern=" + lanterns + ", prismarine_bricks=" + prismarineBricks,
+                    lanterns == 154 && prismarineBricks == 40620);
+
+            var placed2 = new java.util.HashMap<String, Block>();
+            var sink2 = new dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.Sink() {
+                public Block get(int x, int y, int z) {
+                    Block bl = placed2.get(x + "," + y + "," + z);
+                    return bl == null ? Block.AIR : bl;
+                }
+                public void set(int x, int y, int z, Block bl) { placed2.put(x + "," + y + "," + z, bl); }
+            };
+            dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.testRenderFull(20260710L, 0, 0, 0, 30, 0, sink2, 63);
+            check("ocean monument full real generation: re-rendering the same chunk range is idempotent", placed.equals(placed2));
+
+            // gold_block invariant across 5 different seeds — a stronger cross-seed regression check
+            // than a single-seed count, since CoreRoom's uniqueness is a structural guarantee, not
+            // a seed-specific coincidence.
+            boolean allGold8 = true;
+            for (long seed : new long[]{1L, 42L, 999999L, -5000L, 20260710L}) {
+                var p3 = new java.util.HashMap<String, Block>();
+                var s3 = new dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.Sink() {
+                    public Block get(int x, int y, int z) {
+                        Block bl = p3.get(x + "," + y + "," + z);
+                        return bl == null ? Block.AIR : bl;
+                    }
+                    public void set(int x, int y, int z, Block bl) { p3.put(x + "," + y + "," + z, bl); }
+                };
+                dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.testRenderFull(seed, 0, 0, 0, 30, 0, s3, 63);
+                long g = p3.values().stream().filter(bl -> bl.compare(Block.GOLD_BLOCK)).count();
+                if (g != 8) allGold8 = false;
+            }
+            check("ocean monument full real generation: gold_block==8 holds across 5 different seeds", allGold8);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }
