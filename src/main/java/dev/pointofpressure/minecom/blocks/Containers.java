@@ -105,6 +105,8 @@ public final class Containers {
             dev.pointofpressure.minecom.redstone.Hoppers.remove(instance, pos);
         } else if (key.equals("brewing_stand")) {
             Brewing.onRemoved(instance, pos);
+        } else if (key.equals("lectern")) {
+            Lectern.onBlockRemoved(instance, pos);
         }
     }
 

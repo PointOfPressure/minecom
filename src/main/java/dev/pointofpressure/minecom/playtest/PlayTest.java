@@ -159,6 +159,8 @@ public final class PlayTest {
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
         scenario("composter: fills toward ready, then empties into bone_meal", PlayTest::scenarioComposter);
+        scenario("jukebox: playing emits a direct signal, disc keeps its comparator reading, eject drops it", PlayTest::scenarioJukebox);
+        scenario("lectern: books drives a real page-count comparator signal, page-turns pulse redstone, taking returns the book", PlayTest::scenarioLectern);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -192,6 +194,12 @@ public final class PlayTest {
     }
 
     private static void resetPlayer() {
+        // LivingEntity.setHealth only auto-kills on health<=0; it never auto-revives, so a
+        // player left dead by an earlier scenario (e.g. an unlucky natural-spawn mob attack)
+        // would silently stay dead forever after — every future damage() call becomes a no-op
+        // via LivingEntity.damage's "if (isDead()) return false" guard, since only respawn()
+        // (or an explicit isDead reset) actually clears the flag.
+        if (player.isDead()) player.respawn();
         player.getInventory().clear();
         player.setHealth(20);
         player.setFood(20);
@@ -412,6 +420,108 @@ public final class PlayTest {
         check("harvesting a berry-bearing cave vine drops glow_berries", glowBerriesDropped);
         check("harvesting clears the vine's berries state", "false".equals(world.getBlock(vine).getProperty("berries")));
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * LecternBlock: a real writable-book with 3 pages placed on a lectern (has_book set),
+     * paging forward via the real button-click packet (button 2 = next page) advances the
+     * comparator's real page-progress formula and pulses a direct redstone signal for 2 ticks,
+     * and taking the book (button 3) resets state and returns it to the player.
+     */
+    private static void scenarioLectern() {
+        clearEntitiesExceptPlayer();
+        int z = 110;
+        BlockVec lecternPos = new BlockVec(49, Y + 1, z);
+        rs(49, Y + 1, z, Block.LECTERN);
+        rs(50, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+
+        var pages = java.util.List.of(
+                new net.minestom.server.item.book.FilteredText<>("page one", null),
+                new net.minestom.server.item.book.FilteredText<>("page two", null),
+                new net.minestom.server.item.book.FilteredText<>("page three", null));
+        ItemStack book = ItemStack.of(Material.WRITABLE_BOOK)
+                .with(DataComponents.WRITABLE_BOOK_CONTENT, new net.minestom.server.item.component.WritableBookContent(pages));
+
+        useItemOnBlock(book, lecternPos, BlockFace.TOP);
+        check("placing a book sets has_book", "true".equals(prop(49, Y + 1, z, "has_book")));
+        check("page 0 of 3 (progress 0) gives comparator output 1 (has_book alone)",
+                dev.pointofpressure.minecom.blocks.Lectern.comparatorOutput(lecternPos, world.getBlock(lecternPos)) == 1);
+
+        interact(lecternPos);
+        boolean opened = player.getOpenInventory() instanceof Inventory;
+        check("right-clicking a book-bearing lectern opens the reading menu", opened);
+        if (!opened) return;
+        var inv = (Inventory) player.getOpenInventory();
+
+        EventDispatcher.call(new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, inv, 2)); // next page
+        tick(1);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(49, Y + 1, z));
+        check("a page turn pulses a direct redstone signal (lights the adjacent lamp for 2 ticks)",
+                waitFor(() -> "true".equals(prop(50, Y + 1, z, "lit")), 2000));
+        check("the page-turn pulse clears itself after 2 ticks",
+                waitFor(() -> "false".equals(prop(50, Y + 1, z, "lit")), 2000));
+
+        EventDispatcher.call(new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, inv, 2)); // page 2 (last page, index 2 of 0-2)
+        tick(1);
+        check("on the last page (progress 1.0) the comparator reads its maximum (15)",
+                dev.pointofpressure.minecom.blocks.Lectern.comparatorOutput(lecternPos, world.getBlock(lecternPos)) == 15);
+
+        EventDispatcher.call(new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, inv, 3)); // take book
+        tick(1);
+        check("taking the book clears has_book", "false".equals(prop(49, Y + 1, z, "has_book")));
+        boolean bookReturned = java.util.Arrays.stream(player.getInventory().getItemStacks())
+                .anyMatch(s -> s.material() == Material.WRITABLE_BOOK);
+        check("taking the book returns it to the player's inventory", bookReturned);
+        check("an empty lectern's comparator reads 0",
+                dev.pointofpressure.minecom.blocks.Lectern.comparatorOutput(lecternPos, world.getBlock(lecternPos)) == 0);
+
+        player.closeInventory();
+        clearEntitiesExceptPlayer();
+        world.setBlock(49, Y + 1, z, Block.AIR);
+        world.setBlock(50, Y + 1, z, Block.AIR);
+        resetPlayer();
+    }
+
+    /**
+     * JukeboxBlock: inserting a disc plays it (direct 15-signal to an adjacent lamp, comparator
+     * reads the disc's real fixed value — MUSIC_DISC_CAT is 2 per JukeboxSongs.bootstrap),
+     * and ejecting it drops the disc item and both signals return to 0.
+     */
+    private static void scenarioJukebox() {
+        clearEntitiesExceptPlayer();
+        int z = 100;
+        rs(49, Y + 1, z, Block.JUKEBOX);
+        rs(50, Y + 1, z, Block.REDSTONE_LAMP);
+        rs(48, Y + 1, z, Block.COMPARATOR.withProperty("facing", "east"));
+        rs(47, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+
+        useItemOnBlock(ItemStack.of(Material.MUSIC_DISC_CAT), new BlockVec(49, Y + 1, z), BlockFace.TOP);
+        check("inserting a disc sets has_record", "true".equals(prop(49, Y + 1, z, "has_record")));
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(49, Y + 1, z));
+        check("a playing jukebox emits a direct 15-signal (lights the adjacent lamp)",
+                waitFor(() -> "true".equals(prop(50, Y + 1, z, "lit")), 3000));
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(48, Y + 1, z));
+        check("a comparator reads the disc's real comparator_output (music_disc_cat = 2)",
+                waitFor(() -> "true".equals(prop(47, Y + 1, z, "lit")), 3000));
+
+        interact(new BlockVec(49, Y + 1, z));
+        check("ejecting resets has_record to false", "false".equals(prop(49, Y + 1, z, "has_record")));
+        boolean discDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.MUSIC_DISC_CAT), 1000);
+        check("ejecting drops the music_disc_cat item", discDropped);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(49, Y + 1, z));
+        check("an empty jukebox no longer emits a direct signal",
+                waitFor(() -> "false".equals(prop(50, Y + 1, z, "lit")), 3000));
+
+        clearEntitiesExceptPlayer();
+        world.setBlock(49, Y + 1, z, Block.AIR);
+        world.setBlock(50, Y + 1, z, Block.AIR);
+        world.setBlock(48, Y + 1, z, Block.AIR);
+        world.setBlock(47, Y + 1, z, Block.AIR);
         resetPlayer();
     }
 
@@ -2889,9 +2999,10 @@ public final class PlayTest {
     private static void scenarioDeath() {
         player.getInventory().addItemStack(ItemStack.of(Material.DIAMOND, 5));
         player.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 1000);
-        tick(2);
-        boolean dropped = countItems(player.getPosition(), 6, Material.DIAMOND) >= 1;
-        check("death drops inventory", dropped && player.isDead());
+        Pos deathPos = player.getPosition();
+        boolean dropped = waitFor(() -> countItems(deathPos, 6, Material.DIAMOND) >= 1, 5000);
+        boolean isDead = waitFor(player::isDead, 5000);
+        check("death drops inventory", dropped && isDead);
         player.respawn();
         tick(3);
         check("respawn restores health and hunger",

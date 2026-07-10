@@ -188,6 +188,14 @@ public final class Redstone {
                 if (!"true".equals(source.getProperty("powered"))) return 0;
                 return sameDir(opp(facingVec(source.getProperty("facing"))), toTarget) ? 15 : 0;
             }
+            case "jukebox" -> {
+                // JukeboxBlock.isSignalSource/getSignal: 15 in every direction while a song plays
+                return dev.pointofpressure.minecom.blocks.Jukebox.isPlaying(sourcePos) ? 15 : 0;
+            }
+            case "lectern" -> {
+                // LecternBlock.getSignal: 15 in every direction during the 2-tick page-turn pulse
+                return "true".equals(source.getProperty("powered")) ? 15 : 0;
+            }
             case "redstone_wire" -> {
                 int power = Integer.parseInt(source.getProperty("power"));
                 if (power == 0) return 0;
@@ -631,6 +639,12 @@ public final class Redstone {
             inv = DISPENSERS.get(Containers.posKey(pos));
         } else if (key.equals("hopper")) {
             inv = Hoppers.HOPPERS.get(Containers.posKey(pos));
+        } else if (key.equals("composter")) {
+            return Integer.parseInt(block.getProperty("level"));
+        } else if (key.equals("jukebox")) {
+            return dev.pointofpressure.minecom.blocks.Jukebox.comparatorOutput(pos, block);
+        } else if (key.equals("lectern")) {
+            return dev.pointofpressure.minecom.blocks.Lectern.comparatorOutput(pos, block);
         } else {
             return -1;
         }
