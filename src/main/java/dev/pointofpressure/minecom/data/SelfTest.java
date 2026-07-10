@@ -988,6 +988,46 @@ public final class SelfTest {
             check("ocean monument full real generation: gold_block==8 holds across 5 different seeds", allGold8);
         }
 
+        // Ocean monument placement + real generation wired end-to-end: the real random_spread
+        // placement grid (salt=10387313/spacing=32/separation=5, from structure_sets.json) plus
+        // the real ALL-biomes-in-29-block-radius gate (#required_ocean_monument_surrounding).
+        // seed 20260710 has exactly one real monument within 80 chunks of spawn, found via a
+        // standalone probe at chunk (-80,-22) before writing this check. Runs the ACTUAL
+        // VanillaGen.decoratedData() pipeline (real terrain + real structure dispatch), matching
+        // the same real-generation rigor as end_city/ancient_city/trial_chambers.
+        {
+            var monGen = new dev.pointofpressure.minecom.worldgen.vanilla.VanillaGen(20260710L);
+            var monStructures = monGen.structures();
+            check("ocean monument seed 20260710: real placement grid finds a monument at chunk (-80,-22)",
+                    monStructures.testOceanMonumentAt(-80, -22) != null);
+
+            java.util.Map<String, Integer> monCounts = new java.util.HashMap<>();
+            for (int dx = -3; dx <= 3; dx++) {
+                for (int dz = -3; dz <= 3; dz++) {
+                    var data = monGen.decoratedData(-80 + dx, -22 + dz);
+                    for (int x = 0; x < 16; x++) {
+                        for (int z = 0; z < 16; z++) {
+                            for (int y = -64; y < 320; y++) {
+                                Block bl = data.get(x, y, z);
+                                if (bl == null) continue;
+                                if (bl.compare(Block.PRISMARINE) || bl.compare(Block.PRISMARINE_BRICKS) || bl.compare(Block.DARK_PRISMARINE)
+                                        || bl.compare(Block.SEA_LANTERN) || bl.compare(Block.GOLD_BLOCK)) {
+                                    monCounts.merge(bl.name(), 1, Integer::sum);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            int monGold = monCounts.getOrDefault("minecraft:gold_block", 0);
+            int monPrismarineFamily = monCounts.getOrDefault("minecraft:prismarine", 0) + monCounts.getOrDefault("minecraft:prismarine_bricks", 0)
+                    + monCounts.getOrDefault("minecraft:dark_prismarine", 0) + monCounts.getOrDefault("minecraft:sea_lantern", 0);
+            check("ocean monument seed 20260710 (-80,-22) real generation: gold_block=" + monGold + " (CoreRoom's fixed 2x2x2 box)",
+                    monGold == 8);
+            check("ocean monument seed 20260710 (-80,-22) real generation confirmed: " + monPrismarineFamily + " prismarine/sea_lantern blocks placed",
+                    monPrismarineFamily == 10392);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }

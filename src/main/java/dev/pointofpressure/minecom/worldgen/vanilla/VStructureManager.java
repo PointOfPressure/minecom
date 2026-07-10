@@ -92,6 +92,11 @@ public final class VStructureManager {
     private Set<String> oceanRuinColdBiomes;
     private final Map<String, List<OceanRuinPiece>> oceanRuinStarts = new HashMap<>();
 
+    /** Ocean monument (see placeOceanMonuments javadoc). */
+    private Set<String> oceanMonumentSurroundingBiomes;
+    private record OceanMonumentAssembly(VMonumentGen.Building building, List<VMonumentGen.RoomPiece> rooms) {}
+    private final Map<String, OceanMonumentAssembly> oceanMonumentStarts = new HashMap<>();
+
     public VStructureManager(long seed, VBiome biomes) {
         this(seed, biomes, null, 63);
     }
@@ -169,6 +174,7 @@ public final class VStructureManager {
             this.shipwreckOceanBiomes = loadBiomes("shipwreck");
             this.oceanRuinWarmBiomes = loadBiomes("ocean_ruin_warm");
             this.oceanRuinColdBiomes = loadBiomes("ocean_ruin_cold");
+            this.oceanMonumentSurroundingBiomes = loadBiomes("ocean_monument_surrounding");
         }
         if (surface != null && oceanFloor != null) {
             ruinedPortalFlavors.add(new RPFlavor("ocean", List.of(
@@ -217,6 +223,7 @@ public final class VStructureManager {
         if (surface != null) placeShipwrecks(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
         if (oceanFloor != null) placeBuriedTreasures(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
         if (oceanFloor != null) placeOceanRuins(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
+        if (oceanFloor != null) placeOceanMonuments(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
     }
 
     // ------------------------------------------------------------------ ruined portal
@@ -3105,6 +3112,91 @@ public final class VStructureManager {
     /** Mth.nextInt(random, min, max): uniform inclusive [min,max]. */
     private static int nextIntInclusive(VSurface.LegacyRandom random, int min, int max) {
         return min + random.nextInt(max - min + 1);
+    }
+
+    // ------------------------------------------------------------------ ocean monument
+
+    /**
+     * The full real branching structure algorithm (room-graph maze-CLOSING + fixed-priority
+     * room-shape fitting + all ~15 room-content piece types + the hardcoded outer shell), ported
+     * in {@link VMonumentGen} across three staged increments this session. Wired here as a
+     * single ocean-anchored piece (unlike stronghold's live chunk-load-event architecture —
+     * ocean monuments generate through the normal offline chunk-population pipeline like
+     * end_city/bastion, since their placement Y is a fixed absolute constant (39-61ish,
+     * `MonumentBuilding`'s own hardcoded Y=39 base — real ocean monuments do NOT conform to the
+     * local ocean floor depth, a genuine, well-known vanilla quirk, confirmed from the decompile
+     * never applying any oceanFloor-derived Y offset to the piece itself), so no live-Instance
+     * terrain-height read is needed at placement time the way stronghold's real corridor Y does.
+     * Biome gate: ALL biomes within a 29-block radius of `(chunkMinX+9, seaLevel, chunkMinZ+9)`
+     * must be ocean/river (`#required_ocean_monument_surrounding` — real vanilla's own ALL-match
+     * area check, sampled here at quart resolution within the spherical radius, matching real
+     * `BiomeManager.getBiomesWithin`'s own sampling grain).
+     */
+    private static final String OCEAN_MONUMENT_SET = "minecraft:ocean_monuments";
+    private static final int OCEAN_MONUMENT_BASE_Y = 39;
+
+    private void placeOceanMonuments(int chunkX, int chunkZ, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        int r = 5; // 58-block max shell extent (~4 chunks) plus slack for wings/orientation
+        for (int dz = -r; dz <= r; dz++) {
+            for (int dx = -r; dx <= r; dx++) {
+                int ccx = chunkX + dx, ccz = chunkZ + dz;
+                if (!placement.isStructureChunk(OCEAN_MONUMENT_SET, ccx, ccz)) continue;
+                String key = ccx + ":" + ccz;
+                OceanMonumentAssembly asm = oceanMonumentStarts.containsKey(key) ? oceanMonumentStarts.get(key) : assembleOceanMonument(ccx, ccz);
+                oceanMonumentStarts.put(key, asm);
+                if (asm == null) continue;
+                VMonumentGen.Sink sink = new VMonumentGen.Sink() {
+                    public Block get(int x, int y, int z) { return canvas.get(x, y, z); }
+                    public void set(int x, int y, int z, Block b) { canvas.set(x, y, z, b); }
+                };
+                VMonumentGen.renderShell(asm.building(), sink, seaLevel, chunkX, chunkZ);
+                VMonumentGen.renderRooms(asm.rooms(), seed, sink, seaLevel, chunkX, chunkZ);
+            }
+        }
+    }
+
+    /** Test hook: matches testBuriedTreasureAt/testOceanRuinAt convention — gated on both the real placement grid and the biome check. */
+    public OceanMonumentAssembly testOceanMonumentAt(int chunkX, int chunkZ) {
+        if (!placement.isStructureChunk(OCEAN_MONUMENT_SET, chunkX, chunkZ)) return null;
+        return assembleOceanMonument(chunkX, chunkZ);
+    }
+
+    /** Test hook: force-assemble (biome-gated only, bypassing the placement grid) — for probing biome-check density independently. */
+    public OceanMonumentAssembly testOceanMonumentBiomeOnlyAt(int chunkX, int chunkZ) {
+        return assembleOceanMonument(chunkX, chunkZ);
+    }
+
+    private OceanMonumentAssembly assembleOceanMonument(int chunkX, int chunkZ) {
+        int checkX = (chunkX << 4) + 9, checkZ = (chunkZ << 4) + 9;
+        if (!oceanMonumentBiomeOk(checkX, checkZ)) return null;
+
+        int west = (chunkX << 4) - 29, north = (chunkZ << 4) - 29;
+        VSurface.LegacyRandom random = new VSurface.LegacyRandom(0L);
+        random.setLargeFeatureSeed(seed, chunkX, chunkZ);
+        VTemplate.Dir orientation = switch (random.nextInt(4)) {
+            case 0 -> VTemplate.Dir.SOUTH;
+            case 1 -> VTemplate.Dir.WEST;
+            case 2 -> VTemplate.Dir.NORTH;
+            default -> VTemplate.Dir.EAST;
+        };
+        VMonumentGen.Graph graph = VMonumentGen.generateRoomGraph(random);
+        VMonumentGen.fitRoomShapes(graph, random);
+        VMonumentGen.Building building = VMonumentGen.makeBuilding(west, OCEAN_MONUMENT_BASE_Y, north, orientation);
+        List<VMonumentGen.RoomPiece> rooms = VMonumentGen.resolveRoomPieces(building, graph);
+        return new OceanMonumentAssembly(building, rooms);
+    }
+
+    /** Real getBiomesWithin: ALL points within the radius (spherical, quart-resolution grid) must match. */
+    private boolean oceanMonumentBiomeOk(int centerX, int centerZ) {
+        int r = 29;
+        for (int dx = -r; dx <= r; dx += 4) {
+            for (int dz = -r; dz <= r; dz += 4) {
+                if (dx * dx + dz * dz > r * r) continue;
+                String biome = biomes.biomeAt((centerX + dx) >> 2, seaLevel >> 2, (centerZ + dz) >> 2);
+                if (!oceanMonumentSurroundingBiomes.contains(biome)) return false;
+            }
+        }
+        return true;
     }
 
     private VJigsaw.Assembly startFor(Type type, int ccx, int ccz) {
