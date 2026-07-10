@@ -16,7 +16,68 @@ of what got escalated and why.
 
 ## Open
 
-(none yet — this file was just created)
+### Difficulty system (Peaceful/Easy/Normal/Hard) — Opus
+
+Currently the whole project implicitly assumes one fixed difficulty
+(closest to Normal) everywhere a difficulty-dependent constant is needed
+— e.g. `VanillaMobs.java` (~line 276)'s baby-zombie weapon chance is
+hardcoded flat at 1% with a comment noting real vanilla is 5% on Hard.
+This is one visible symptom of a much bigger gap: real vanilla's
+difficulty setting cascades into mob spawn caps/rates, combat damage
+scaling, hunger drain rate, zombie reinforcement/siege AI, hostile
+aggression ranges, and multiple loot/equipment rolls — not just this one
+constant. A real fix means designing a world-level (or per-player, for
+Bedrock-style personal difficulty — check if vanilla Java even supports
+that or if it's world-only) difficulty setting and threading it through
+every system that reads a difficulty-scaled constant. That's a genuine
+cross-cutting subsystem design problem (where does the setting live, how
+do systems read it without a giant parameter-threading refactor, what's
+the actual constant table per system), not a local patch — hence Opus,
+not Sonnet. Patching just the one flagged constant without the real
+setting would be cosmetic script-kiddie work, not a fix.
+
+### Villager breeding food-threshold (personal food inventory + pickup AI) — Opus/Fable
+
+`Villagers.java` (~line 90-103) only enforces the bed-capacity half of
+real vanilla's breeding-willingness check; the food half is skipped
+because villagers have no personal inventory. Confirmed via decompiling
+`net.minecraft.world.entity.npc.villager.Villager`: real vanilla's
+`canBreed()` is `foodLevel + countFoodPointsInInventory() >= 12 &&
+!isSleeping() && age == 0`. Checked whether "food from trades already
+executed" could substitute (a cheaper approximation) — no: confirmed via
+decompile that `AbstractVillager.notifyTrade()` only increments trade-use
+counts, awards XP, and plays a sound; it does NOT add the traded item to
+the villager's inventory, so trade history is a dead end for this. The
+real food source is (a) the Farmer profession's own crop-harvesting brain
+task (walk to a claimed farmland POI, harvest, carry produce) and (b)
+passive pickup — `wantsToPickUp()` checks `#minecraft:villager_picks_up`
+(bread/wheat/carrots/potatoes/beetroot), so players tossing food near a
+villager get auto-collected. This project currently has ZERO villager
+personal-inventory storage (only a `PROFESSION` tag) and no item-pickup
+logic anywhere in `mobs/` at all (confirmed via grep). Even the cheapest
+faithful approximation (skip full farmer-harvest AI, implement only
+passive pickup + a food-level/inventory tag + the eat-until-full logic)
+requires inventing an entity-level inventory representation and a
+pickup-scan tick loop that don't exist today — genuinely new subsystem
+work. If the full farmer-harvest-AI version is wanted (not just the
+cheaper pickup-only approximation), that's Fable territory; the
+pickup-only version is more Opus-sized.
+
+### Trial Chambers functional mechanics (spawner waves, vault, Breeze) — Opus/Fable
+
+The Trial Chambers structure generates correctly (jigsaw-assembled, real
+NBT templates) but every special block in it — `trial_spawner`, `vault`,
+`decorated_pot`, `dispenser` — is placed as an inert block with zero
+functional logic. No trial-spawner wave-spawning/room-lock/player-
+detection state machine, no Breeze mob (entity doesn't exist in the
+codebase at all), no vault key-check/unlock/reward-loot interaction, no
+ominous-trial upgrade path. This is effectively a self-contained
+"Trial Chambers minigame" feature, not a small gap — estimate 500-1500+
+LOC across a new spawner block-entity with its own tick/state logic, a
+new mob (Breeze, with its own wind-charge ranged AI), and a vault
+interact handler with key-item checks. Needs its own decompile pass
+across `TrialSpawner.java`, `TrialSpawnerState.java`, `VaultBlockEntity.java`,
+and `Breeze.java` plus AI. Scope it as a dedicated task, not a quick add.
 
 ## Done
 
