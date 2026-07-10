@@ -842,6 +842,53 @@ public final class SelfTest {
             check("stronghold seed 20260710 (0,0) real generation: the portal room's own 12 frames are all real end_portal_frame blocks", corePlaced);
         }
 
+        // Ocean monument: the real room-graph maze-CLOSING algorithm (the opposite of stronghold's
+        // maze-carving walk — starts fully connected, randomly severs doorways while a
+        // findSource-based connectivity check keeps every room reachable) plus the fixed-priority
+        // room-shape fitter chain. Geometry/decoration is a follow-up increment; this verifies the
+        // algorithm stage in isolation, matching the same precedent used before porting stronghold's
+        // own geometry.
+        {
+            var graph = dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.testGenerate(20260710L, 0, 0);
+            check("ocean monument seed 20260710 (0,0): room graph has 49 rooms (46 grid + roof/leftWing/rightWing)",
+                    graph.rooms.size() == 49);
+            long coreCount = graph.rooms.stream().filter(r -> r.shape == dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.Shape.CORE).count();
+            long entryCount = graph.rooms.stream().filter(r -> r.shape == dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.Shape.ENTRY).count();
+            check("ocean monument seed 20260710 (0,0): exactly one core room and one entry(source) room",
+                    coreCount == 1 && entryCount == 1 && graph.sourceRoom.isSource && graph.sourceRoom != graph.coreRoom);
+
+            // real vanilla's own closing-loop connectivity check (findSource) guarantees every
+            // non-special room stays reachable from the source — verify externally via a fresh
+            // BFS over the same hasOpening/connections edges.
+            java.util.Set<Object> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            java.util.Deque<Object> stack = new java.util.ArrayDeque<>();
+            stack.push(graph.sourceRoom);
+            visited.add(graph.sourceRoom);
+            while (!stack.isEmpty()) {
+                var cur = (dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.RoomDefinition) stack.pop();
+                for (int i = 0; i < 6; i++) {
+                    if (cur.hasOpening[i] && cur.connections[i] != null && !visited.contains(cur.connections[i])) {
+                        visited.add(cur.connections[i]);
+                        stack.push(cur.connections[i]);
+                    }
+                }
+            }
+            long unreachable = graph.rooms.stream().filter(r -> !r.isSpecial() && !visited.contains(r)).count();
+            check("ocean monument seed 20260710 (0,0): every non-special room is reachable from the source room",
+                    unreachable == 0);
+
+            var graph2 = dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.testGenerate(20260710L, 0, 0);
+            boolean identical = graph.rooms.size() == graph2.rooms.size();
+            if (identical) {
+                for (int i = 0; i < graph.rooms.size(); i++) {
+                    if (graph.rooms.get(i).index != graph2.rooms.get(i).index || graph.rooms.get(i).shape != graph2.rooms.get(i).shape) {
+                        identical = false; break;
+                    }
+                }
+            }
+            check("ocean monument seed 20260710 (0,0): re-generating the same (seed,chunk) reproduces an identical room graph", identical);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }
