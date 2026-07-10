@@ -16,6 +16,31 @@ of what got escalated and why.
 
 ## Open
 
+### Daylight detector — Opus
+
+Scoped as "low complexity" by an earlier research pass in this session,
+but decompiling `DaylightDetectorBlock.updateSignalStrength` exactly
+turned out to be more involved than that estimate: real vanilla's non-
+inverted-mode signal isn't just sky brightness — it's `round(skyBrightness
+* cos(sunAngle))` where `sunAngle` is a PERSISTENT PER-BLOCK-ENTITY value
+smoothed toward the current sun position via exponential decay each tick
+(`sunAngle += (target - sunAngle) * 0.2F`, evaluated every 20 ticks via
+`DaylightDetectorBlockEntity`'s ticker) — not a pure function of world
+time. It also reads `level.environmentAttributes().getValue(SUN_ANGLE,
+pos)`, a per-dimension-customizable attribute system in 26.x whose exact
+default overworld formula wasn't verified. Implementing this faithfully
+needs: (1) confirming the real default SUN_ANGLE formula for the
+overworld (decompile `EnvironmentAttributes`/whatever supplies the
+default), (2) a new per-position persistent-state map (this project has
+no precedent for that outside of what's already built for redstone
+timing), and (3) the correct exponential-smoothing tick loop. Inverted
+mode (right-click toggle, signal = `15 - skyBrightness`, no smoothing) is
+simple and could be split out as a same-session quick win if wanted, but
+the non-inverted mode (the common case — this is what makes "turns on
+redstone at night" clocks work) is the one that needs the real
+investigation above. Do not re-scope this as "small" without redoing the
+sun-angle-formula check first.
+
 ### Difficulty system (Peaceful/Easy/Normal/Hard) — Opus
 
 Currently the whole project implicitly assumes one fixed difficulty
