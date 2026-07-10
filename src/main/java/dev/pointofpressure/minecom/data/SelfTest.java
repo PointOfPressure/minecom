@@ -889,6 +889,48 @@ public final class SelfTest {
             check("ocean monument seed 20260710 (0,0): re-generating the same (seed,chunk) reproduces an identical room graph", identical);
         }
 
+        // Ocean monument outer shell (MonumentBuilding.postProcess's own direct body: wings,
+        // entrance archs/wall, roof, lower/middle/upper walls, corner pillars, 5-layer water
+        // moat) — real generation across every chunk the 58x58 footprint touches, tallied by
+        // material. None of these shell methods draw RNG-dependent geometry, so exact counts are
+        // legitimate deterministic regression anchors (not just >0 checks), same rigor as the
+        // end_city/stronghold real-generation checks.
+        {
+            var b = dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.makeBuilding(0, 30, 0,
+                    dev.pointofpressure.minecom.worldgen.vanilla.VTemplate.Dir.NORTH);
+            var placed = new java.util.HashMap<String, Block>();
+            var sink = new dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.Sink() {
+                public Block get(int x, int y, int z) {
+                    Block bl = placed.get(x + "," + y + "," + z);
+                    return bl == null ? Block.AIR : bl;
+                }
+                public void set(int x, int y, int z, Block bl) { placed.put(x + "," + y + "," + z, bl); }
+            };
+            dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.testRenderShellFull(b, sink, 63);
+            long lanterns = placed.values().stream().filter(bl -> bl.compare(Block.SEA_LANTERN)).count();
+            long darkPrismarine = placed.values().stream().filter(bl -> bl.compare(Block.DARK_PRISMARINE)).count();
+            long prismarineBricks = placed.values().stream().filter(bl -> bl.compare(Block.PRISMARINE_BRICKS)).count();
+            long prismarine = placed.values().stream().filter(bl -> bl.compare(Block.PRISMARINE)).count();
+            long water = placed.values().stream().filter(bl -> bl.compare(Block.WATER)).count();
+            check("ocean monument shell real generation: 12 sea_lantern placed (2 per entrance-arch x4 + 4 on roof)",
+                    lanterns == 12);
+            check("ocean monument shell real generation: 36 dark_prismarine placed (entrance wall black-brick trim)",
+                    darkPrismarine == 36);
+            check("ocean monument shell real generation: prismarine_bricks=" + prismarineBricks + ", prismarine=" + prismarine + ", water=" + water,
+                    prismarineBricks == 36482 && prismarine == 4512 && water == 116408);
+
+            var placed2 = new java.util.HashMap<String, Block>();
+            var sink2 = new dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.Sink() {
+                public Block get(int x, int y, int z) {
+                    Block bl = placed2.get(x + "," + y + "," + z);
+                    return bl == null ? Block.AIR : bl;
+                }
+                public void set(int x, int y, int z, Block bl) { placed2.put(x + "," + y + "," + z, bl); }
+            };
+            dev.pointofpressure.minecom.worldgen.vanilla.VMonumentGen.testRenderShellFull(b, sink2, 63);
+            check("ocean monument shell real generation: re-rendering the same chunk range is idempotent", placed.equals(placed2));
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }
