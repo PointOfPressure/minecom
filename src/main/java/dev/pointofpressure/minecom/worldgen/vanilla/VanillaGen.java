@@ -218,13 +218,18 @@ public final class VanillaGen implements Generator {
         VSurface.ChunkData data = new VSurface.ChunkData();
         VAquifer aquifer = aquiferFor(chunkX, chunkZ);
         int baseX = chunkX << 4, baseZ = chunkZ << 4;
+        // NoiseChunk.forChunk: DensityFunctions.add(finalDensity, Beardifier.forStructuresInChunk(...))
+        // — carves terrain around nearby beard_box/beard_thin/encapsulate/bury structure pieces.
+        // (structure-placement height queries — topBlock/oceanFloorBlock/substanceAt below — deliberately
+        // skip this, matching real vanilla's BeardifierMarker.INSTANCE-as-zero for getBaseHeight/getBaseColumn.)
+        VBeardifier beard = structures.beardDataForChunk(chunkX, chunkZ);
         VDensity.setCellMode(true);
         try {
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
                     int wx = baseX + x, wz = baseZ + z;
                     for (int y = MIN_Y; y < MIN_Y + HEIGHT; y++) {
-                        double density = finalDensity.compute(wx, y, wz);
+                        double density = finalDensity.compute(wx, y, wz) + beard.compute(wx, y, wz);
                         switch (aquifer.computeSubstance(wx, y, wz, density)) {
                             case VAquifer.STONE -> {
                                 Block vein = veins.veinAt(wx, y, wz);

@@ -30,9 +30,14 @@ public final class VStructureManager {
         final Set<String> biomes;             // allowed centre biomes
         final Map<String, String> aliases;    // fixed pool-alias resolution (blocks-correct)
         final int radiusChunks;               // scan radius = ceil(maxDistH/16)+1
+        final VBeardifier.Adjustment adjustment; // terrain_adaptation (NONE unless set)
         Type(String setName, VJigsaw.Def def, Set<String> biomes, Map<String, String> aliases) {
+            this(setName, def, biomes, aliases, VBeardifier.Adjustment.NONE);
+        }
+        Type(String setName, VJigsaw.Def def, Set<String> biomes, Map<String, String> aliases, VBeardifier.Adjustment adjustment) {
             this.setName = setName; this.def = def; this.biomes = biomes; this.aliases = aliases;
             this.radiusChunks = (def.maxDistH / 16) + 2;
+            this.adjustment = adjustment;
         }
     }
 
@@ -132,22 +137,22 @@ public final class VStructureManager {
 
         types.add(new Type("minecraft:ancient_cities",
                 VJigsaw.Def.constant("minecraft:ancient_city/city_center", "minecraft:city_anchor", 7, -27, 116, 116, false),
-                loadBiomes("ancient_city"), Map.of()));
+                loadBiomes("ancient_city"), Map.of(), VBeardifier.Adjustment.BEARD_BOX));
         types.add(new Type("minecraft:trial_chambers",
                 VJigsaw.Def.uniform("minecraft:trial_chambers/chamber/end", null, 20, -40, -20, 116, 116, false, 10),
-                loadBiomes("trial_chambers"), TRIAL_ALIASES));
+                loadBiomes("trial_chambers"), TRIAL_ALIASES, VBeardifier.Adjustment.ENCAPSULATE));
         if (surface != null) {
             for (String v : new String[]{"plains", "desert", "savanna", "snowy", "taiga"}) {
                 types.add(new Type("minecraft:villages",
                         VJigsaw.Def.village("minecraft:village/" + v + "/town_centers", 6, 80),
-                        loadBiomes("village_" + v), Map.of()));
+                        loadBiomes("village_" + v), Map.of(), VBeardifier.Adjustment.BEARD_THIN));
             }
             types.add(new Type("minecraft:trail_ruins",
                     VJigsaw.Def.projected("minecraft:trail_ruins/tower", 7, -15, 80),
-                    loadBiomes("trail_ruins"), Map.of()));
+                    loadBiomes("trail_ruins"), Map.of(), VBeardifier.Adjustment.BURY));
             types.add(new Type("minecraft:pillager_outposts",
                     VJigsaw.Def.village("minecraft:pillager_outpost/base_plates", 7, 80),
-                    loadBiomes("pillager_outpost"), Map.of()));
+                    loadBiomes("pillager_outpost"), Map.of(), VBeardifier.Adjustment.BEARD_THIN));
         }
         if (surface != null) {
             ruinedPortalFlavors.add(new RPFlavor("standard", List.of(
@@ -3308,6 +3313,55 @@ public final class VStructureManager {
         if (!woodlandMansionBiomes.contains(biome)) return null;
 
         return VMansionGen.generateMansion(random, new VMansionGen.Pos(blockX, lowestY, blockZ), rotation);
+    }
+
+    /** Assembled beard-data cache, keyed by chunk (packed x/z). */
+    private final Map<Long, VBeardifier> beardCache = new HashMap<>();
+
+    /**
+     * Beardifier.forStructuresInChunk port: gathers rigid pieces + jigsaw junctions from every
+     * terrain-adapting structure type within reach of this chunk, for the "beardifier" density
+     * function node to carve terrain around during noise/terrain shaping (before block placement).
+     */
+    public VBeardifier beardDataForChunk(int chunkX, int chunkZ) {
+        long key = ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
+        VBeardifier cached = beardCache.get(key);
+        if (cached != null) return cached;
+
+        int chunkMinX = chunkX << 4, chunkMinZ = chunkZ << 4;
+        List<VBeardifier.Rigid> rigids = new ArrayList<>();
+        List<VBeardifier.Junction> junctions = new ArrayList<>();
+        for (Type type : types) {
+            if (type.adjustment == VBeardifier.Adjustment.NONE) continue;
+            int r = type.radiusChunks;
+            for (int dz = -r; dz <= r; dz++) {
+                for (int dx = -r; dx <= r; dx++) {
+                    int ccx = chunkX + dx, ccz = chunkZ + dz;
+                    if (!placement.isStructureChunk(type.setName, ccx, ccz)) continue;
+                    VJigsaw.Assembly start = startFor(type, ccx, ccz);
+                    if (start == null) continue;
+                    for (VJigsaw.Piece piece : start.pieces) {
+                        int[] bb = piece.bb;
+                        // StructurePiece.isCloseToChunk(chunkPos, 12): XZ AABB overlap only.
+                        boolean close = bb[3] >= chunkMinX - 12 && bb[0] <= chunkMinX + 15 + 12
+                                && bb[5] >= chunkMinZ - 12 && bb[2] <= chunkMinZ + 15 + 12;
+                        if (!close) continue;
+                        if (piece.element.rigid) {
+                            rigids.add(new VBeardifier.Rigid(bb.clone(), type.adjustment, piece.groundLevelDelta));
+                        }
+                        for (int[] j : piece.junctions) {
+                            int jx = j[0], jy = j[1], jz = j[2];
+                            if (jx > chunkMinX - 12 && jz > chunkMinZ - 12 && jx < chunkMinX + 15 + 12 && jz < chunkMinZ + 15 + 12) {
+                                junctions.add(new VBeardifier.Junction(jx, jy, jz));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        VBeardifier result = (rigids.isEmpty() && junctions.isEmpty()) ? VBeardifier.EMPTY : new VBeardifier(rigids, junctions);
+        beardCache.put(key, result);
+        return result;
     }
 
     private VJigsaw.Assembly startFor(Type type, int ccx, int ccz) {

@@ -260,7 +260,10 @@ public final class VDensity {
             case "blend_density" -> parse(o.get("argument"), ctx);
             case "blend_alpha" -> (x, y, z) -> 1.0;   // empty blender
             case "blend_offset" -> (x, y, z) -> 0.0;  // empty blender
-            case "beardifier" -> (x, y, z) -> 0.0;    // no structures yet
+            // real vanilla never serializes a "beardifier" node into the JSON graph — NoiseChunk
+            // wraps final_density with DensityFunctions.add(finalDensity, BeardifierMarker.INSTANCE)
+            // in code, so the real carve is applied in VanillaGen.generateData instead.
+            case "beardifier" -> (x, y, z) -> 0.0;
             case "find_top_surface" -> {
                 // vanilla scans down by cell_height until density > 0; the subtree is
                 // evaluated through SinglePointContext, which bypasses all NoiseChunk
