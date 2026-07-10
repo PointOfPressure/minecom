@@ -156,9 +156,10 @@ public final class VanillaMobs {
             if (swell[0] >= 30) {
                 Pos at = mob.getPosition();
                 Instance in = mob.getInstance();
+                boolean charged = meta.isCharged();
                 mob.remove();
                 dev.pointofpressure.minecom.blocks.Explosions.explode(in, at.add(0, 0.5, 0),
-                        3f, 1.0 / 3, mob);
+                        3f, 1.0 / 3, mob, charged);
             }
         }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);

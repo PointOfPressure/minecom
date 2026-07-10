@@ -66,8 +66,10 @@ public final class Lightning {
 
     /**
      * Strikes at the given XZ, landing on the current top-solid block; damages nearby
-     * living entities (LightningBolt.tick: 5 damage). Bounded: no fire-starting, no
-     * charged-creeper/villager-to-witch conversion — real vanilla side effects this
+     * living entities (LightningBolt.tick: 5 damage) and charges any creeper struck
+     * (Creeper.thunderHit sets DATA_IS_POWERED — real vanilla's charged-creeper source,
+     * see {@link dev.pointofpressure.minecom.blocks.Explosions#explode}). Bounded: no
+     * fire-starting, no villager-to-witch conversion — real vanilla side effects this
      * project doesn't model.
      */
     public static void strikeAt(Instance instance, double x, double z) {
@@ -79,6 +81,10 @@ public final class Lightning {
         for (Entity e : instance.getNearbyEntities(pos, 3.0)) {
             if (e instanceof LivingEntity le && !le.isDead()) {
                 le.damage(DamageType.LIGHTNING_BOLT, 5f);
+                if (e.getEntityType() == EntityType.CREEPER
+                        && e.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.CreeperMeta cm) {
+                    cm.setCharged(true);
+                }
             }
         }
         bolt.scheduler().buildTask(bolt::remove).delay(TaskSchedule.tick(2)).schedule();

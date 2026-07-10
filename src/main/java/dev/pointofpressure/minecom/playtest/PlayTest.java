@@ -136,6 +136,7 @@ public final class PlayTest {
         scenario("vanilla-ai: A* routes around a wall", PlayTest::scenarioPathAroundWall);
         scenario("vanilla-ai: undead burn in daylight", PlayTest::scenarioSunburn);
         scenario("vanilla-ai: creeper swells 30 ticks then explodes", PlayTest::scenarioSwell);
+        scenario("lightning charges a creeper; its explosion drops the victim's head", PlayTest::scenarioChargedCreeper);
         scenario("vanilla-ai: enderman angers only when stared at", PlayTest::scenarioEnderman);
         scenario("end: dragon spawns, dies, forms the exit portal", PlayTest::scenarioEnderDragon);
         scenario("end: portal travel there and back", PlayTest::scenarioEndPortal);
@@ -2599,6 +2600,31 @@ public final class PlayTest {
         long ms = System.currentTimeMillis() - start;
         check("creeper swells and explodes (took " + ms + "ms, expect >=1400)", exploded && ms >= 1200);
         check("creeper explosion hurt the player", player.getHealth() < 20);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+        world.setTime(1000);
+    }
+
+    /** A lightning-charged creeper's explosion drops its victim's head (charged_creeper/{type} loot). */
+    private static void scenarioChargedCreeper() {
+        world.setTime(14000);
+        player.teleport(new Pos(45.5, Y + 5, -45.5)).join(); // out of blast range, observer only
+
+        EntityCreature creeper = Mobs.spawn("creeper", world, new Pos(50.5, Y + 1, -50.5));
+        dev.pointofpressure.minecom.survival.Lightning.strikeAt(world, 50.5, -50.5);
+        boolean nowCharged = waitFor(() -> creeper.getEntityMeta()
+                instanceof net.minestom.server.entity.metadata.monster.CreeperMeta cm && cm.isCharged(), 1000);
+        check("a creeper struck by lightning becomes charged (CreeperMeta.isCharged)", nowCharged);
+
+        // exercise the new head-drop logic directly (isolates it from creeper-AI swell/target
+        // timing, which scenarioSwell already covers): a charged explosion at a zombie's feet.
+        EntityCreature victim = Mobs.spawn("zombie", world, new Pos(50.5, Y + 1, -50.5));
+        tick(2);
+        dev.pointofpressure.minecom.blocks.Explosions.explode(world, victim.getPosition(), 3f, 1.0 / 3, null, true);
+        boolean headDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.ZOMBIE_HEAD), 2000);
+        check("a charged-creeper-style explosion killed the zombie and dropped a zombie_head (charged_creeper/zombie loot)", headDropped);
         clearEntitiesExceptPlayer();
         resetPlayer();
         world.setTime(1000);

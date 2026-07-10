@@ -6,6 +6,7 @@ import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.EntityType;
+import net.minestom.server.entity.ItemEntity;
 import net.minestom.server.entity.LivingEntity;
 import net.minestom.server.entity.damage.Damage;
 import net.minestom.server.entity.damage.DamageType;
@@ -30,8 +31,21 @@ public final class Explosions {
 
     private static final Random RANDOM = new Random();
 
+    /** Charged-creeper mob-head drops (charged_creeper/{type}.json: always 1 head). */
+    private static final java.util.Map<EntityType, ItemStack> CHARGED_CREEPER_HEADS = java.util.Map.of(
+            EntityType.CREEPER, ItemStack.of(net.minestom.server.item.Material.CREEPER_HEAD),
+            EntityType.SKELETON, ItemStack.of(net.minestom.server.item.Material.SKELETON_SKULL),
+            EntityType.WITHER_SKELETON, ItemStack.of(net.minestom.server.item.Material.WITHER_SKELETON_SKULL),
+            EntityType.ZOMBIE, ItemStack.of(net.minestom.server.item.Material.ZOMBIE_HEAD),
+            EntityType.PIGLIN, ItemStack.of(net.minestom.server.item.Material.PIGLIN_HEAD));
+
     public static void explode(Instance instance, Point center, float power,
                                double dropChance, Entity source) {
+        explode(instance, center, power, dropChance, source, false);
+    }
+
+    public static void explode(Instance instance, Point center, float power,
+                               double dropChance, Entity source, boolean charged) {
         Set<Long> destroyed = new HashSet<>();
         double cx = center.x(), cy = center.y(), cz = center.z();
 
@@ -89,6 +103,14 @@ public final class Explosions {
             living.damage(source != null
                     ? Damage.fromEntity(source, damage)
                     : new Damage(DamageType.EXPLOSION, null, null, center, damage));
+            if (charged && living.isDead()) {
+                ItemStack head = CHARGED_CREEPER_HEADS.get(living.getEntityType());
+                if (head != null) {
+                    ItemEntity headDrop = new ItemEntity(head);
+                    headDrop.setInstance(instance, living.getPosition().add(0, 0.5, 0));
+                    headDrop.setVelocity(new Vec(RANDOM.nextDouble() - 0.5, 2, RANDOM.nextDouble() - 0.5));
+                }
+            }
             Vec push = living.getPosition().asVec().sub(cx, cy, cz);
             if (push.length() > 0.01) {
                 living.setVelocity(living.getVelocity().add(push.normalize().mul(8 * (1 - dist / range))
