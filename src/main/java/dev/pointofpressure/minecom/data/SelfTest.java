@@ -1166,6 +1166,49 @@ public final class SelfTest {
             check("woodland mansion piece placement: zero crashes across 125 seed/position combinations", crashes == 0);
         }
 
+        // Woodland mansion placement + real generation wired end-to-end: the real random_spread
+        // placement grid (salt=10387319/spacing=80/separation=20, already present in the bulk
+        // structure_sets.json), the real getLowestYIn5by5BoxOffset7Blocks terrain-height algorithm
+        // (identical formula to end_city's own already-verified implementation, cross-checked
+        // rather than re-derived), and the simple single-point dark_forest/pale_garden biome gate.
+        // dark_forest+pale_garden cover only ~1% of sampled area near spawn for seed 20260710 (no
+        // real mansion within 200 chunks for that seed, confirmed via a standalone probe before
+        // writing this check — expected given the low biome coverage x 80-chunk spacing), so seed=1
+        // is used here instead, which DOES have a real mansion at chunk (118,15) within 200 chunks.
+        // Runs the ACTUAL VanillaGen.decoratedData() pipeline, matching the same real-generation
+        // rigor as every other structure this session.
+        {
+            var mansGen = new dev.pointofpressure.minecom.worldgen.vanilla.VanillaGen(1L);
+            var mansStructures = mansGen.structures();
+            check("woodland mansion seed 1: real placement grid finds a mansion at chunk (118,15)",
+                    mansStructures.testWoodlandMansionAt(118, 15) != null);
+
+            java.util.Map<String, Integer> mansCounts = new java.util.HashMap<>();
+            for (int dx = -3; dx <= 3; dx++) {
+                for (int dz = -3; dz <= 3; dz++) {
+                    var data = mansGen.decoratedData(118 + dx, 15 + dz);
+                    for (int x = 0; x < 16; x++) {
+                        for (int z = 0; z < 16; z++) {
+                            for (int y = -64; y < 320; y++) {
+                                Block bl = data.get(x, y, z);
+                                if (bl == null) continue;
+                                if (bl.compare(Block.DARK_OAK_PLANKS) || bl.compare(Block.DARK_OAK_LOG)
+                                        || bl.compare(Block.COBBLESTONE_WALL) || bl.compare(Block.CHEST)) {
+                                    mansCounts.merge(bl.name(), 1, Integer::sum);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            int mansChests = mansCounts.getOrDefault("minecraft:chest", 0);
+            int mansDarkOak = mansCounts.getOrDefault("minecraft:dark_oak_planks", 0) + mansCounts.getOrDefault("minecraft:dark_oak_log", 0);
+            check("woodland mansion seed 1 (118,15) real generation: " + mansChests + " chests placed",
+                    mansChests == 33);
+            check("woodland mansion seed 1 (118,15) real generation confirmed: " + mansDarkOak + " dark oak (planks+log) blocks placed",
+                    mansDarkOak == 14085);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }

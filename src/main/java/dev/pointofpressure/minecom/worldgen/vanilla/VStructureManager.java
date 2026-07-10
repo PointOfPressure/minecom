@@ -97,6 +97,10 @@ public final class VStructureManager {
     private record OceanMonumentAssembly(VMonumentGen.Building building, List<VMonumentGen.RoomPiece> rooms) {}
     private final Map<String, OceanMonumentAssembly> oceanMonumentStarts = new HashMap<>();
 
+    /** Woodland mansion (see placeWoodlandMansions javadoc). */
+    private Set<String> woodlandMansionBiomes;
+    private final Map<String, List<VMansionGen.Piece>> woodlandMansionStarts = new HashMap<>();
+
     public VStructureManager(long seed, VBiome biomes) {
         this(seed, biomes, null, 63);
     }
@@ -168,6 +172,7 @@ public final class VStructureManager {
             this.jungleTempleBiomes = loadBiomes("jungle_temple");
             this.desertPyramidBiomes = loadBiomes("desert_pyramid");
             this.shipwreckBeachedBiomes = loadBiomes("shipwreck_beached");
+            this.woodlandMansionBiomes = loadBiomes("woodland_mansion");
         }
         if (oceanFloor != null) {
             this.buriedTreasureBiomes = loadBiomes("buried_treasure");
@@ -224,6 +229,7 @@ public final class VStructureManager {
         if (oceanFloor != null) placeBuriedTreasures(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
         if (oceanFloor != null) placeOceanRuins(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
         if (oceanFloor != null) placeOceanMonuments(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
+        if (surface != null) placeWoodlandMansions(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
     }
 
     // ------------------------------------------------------------------ ruined portal
@@ -3197,6 +3203,79 @@ public final class VStructureManager {
             }
         }
         return true;
+    }
+
+    // ------------------------------------------------------------------ woodland mansion
+
+    /**
+     * The full real algorithm ({@link VMansionGen} — the room-grid maze/room-identification
+     * pass plus the whole {@code MansionPiecePlacer} NBT-template dispatch, both ported this
+     * session across 3 staged increments) wired here as the final structure this project needed.
+     * Placement uses real vanilla's own {@code Structure.getLowestYIn5by5BoxOffset7Blocks}
+     * algorithm — offset 7 blocks into the chunk, then a further 5-block offset in a
+     * rotation-dependent direction, taking the MIN of the 4 corner surface heights — the exact
+     * same algorithm already ported for end_city (confirmed identical rotation-to-offset
+     * mapping and corner-height-min formula by cross-checking against {@code VEndGen}'s own
+     * already-verified implementation rather than re-deriving). Rejects below Y 60, matching
+     * real vanilla exactly. Biome gate is a simple single-point check (`dark_forest`/
+     * `pale_garden`, unlike ocean monument's area gate).
+     * <p>NOT ported: {@code WoodlandMansionStructure.afterPlace}'s cobblestone foundation-fill
+     * pass (fills any gap between the mansion's lowest floor and the real ground below) — a
+     * cosmetic pass that prevents floating corners on uneven dark-forest terrain, matching the
+     * established precedent of documenting purely cosmetic simplifications elsewhere in this
+     * project (e.g. NetherGen's dried ghast, bastion's fine sub-structure content) rather than
+     * blocking the structure's actual completion on it.
+     */
+    private static final String WOODLAND_MANSION_SET = "minecraft:woodland_mansions";
+    private static final int WOODLAND_MANSION_RADIUS = 6; // real mansions span up to ~90 blocks (~6 chunks) including wings/roof
+
+    private void placeWoodlandMansions(int chunkX, int chunkZ, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        int r = WOODLAND_MANSION_RADIUS;
+        for (int dz = -r; dz <= r; dz++) {
+            for (int dx = -r; dx <= r; dx++) {
+                int ccx = chunkX + dx, ccz = chunkZ + dz;
+                if (!placement.isStructureChunk(WOODLAND_MANSION_SET, ccx, ccz)) continue;
+                String key = ccx + ":" + ccz;
+                List<VMansionGen.Piece> pieces = woodlandMansionStarts.containsKey(key) ? woodlandMansionStarts.get(key) : assembleWoodlandMansion(ccx, ccz);
+                woodlandMansionStarts.put(key, pieces);
+                if (pieces == null) continue;
+                VMansionGen.Sink sink = (x, y, z, b) -> {
+                    if (x < minX || x > maxX || z < minZ || z > maxZ) return;
+                    canvas.set(x, y, z, b);
+                };
+                VMansionGen.render(pieces, sink, chunkX, chunkZ);
+            }
+        }
+    }
+
+    /** Test hook: matches testOceanMonumentAt's convention — gated on both the real placement grid and the biome check. */
+    public List<VMansionGen.Piece> testWoodlandMansionAt(int chunkX, int chunkZ) {
+        if (!placement.isStructureChunk(WOODLAND_MANSION_SET, chunkX, chunkZ)) return null;
+        return assembleWoodlandMansion(chunkX, chunkZ);
+    }
+
+    private List<VMansionGen.Piece> assembleWoodlandMansion(int chunkX, int chunkZ) {
+        VSurface.LegacyRandom random = new VSurface.LegacyRandom(0L);
+        random.setLargeFeatureSeed(seed, chunkX, chunkZ);
+        VTemplate.Rot rotation = VTemplate.Rot.VALUES[random.nextInt(4)];
+
+        int offsetX = 5, offsetZ = 5;
+        switch (rotation) {
+            case CLOCKWISE_90 -> offsetX = -5;
+            case CLOCKWISE_180 -> { offsetX = -5; offsetZ = -5; }
+            case COUNTERCLOCKWISE_90 -> offsetZ = -5;
+            default -> { }
+        }
+        int blockX = (chunkX << 4) + 7, blockZ = (chunkZ << 4) + 7;
+        int lowestY = Math.min(
+                Math.min(surface.firstFreeWg(blockX, blockZ), surface.firstFreeWg(blockX, blockZ + offsetZ)),
+                Math.min(surface.firstFreeWg(blockX + offsetX, blockZ), surface.firstFreeWg(blockX + offsetX, blockZ + offsetZ)));
+        if (lowestY < 60) return null;
+
+        String biome = biomes.biomeAt(blockX >> 2, lowestY >> 2, blockZ >> 2);
+        if (!woodlandMansionBiomes.contains(biome)) return null;
+
+        return VMansionGen.generateMansion(random, new VMansionGen.Pos(blockX, lowestY, blockZ), rotation);
     }
 
     private VJigsaw.Assembly startFor(Type type, int ccx, int ccz) {
