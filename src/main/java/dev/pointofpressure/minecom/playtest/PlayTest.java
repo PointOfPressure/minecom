@@ -154,6 +154,7 @@ public final class PlayTest {
         scenario("boat: sneak dismounts the rider, attacking breaks it and drops the item", PlayTest::scenarioBoatBreakAndDismount);
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
+        scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -359,6 +360,30 @@ public final class PlayTest {
             if (stack.material() == Material.RED_WOOL) inInventory += stack.amount();
         }
         return ground + inInventory;
+    }
+
+    /** Shearing a pumpkin's side face carves toward that exact side and drops 4 pumpkin_seeds. */
+    private static void scenarioPumpkinCarving() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(0, Y, 0);
+        world.setBlock(pos, Block.PUMPKIN);
+        useItemOnBlock(ItemStack.of(Material.SHEARS), pos, BlockFace.EAST);
+        check("shearing the east face carves a carved_pumpkin facing east",
+                world.getBlock(pos).key().value().equals("carved_pumpkin")
+                        && "east".equals(world.getBlock(pos).getProperty("facing")));
+        boolean seedsDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.PUMPKIN_SEEDS && ie.getItemStack().amount() == 4), 1000);
+        check("carving drops exactly 4 pumpkin_seeds (carve/pumpkin.json: flat set_count(4))", seedsDropped);
+        clearEntitiesExceptPlayer();
+
+        world.setBlock(pos, Block.PUMPKIN);
+        player.teleport(new Pos(0.5, Y + 1, -2.5, 0, 0)).join(); // yaw 0 = facing south
+        useItemOnBlock(ItemStack.of(Material.SHEARS), pos, BlockFace.TOP);
+        check("shearing the top face carves away from the player's own facing (south-facing player -> north)",
+                "north".equals(world.getBlock(pos).getProperty("facing")));
+        clearEntitiesExceptPlayer();
+        resetPlayer();
     }
 
     /** Weapon holding: ~1% of zombies hold iron_sword/spear/shovel; ~10% of drowned hold trident/fishing_rod. */

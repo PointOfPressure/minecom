@@ -159,7 +159,7 @@ public final class Placement {
     }
 
     /** The horizontal direction the player is looking. */
-    private static String horizontalFacing(float yaw) {
+    static String horizontalFacing(float yaw) {
         float rot = ((yaw % 360) + 360) % 360;
         if (rot >= 315 || rot < 45) return "south";
         if (rot < 135) return "west";
@@ -167,7 +167,7 @@ public final class Placement {
         return "east";
     }
 
-    private static String opposite(String facing) {
+    static String opposite(String facing) {
         return switch (facing) {
             case "north" -> "south";
             case "south" -> "north";
