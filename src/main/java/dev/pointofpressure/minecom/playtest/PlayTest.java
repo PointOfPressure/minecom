@@ -586,35 +586,61 @@ public final class PlayTest {
         clearEntitiesExceptPlayer();
     }
 
-    /** Stronghold portal room: 12 frames build unlit, inserting an eye in each lights the portal. */
+    /**
+     * Stronghold: the real branching piece-tree assembly (guaranteed to contain exactly one
+     * portal room somewhere in the tree — real vanilla's generatePieces retries until true).
+     * Renders every chunk the assembled pieces intersect, then exercises the real 12-frame
+     * eye-of-ender interaction against the real portal room's actual world position.
+     */
     private static void scenarioStronghold() {
         clearEntitiesExceptPlayer();
-        dev.pointofpressure.minecom.worldgen.Strongholds.testBuild(world, 0, 0);
-        int[] center = dev.pointofpressure.minecom.worldgen.Strongholds.testCenter(0, 0);
-        int cx = center[0], y = center[1], cz = center[2];
+        var pieces = dev.pointofpressure.minecom.worldgen.Strongholds.testAssemble(20260710L, 0, 0);
+        var portalRoom = pieces.stream()
+                .filter(p -> p.kind == dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.Kind.PORTAL_ROOM)
+                .findFirst().orElse(null);
+        check("stronghold: real piece-tree assembly always contains a portal room", portalRoom != null);
+        if (portalRoom == null) return;
+        // seed the same cache the real registerEyeInteraction handler scans, so the eye clicks
+        // below exercise the actual production interaction code, not a test-only shortcut.
+        dev.pointofpressure.minecom.worldgen.Strongholds.testSeedCache(0, 0, pieces);
 
-        int frames = 0;
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                boolean corner = Math.abs(dx) == 2 && Math.abs(dz) == 2;
-                if (!((Math.abs(dx) == 2 || Math.abs(dz) == 2) && !corner)) continue;
-                if (world.getBlock(cx + dx, y, cz + dz).compare(Block.END_PORTAL_FRAME)) frames++;
+        int minCX = Integer.MAX_VALUE, maxCX = Integer.MIN_VALUE, minCZ = Integer.MAX_VALUE, maxCZ = Integer.MIN_VALUE;
+        for (var p : pieces) {
+            minCX = Math.min(minCX, p.minX >> 4); maxCX = Math.max(maxCX, p.maxX >> 4);
+            minCZ = Math.min(minCZ, p.minZ >> 4); maxCZ = Math.max(maxCZ, p.maxZ >> 4);
+        }
+        var sink = new dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.Sink() {
+            public Block get(int x, int y, int z) { return world.getBlock(x, y, z); }
+            public void set(int x, int y, int z, Block b) { world.setBlock(x, y, z, b); }
+        };
+        for (int cx = minCX; cx <= maxCX; cx++) {
+            for (int cz = minCZ; cz <= maxCZ; cz++) {
+                world.loadChunk(cx, cz).join();
             }
         }
-        check("stronghold: 12 end_portal_frame placed, centre still void (" + frames + "/12)",
-                frames == 12 && world.getBlock(cx, y, cz).isAir());
+        for (int cx = minCX; cx <= maxCX; cx++) {
+            for (int cz = minCZ; cz <= maxCZ; cz++) {
+                dev.pointofpressure.minecom.worldgen.Strongholds.testRender(pieces, 20260710L, sink, cx, cz);
+            }
+        }
 
-        player.teleport(new Pos(cx + 0.5, y + 2, cz + 0.5)).join();
+        int[][] frames = dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.portalFramePositions(portalRoom);
+        int lit = 0;
+        for (int[] fp : frames) if (world.getBlock(fp[0], fp[1], fp[2]).compare(Block.END_PORTAL_FRAME)) lit++;
+        check("stronghold: real portal room's 12 end_portal_frame placed (" + lit + "/12)", lit == 12);
+        int[][] core = dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.portalCorePositions(portalRoom);
+        boolean coreVoid = true;
+        for (int[] c : core) if (!world.getBlock(c[0], c[1], c[2]).isAir()) coreVoid = false;
+        check("stronghold: portal core still void before all eyes inserted", coreVoid);
+
+        player.teleport(new Pos(frames[0][0] + 0.5, frames[0][1] + 2, frames[0][2] + 0.5)).join();
         ItemStack eye = ItemStack.of(Material.ENDER_EYE, 12);
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                boolean corner = Math.abs(dx) == 2 && Math.abs(dz) == 2;
-                if (!((Math.abs(dx) == 2 || Math.abs(dz) == 2) && !corner)) continue;
-                useItemOnBlock(eye, new BlockVec(cx + dx, y, cz + dz), BlockFace.TOP);
-            }
+        for (int[] fp : frames) {
+            useItemOnBlock(eye, new BlockVec(fp[0], fp[1], fp[2]), BlockFace.TOP);
         }
-        check("stronghold: portal activates once all 12 eyes are placed",
-                world.getBlock(cx, y, cz).compare(Block.END_PORTAL));
+        boolean allLit = true;
+        for (int[] c : core) if (!world.getBlock(c[0], c[1], c[2]).compare(Block.END_PORTAL)) allLit = false;
+        check("stronghold: portal activates once all 12 eyes are placed", allLit);
         clearEntitiesExceptPlayer();
     }
 

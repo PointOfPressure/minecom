@@ -32,6 +32,7 @@ public final class VanillaGen implements Generator {
     private final VStructureManager structures;
     private final VConcentricRings strongholds;
     private final int seaLevel;
+    private final long seed;
 
     /** Undecorated (shape+surface+carve) chunk cache for cross-chunk decoration reads. */
     private final Map<Long, VSurface.ChunkData> chunkCache =
@@ -43,6 +44,7 @@ public final class VanillaGen implements Generator {
             });
 
     public VanillaGen(long seed) {
+        this.seed = seed;
         Gson gson = new Gson();
         JsonObject dens = read(gson, "/vanilla/worldgen_density.json");
         JsonObject noise = read(gson, "/vanilla/worldgen_noise.json");
@@ -71,6 +73,14 @@ public final class VanillaGen implements Generator {
     /** Ring-placed stronghold positions (bit-exact ConcentricRingsStructurePlacement port). */
     public VConcentricRings strongholds() {
         return strongholds;
+    }
+
+    public int seaLevel() {
+        return seaLevel;
+    }
+
+    public long seed() {
+        return seed;
     }
 
     /** Random-spread + jigsaw/single-template structure placement layer. */

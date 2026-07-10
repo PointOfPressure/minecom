@@ -774,6 +774,74 @@ public final class SelfTest {
         check("end city real generation confirmed at (-78,-55): " + ecMats + " purpur/end_stone_brick/magenta/end_rod/chest blocks placed",
                 ecMats == 8286);
 
+        // Stronghold: the full real branching piece-tree (StrongholdPieces port, ~11 hand-coded
+        // procedural piece classes — this project's only non-NBT-template structure). Real
+        // vanilla's generatePieces retries with an incrementing feature-seed salt until a portal
+        // room actually landed somewhere in the tree, so every assembly is guaranteed to contain
+        // exactly one PORTAL_ROOM piece.
+        {
+            var pieces1 = dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.assemble(20260710L, 0, 0);
+            long portalRooms = pieces1.stream().filter(p -> p.kind == dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.Kind.PORTAL_ROOM).count();
+            check("stronghold seed 20260710 (0,0): assembly is non-empty and contains exactly one portal room (" + pieces1.size() + " pieces)",
+                    !pieces1.isEmpty() && portalRooms == 1);
+
+            boolean allAboveFloor = pieces1.stream().allMatch(p -> p.minY > 10);
+            check("stronghold seed 20260710 (0,0): every piece stays above the LOWEST_Y_POSITION floor (isOkBox)", allAboveFloor);
+
+            // determinism: assembling the same (seed, chunk) twice must reproduce the identical tree.
+            var pieces1b = dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.assemble(20260710L, 0, 0);
+            boolean identical = pieces1.size() == pieces1b.size();
+            if (identical) {
+                for (int i = 0; i < pieces1.size(); i++) {
+                    var a = pieces1.get(i); var b = pieces1b.get(i);
+                    if (a.kind != b.kind || a.minX != b.minX || a.minY != b.minY || a.minZ != b.minZ
+                            || a.maxX != b.maxX || a.maxY != b.maxY || a.maxZ != b.maxZ || a.orientation != b.orientation) {
+                        identical = false; break;
+                    }
+                }
+            }
+            check("stronghold seed 20260710 (0,0): re-assembling the same (seed,chunk) reproduces an identical tree", identical);
+
+            // real end-to-end generation: render every chunk the assembly touches into an
+            // in-memory sink and tally real stronghold-specific material blocks — matches the
+            // same materialCountAt-style real-generation rigor already used for end_city.
+            var placed = new java.util.HashMap<String, Block>();
+            var sink = new dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.Sink() {
+                public Block get(int x, int y, int z) {
+                    Block b = placed.get(x + "," + y + "," + z);
+                    return b == null ? Block.AIR : b;
+                }
+                public void set(int x, int y, int z, Block b) { placed.put(x + "," + y + "," + z, b); }
+            };
+            int minCX = Integer.MAX_VALUE, maxCX = Integer.MIN_VALUE, minCZ = Integer.MAX_VALUE, maxCZ = Integer.MIN_VALUE;
+            for (var p : pieces1) {
+                minCX = Math.min(minCX, p.minX >> 4); maxCX = Math.max(maxCX, p.maxX >> 4);
+                minCZ = Math.min(minCZ, p.minZ >> 4); maxCZ = Math.max(maxCZ, p.maxZ >> 4);
+            }
+            for (int cx = minCX; cx <= maxCX; cx++) {
+                for (int cz = minCZ; cz <= maxCZ; cz++) {
+                    dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.render(pieces1, 20260710L, sink, cx, cz);
+                }
+            }
+            long frameCount = placed.values().stream().filter(b -> b.compare(Block.END_PORTAL_FRAME)).count();
+            long stoneBrickFamily = placed.values().stream().filter(b ->
+                    b.compare(Block.STONE_BRICKS) || b.compare(Block.CRACKED_STONE_BRICKS)
+                            || b.compare(Block.MOSSY_STONE_BRICKS) || b.compare(Block.INFESTED_STONE_BRICKS)).count();
+            check("stronghold seed 20260710 (0,0) real generation: exactly 12 end_portal_frame placed across the whole tree (" + frameCount + ")",
+                    frameCount == 12);
+            check("stronghold seed 20260710 (0,0) real generation: stone brick family blocks placed (" + stoneBrickFamily + ")",
+                    stoneBrickFamily > 1000);
+
+            var portalRoom = pieces1.stream().filter(p -> p.kind == dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.Kind.PORTAL_ROOM).findFirst().orElse(null);
+            boolean corePlaced = portalRoom != null;
+            if (portalRoom != null) {
+                for (int[] fp : dev.pointofpressure.minecom.worldgen.vanilla.VStrongholdGen.portalFramePositions(portalRoom)) {
+                    if (!sink.get(fp[0], fp[1], fp[2]).compare(Block.END_PORTAL_FRAME)) corePlaced = false;
+                }
+            }
+            check("stronghold seed 20260710 (0,0) real generation: the portal room's own 12 frames are all real end_portal_frame blocks", corePlaced);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }
