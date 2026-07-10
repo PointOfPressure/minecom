@@ -34,10 +34,12 @@ import java.util.function.LongConsumer;
  *
  * <p>Vanilla spawning draws from the level's non-seeded random, so this matches the
  * ALGORITHM and probabilities (verified by unit tests), not bit-identical positions.
- * Light is modelled behaviourally (sky-exposure via the world-surface heightmap +
- * time of day; block light approximated 0) since exact light propagation is a
- * separate subsystem. The per-chunk decision phase is embarrassingly parallel
- * (see {@link #spawnTickParallel}) — the project's multithreading thesis in action.
+ * Sky light is modelled behaviourally (sky-exposure via the world-surface heightmap +
+ * time of day, since Minestom has no server-side day/night sky-light recompute); block
+ * light queries Minestom's real {@link net.minestom.server.instance.LightingChunk}
+ * propagation directly (torches/lanterns/etc. correctly suppress nearby spawns). The
+ * per-chunk decision phase is embarrassingly parallel (see {@link #spawnTickParallel})
+ * — the project's multithreading thesis in action.
  */
 public final class VNaturalSpawner {
 
@@ -435,7 +437,7 @@ public final class VNaturalSpawner {
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         int skyLayer = skyLightRawAt(x, y, z);
         if (skyLayer > rng.nextInt(32)) return false;           // getBrightness(SKY) gate
-        int block = 0;                                          // block light approximated 0 (overworld limit 0)
+        int block = instance.getBlockLight(x, y, z);            // real Minestom-computed block light (torches etc.)
         if (block > 0) return false;
         int brightness = Math.max(skyLightAt(x, y, z), block);  // getMaxLocalRawBrightness (time-adjusted)
         return brightness <= rng.nextInt(8);                    // overworld monsterSpawnLightTest uniform[0,7]
