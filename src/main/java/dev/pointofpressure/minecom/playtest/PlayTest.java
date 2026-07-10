@@ -1851,6 +1851,16 @@ public final class PlayTest {
         check("a lightning-struck villager converts directly to a witch", becameWitch);
         clearEntitiesExceptPlayer();
 
+        // a sky-exposed entity offset from the ground strike XZ (too far for the 3-block
+        // post-strike damage radius to reach on its own) gets the strike REDIRECTED to it
+        // (findLightningTargetAround's entity fallback) rather than landing on the ground
+        EntityCreature flying = Mobs.spawn("zombie", world, new Pos(2.5, Y + 6, 0.5));
+        float healthBeforeRedirect = flying.getHealth();
+        dev.pointofpressure.minecom.survival.Lightning.strikeAt(world, 0.5, 0.5);
+        boolean redirected = waitFor(() -> flying.getHealth() < healthBeforeRedirect, 2000);
+        check("lightning redirects to a nearby sky-exposed entity instead of just the ground", redirected);
+        clearEntitiesExceptPlayer();
+
         // melee Channeling during a thunderstorm strikes the target
         world.setWeather(net.minestom.server.instance.Weather.THUNDER);
         zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 1.5));

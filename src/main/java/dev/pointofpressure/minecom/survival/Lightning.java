@@ -65,19 +65,25 @@ public final class Lightning {
     }
 
     /**
-     * Strikes at the given XZ, landing on the current top-solid block; damages nearby
-     * living entities (LightningBolt.tick: 5 damage), charges any creeper struck
-     * (Creeper.thunderHit sets DATA_IS_POWERED — real vanilla's charged-creeper source,
-     * see {@link dev.pointofpressure.minecom.blocks.Explosions#explode}), and converts
-     * any villager struck directly to a witch (Villager.thunderHit: unconditional on any
+     * Strikes at the given XZ, landing on the current top-solid block (or redirected to a
+     * nearby exposed living entity — see below); damages nearby living entities
+     * (LightningBolt.tick: 5 damage), charges any creeper struck (Creeper.thunderHit sets
+     * DATA_IS_POWERED — real vanilla's charged-creeper source, see
+     * {@link dev.pointofpressure.minecom.blocks.Explosions#explode}), and converts any
+     * villager struck directly to a witch (Villager.thunderHit: unconditional on any
      * non-peaceful difficulty, no probability roll — replaces the damage/fire entirely,
-     * matched here since this project has no difficulty setting below normal). Bounded:
-     * no fire-starting.
+     * matched here since this project has no difficulty setting below normal). Bounded: no
+     * fire-starting, no lightning-rod redirection (ServerLevel.findLightningRod: a 128-block
+     * POI-manager search, real vanilla's FIRST target-redirect check, tried before the
+     * entity-redirect below — this project has no spatial index of placed rods and a brute-
+     * force 128-radius scan on every strike would be far too expensive; needs a lightweight
+     * tracked-position registry as a prerequisite, logged in docs/HANDOFF.md).
      */
     public static void strikeAt(Instance instance, double x, double z) {
         int y = topSolidY(instance, (int) Math.floor(x), (int) Math.floor(z));
         if (y < -63) return;
-        Pos pos = new Pos(x, y + 1, z);
+        Pos ground = new Pos(x, y + 1, z);
+        Pos pos = redirectToEntity(instance, ground);
         Entity bolt = new Entity(EntityType.LIGHTNING_BOLT);
         bolt.setInstance(instance, pos);
         for (Entity e : instance.getNearbyEntities(pos, 3.0)) {
@@ -96,6 +102,32 @@ public final class Lightning {
             }
         }
         bolt.scheduler().buildTask(bolt::remove).delay(TaskSchedule.tick(2)).schedule();
+    }
+
+    /**
+     * ServerLevel.findLightningTargetAround's entity-redirect fallback (tried after the rod
+     * search, which this project doesn't implement — see the docs above): search a vertical
+     * column from ground level up to the world ceiling, inflated 3 blocks horizontally, for any
+     * sky-exposed living entity, and redirect the strike to a random one if any are found. This
+     * is the real, commonly-noticed "you can get randomly struck by lightning during a storm"
+     * mechanic — not just villager-to-witch and creeper-charging, which only trigger on a DIRECT
+     * hit near wherever the strike already landed.
+     */
+    private static Pos redirectToEntity(Instance instance, Pos ground) {
+        int minX = ground.blockX() - 3, maxX = ground.blockX() + 3;
+        int minZ = ground.blockZ() - 3, maxZ = ground.blockZ() + 3;
+        int minY = ground.blockY();
+        java.util.List<LivingEntity> candidates = new java.util.ArrayList<>();
+        for (Entity e : instance.getEntities()) {
+            if (!(e instanceof LivingEntity le) || le.isDead()) continue;
+            Pos p = le.getPosition();
+            if (p.blockX() < minX || p.blockX() > maxX || p.blockZ() < minZ || p.blockZ() > maxZ) continue;
+            if (p.blockY() < minY) continue;
+            if (!canSeeSky(instance, p)) continue;
+            candidates.add(le);
+        }
+        if (candidates.isEmpty()) return ground;
+        return candidates.get(RANDOM.nextInt(candidates.size())).getPosition();
     }
 
     private static int topSolidY(Instance instance, int x, int z) {
