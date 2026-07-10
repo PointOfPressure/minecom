@@ -381,15 +381,24 @@ public final class VPathfinder {
         if (mob.canFloat && block(x, y, z) == Block.WATER) return y + 0.5;
         Block below = block(x, y - 1, z);
         if (below.isAir() || !below.isSolid()) return y - 1;
-        // approximation of collision-shape max: full blocks 1.0, others via registry height
-        String name = below.name();
-        double top = 1.0;
-        if (name.endsWith("_slab") && !"double".equals(below.getProperty("type"))
-                && "bottom".equals(below.getProperty("type"))) top = 0.5;
-        else if (name.equals("minecraft:snow")) top = Integer.parseInt(below.getProperty("layers")) * 0.125;
-        else if (name.endsWith("_carpet") || name.equals("minecraft:moss_carpet")) top = 0.0625;
-        else if (name.equals("minecraft:dirt_path") || name.equals("minecraft:farmland")) top = 0.9375;
-        return y - 1 + top;
+        return y - 1 + collisionTop(below);
+    }
+
+    /** Real collision-shape max Y (registry-driven, not a hardcoded per-block-name list — covers
+     * every partial-height block generically: slabs, carpets, farmland, soul sand, scaffolding,
+     * etc.). Verified against real vanilla heights for slabs/carpets/farmland/dirt_path — all
+     * match exactly. Snow layers are a confirmed EXCEPTION: Minestom's registered collision shape
+     * for minecraft:snow doesn't match real vanilla's layers*0.125 formula (e.g. layers=3 reports
+     * 0.25 instead of 0.375), so that one case is still hardcoded rather than trusting the registry. */
+    private static double collisionTop(Block block) {
+        if (block.name().equals("minecraft:snow")) {
+            return Integer.parseInt(block.getProperty("layers")) * 0.125;
+        }
+        var reg = block.registry();
+        if (reg == null) return 1.0;
+        var shape = reg.collisionShape();
+        if (shape == null) return 1.0;
+        return shape.relativeEnd().y();
     }
 
     // ------------------------------------------------------------------ A* search
