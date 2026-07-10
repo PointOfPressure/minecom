@@ -58,6 +58,20 @@ public final class VBiome {
         return (long) ((float) value * 10000.0F);
     }
 
+    /** Diagnostic: the raw (unquantized) 6 climate parameters at a block position. */
+    public double[] rawParamsAt(int blockX, int blockY, int blockZ) {
+        boolean was = VDensity.cellMode();
+        VDensity.cellModeRaw(false);
+        try {
+            return new double[]{
+                    temperature.compute(blockX, blockY, blockZ), humidity.compute(blockX, blockY, blockZ),
+                    continentalness.compute(blockX, blockY, blockZ), erosion.compute(blockX, blockY, blockZ),
+                    depth.compute(blockX, blockY, blockZ), weirdness.compute(blockX, blockY, blockZ)};
+        } finally {
+            VDensity.cellModeRaw(was);
+        }
+    }
+
     /** Biome id at quart coords (block >> 2): Climate.Sampler.sample + RTree search. */
     public String biomeAt(int quartX, int quartY, int quartZ) {
         int blockX = quartX << 2, blockY = quartY << 2, blockZ = quartZ << 2;

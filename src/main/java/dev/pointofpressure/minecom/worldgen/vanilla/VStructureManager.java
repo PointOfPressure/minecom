@@ -232,6 +232,38 @@ public final class VStructureManager {
         if (surface != null) placeWoodlandMansions(chunkX, chunkZ, minX, minZ, maxX, maxZ, canvas);
     }
 
+    /**
+     * Diagnostic test hook for any generic jigsaw {@link Type} (village/pillager_outpost/
+     * trail_ruins/ancient_city/trial_chambers): {@code {isStructureChunk, assemblySucceeded,
+     * pieceCount}} for the given set name at the given chunk (no radius scan — checks that exact
+     * chunk only, matching how real vanilla's own placement grid anchors one candidate per
+     * region).
+     */
+    public int[] testTypeAt(String setName, int chunkX, int chunkZ) {
+        for (Type type : types) {
+            if (!type.setName.equals(setName)) continue;
+            boolean isChunk = placement.isStructureChunk(setName, chunkX, chunkZ);
+            if (!isChunk) return new int[]{0, 0, 0, 0};
+            VJigsaw.Assembly rawAssembly = jigsaw.assembleFull(type.def, chunkX, chunkZ, type.aliases);
+            if (rawAssembly == null) return new int[]{1, 0, 0, 0};
+            boolean biomeOk = biomeOk(type, rawAssembly);
+            VJigsaw.Assembly start = startFor(type, chunkX, chunkZ);
+            return new int[]{1, 1, biomeOk ? 1 : 0, start == null ? 0 : start.pieces.size()};
+        }
+        return null;
+    }
+
+    /** Diagnostic: the real biome sampled at a jigsaw assembly's center, for testTypeAt debugging. */
+    public String testTypeBiomeAt(String setName, int chunkX, int chunkZ) {
+        for (Type type : types) {
+            if (!type.setName.equals(setName)) continue;
+            VJigsaw.Assembly a = jigsaw.assembleFull(type.def, chunkX, chunkZ, type.aliases);
+            if (a == null) return null;
+            return biomes.biomeAt(a.centerX >> 2, a.centerY >> 2, a.centerZ >> 2) + " (center=" + a.centerX + "," + a.centerY + "," + a.centerZ + ")";
+        }
+        return null;
+    }
+
     // ------------------------------------------------------------------ ruined portal
 
     /**
