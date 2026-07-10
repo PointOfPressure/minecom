@@ -1028,6 +1028,60 @@ public final class SelfTest {
                     monPrismarineFamily == 10392);
         }
 
+        // Woodland mansion: the real room-grid algorithm (MansionGrid/SimpleGrid) — a genuinely
+        // different shape again from every other structure ported this session: an 11x11 grid
+        // seeded with a fixed entrance skeleton, a recursive randomized self-avoiding corridor
+        // carve, an edge-cleanup fixpoint pass, then greedy room identification/merging with a
+        // documented door-placement fallback chain. NBT-template piece placement
+        // (MansionPiecePlacer) is a follow-up increment; this verifies the algorithm stage alone,
+        // matching the same staged-verification precedent used before porting ocean monument's
+        // and stronghold's own geometry.
+        {
+            var mGrid = dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.testGenerate(20260710L, 0, 0);
+            int houseCells = 0, thirdHouseCells = 0;
+            for (int x = 0; x < 11; x++) {
+                for (int y = 0; y < 11; y++) {
+                    if (dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.isHouse(mGrid.baseGrid, x, y)) houseCells++;
+                    if (dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.isHouse(mGrid.thirdFloorGrid, x, y)) thirdHouseCells++;
+                }
+            }
+            check("woodland mansion seed 20260710 (0,0): base grid has a plausible house-cell count (" + houseCells + ")",
+                    houseCells >= 10 && houseCells <= 121);
+            check("woodland mansion seed 20260710 (0,0): third floor is smaller than the base floor (" + thirdHouseCells + " < " + houseCells + ")",
+                    thirdHouseCells > 0 && thirdHouseCells < houseCells);
+
+            var mGrid2 = dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.testGenerate(20260710L, 0, 0);
+            boolean identical = true;
+            for (int x = 0; x < 11 && identical; x++) {
+                for (int y = 0; y < 11 && identical; y++) {
+                    if (mGrid.baseGrid.get(x, y) != mGrid2.baseGrid.get(x, y)) identical = false;
+                    if (mGrid.floorRooms[0].get(x, y) != mGrid2.floorRooms[0].get(x, y)) identical = false;
+                    if (mGrid.floorRooms[2].get(x, y) != mGrid2.floorRooms[2].get(x, y)) identical = false;
+                }
+            }
+            check("woodland mansion seed 20260710 (0,0): re-generating the same (seed,chunk) reproduces an identical grid", identical);
+
+            // crash/robustness sweep — this algorithm's recursive corridor carve + door-fallback
+            // chain has enough branching that a single hand-picked seed isn't strong evidence of
+            // correctness on its own.
+            int crashes = 0;
+            for (long seed : new long[]{1L, 42L, 999999L, -5000L, 7L}) {
+                for (int cx = -2; cx <= 2; cx++) {
+                    for (int cz = -2; cz <= 2; cz++) {
+                        try {
+                            var g = dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.testGenerate(seed, cx, cz);
+                            int hc = 0;
+                            for (int x = 0; x < 11; x++) for (int y = 0; y < 11; y++) if (dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.isHouse(g.baseGrid, x, y)) hc++;
+                            if (hc < 10) crashes++;
+                        } catch (Exception e) {
+                            crashes++;
+                        }
+                    }
+                }
+            }
+            check("woodland mansion: zero crashes/degenerate grids across 125 seed/position combinations", crashes == 0);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }
