@@ -1,0 +1,50 @@
+Copyright (c) 2026 PointOfPressure. All rights reserved.
+
+TEMPORARY SOURCE-AVAILABLE NOTICE
+==================================
+
+This repository is public so that people can read, follow, and evaluate the
+project while it is being built. It is NOT open source yet, and no license
+to use, copy, modify, merge, publish, distribute, sublicense, run, or
+otherwise reuse this code — in whole or in part — is granted at this time.
+All rights are reserved by the copyright holder.
+
+Why this restriction exists right now:
+
+  - The project is under active, fast-moving development. Core architecture
+    (worldgen pipeline, entity/AI framework, data-bundling format) is still
+    shifting week to week; a fork or reuse today would be built on a
+    foundation that may not exist in its current form a week from now.
+  - Correctness is verified against real vanilla Minecraft server output
+    (a bit-exact region-diff methodology, among other test suites) as the
+    project goes — that verification work, and the judgment calls behind
+    it, are part of what makes this worth citing/crediting properly once
+    it's redistributed, and that's easier to do once the dust settles.
+  - This avoids fragmented, prematurely-diverged forks while the project
+    finds its shape, and keeps one canonical, correctly-attributed source
+    of truth during the period where it changes the most.
+
+This is intentionally temporary. Once the project reaches a stable
+milestone, it is the intent of the author to release it under a permissive
+open-source license (exact license TBD). Until that happens:
+
+  - You may read the code and clone the repository for personal, private
+    evaluation.
+  - You may NOT redistribute, publish forks, use this code (or code derived
+    from it) in another project, or deploy it as a running service, without
+    prior written permission from the copyright holder.
+  - Contributions via pull request are welcome for discussion, but merging
+    a contribution does not grant the contributor any license beyond what
+    this notice grants everyone else — talk to the maintainer first.
+
+This project decompiles and studies official Minecraft: Java Edition server
+data/behavior as a reference for compatibility (a common, established
+practice for cleanroom-style reimplementations), but does not redistribute
+Mojang's code or copyrighted assets. See the source comments throughout
+the codebase — particularly `vanilla-src/` (gitignored, never committed)
+and the `src/main/resources/vanilla/` data bundle — for how that boundary
+is maintained. Nothing in this notice grants any rights to Mojang/Microsoft
+intellectual property; Minecraft is a trademark of Mojang Studios.
+
+Questions about licensing, collaboration, or future reuse: open an issue
+or reach out to the maintainer directly.
