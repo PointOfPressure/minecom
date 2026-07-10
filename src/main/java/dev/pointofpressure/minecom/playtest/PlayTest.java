@@ -162,6 +162,7 @@ public final class PlayTest {
         scenario("jukebox: playing emits a direct signal, disc keeps its comparator reading, eject drops it", PlayTest::scenarioJukebox);
         scenario("lectern: books drives a real page-count comparator signal, page-turns pulse redstone, taking returns the book", PlayTest::scenarioLectern);
         scenario("tripwire: two facing hooks connect through wire, stepping on it powers a direct signal, shears disarm in place", PlayTest::scenarioTripwire);
+        scenario("respawn anchor: charges with glowstone, explodes outside the nether, sets spawn and depletes a charge on respawn in it", PlayTest::scenarioRespawnAnchor);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -538,6 +539,72 @@ public final class PlayTest {
         world.setBlock(46, Y + 1, z, Block.AIR);
         world.setBlock(47, Y + 1, z, Block.AIR);
         world.setBlock(48, Y + 1, z, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * RespawnAnchorBlock: charges 0-4 with glowstone (getScaledChargeLevel comparator formula
+     * verified at charges=4 -> 15). canSetSpawn only holds in the Nether — using a charged
+     * anchor in the overworld explodes it instead; using one in the Nether sets the player's
+     * spawn point without consuming a charge, and the charge is only actually depleted by
+     * PlayerRespawnEvent when the player later respawns there.
+     */
+    private static void scenarioRespawnAnchor() {
+        clearEntitiesExceptPlayer();
+        BlockVec overworldPos = new BlockVec(40, Y + 1, 40);
+        world.setBlock(overworldPos, Block.RESPAWN_ANCHOR);
+        rs(41, Y + 1, 40, Block.COMPARATOR.withProperty("facing", "west")); // reads the anchor
+        rs(42, Y + 1, 40, Block.REDSTONE_WIRE);
+        for (int i = 0; i < 4; i++) {
+            useItemOnBlock(ItemStack.of(Material.GLOWSTONE), overworldPos, BlockFace.TOP);
+        }
+        check("charging 4 times with glowstone reaches the max charge",
+                "4".equals(world.getBlock(overworldPos).getProperty("charges")));
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(41, Y + 1, 40));
+        check("4 charges gives comparator output 15 (getScaledChargeLevel: floor(4/4*15))",
+                waitFor(() -> "15".equals(prop(42, Y + 1, 40, "power")), 3000));
+        world.setBlock(41, Y + 1, 40, Block.AIR);
+        world.setBlock(42, Y + 1, 40, Block.AIR);
+
+        interact(overworldPos);
+        boolean explodedInOverworld = waitFor(() -> world.getBlock(overworldPos).isAir(), 3000);
+        check("using a charged anchor outside the Nether explodes it instead of setting spawn",
+                explodedInOverworld);
+        clearEntitiesExceptPlayer();
+
+        var nether = dev.pointofpressure.minecom.Bootstrap.netherOf(world);
+        int nx = 200, ny = 60, nz = 200;
+        nether.setBlock(nx, ny, nz, Block.NETHERRACK);
+        nether.setBlock(nx, ny + 1, nz, Block.AIR);
+        nether.setBlock(nx, ny + 2, nz, Block.AIR);
+        BlockVec netherPos = new BlockVec(nx, ny + 1, nz);
+        nether.setBlock(netherPos, Block.RESPAWN_ANCHOR);
+        player.setInstance(nether, new Pos(nx + 0.5, ny + 1, nz + 0.5)).join();
+        tick(2);
+
+        player.setItemInMainHand(ItemStack.of(Material.GLOWSTONE));
+        EventDispatcher.call(new PlayerUseItemOnBlockEvent(player, PlayerHand.MAIN,
+                player.getItemInMainHand(), netherPos, new Vec(0.5, 1.0, 0.5), BlockFace.TOP));
+        tick(1);
+        check("charging the Nether anchor once", "1".equals(nether.getBlock(netherPos).getProperty("charges")));
+
+        EventDispatcher.call(new PlayerBlockInteractEvent(player, PlayerHand.MAIN, nether,
+                nether.getBlock(netherPos), netherPos, new Vec(0.5, 0.5, 0.5), BlockFace.TOP));
+        tick(1);
+        check("using a charged anchor in the Nether sets spawn without consuming its charge",
+                "1".equals(nether.getBlock(netherPos).getProperty("charges"))
+                        && player.getRespawnPoint().distance(new Pos(nx + 0.5, ny + 1.5, nz + 0.5)) < 1.0);
+
+        player.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 1000);
+        waitFor(player::isDead, 3000);
+        player.respawn();
+        boolean depleted = waitFor(() -> "0".equals(nether.getBlock(netherPos).getProperty("charges")), 3000);
+        check("actually respawning at the anchor depletes exactly 1 charge", depleted);
+
+        nether.setBlock(netherPos, Block.AIR);
+        nether.setBlock(nx, ny, nz, Block.AIR);
+        player.setInstance(world, new Pos(0.5, Y + 1, 0.5)).join();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

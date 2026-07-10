@@ -665,6 +665,10 @@ public final class Redstone {
             return dev.pointofpressure.minecom.blocks.Jukebox.comparatorOutput(pos, block);
         } else if (key.equals("lectern")) {
             return dev.pointofpressure.minecom.blocks.Lectern.comparatorOutput(pos, block);
+        } else if (key.equals("respawn_anchor")) {
+            // RespawnAnchorBlock.getScaledChargeLevel(state, 15): floor(charges/4 * 15)
+            int charges = Integer.parseInt(block.getProperty("charges"));
+            return (int) Math.floor(charges / 4.0 * 15);
         } else {
             return -1;
         }
