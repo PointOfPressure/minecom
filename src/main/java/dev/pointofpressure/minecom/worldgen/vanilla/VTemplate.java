@@ -74,6 +74,10 @@ public final class VTemplate {
                 default -> d;
             };
         }
+        /** Rotation.getRotated(Rotation): compose two rotations (ordinals are 0/90/180/270 in order, so sum mod 4 works). */
+        public Rot getRotated(Rot other) {
+            return VALUES[(this.ordinal() + other.ordinal()) % 4];
+        }
         public String vanillaName() {
             return switch (this) {
                 case NONE -> "NONE";
@@ -106,6 +110,27 @@ public final class VTemplate {
      */
     public static int[] transformMirrored(int x, int y, int z, boolean mirrorFrontBack, Rot rot, int pivotX, int pivotZ) {
         return transform(mirrorFrontBack ? -x : x, y, z, rot, pivotX, pivotZ);
+    }
+
+    /** The other real vanilla Mirror value, needed by woodland_mansion's addRoom1x2/addRoom2x2 (negates raw Z instead of X, mirror applied before rotation). */
+    public enum Mirror { NONE, LEFT_RIGHT, FRONT_BACK }
+
+    /** StructureTemplate.transform(pos, mirror, rotation, pivot), general form covering both real Mirror values. */
+    public static int[] transformMirrored(int x, int y, int z, Mirror mirror, Rot rot, int pivotX, int pivotZ) {
+        return switch (mirror) {
+            case LEFT_RIGHT -> transform(x, y, -z, rot, pivotX, pivotZ);
+            case FRONT_BACK -> transform(-x, y, z, rot, pivotX, pivotZ);
+            default -> transform(x, y, z, rot, pivotX, pivotZ);
+        };
+    }
+
+    /** Mirror.mirror(Direction): LEFT_RIGHT flips the Z-axis pair (NORTH/SOUTH), FRONT_BACK flips the X-axis pair (EAST/WEST). */
+    public static Dir mirrorDir(Dir d, Mirror mirror) {
+        return switch (mirror) {
+            case LEFT_RIGHT -> (d == Dir.NORTH || d == Dir.SOUTH) ? d.opposite() : d;
+            case FRONT_BACK -> (d == Dir.EAST || d == Dir.WEST) ? d.opposite() : d;
+            default -> d;
+        };
     }
 
     // -------------------------------------------------------------- records

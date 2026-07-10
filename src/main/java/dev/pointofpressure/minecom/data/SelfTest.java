@@ -1082,6 +1082,90 @@ public final class SelfTest {
             check("woodland mansion: zero crashes/degenerate grids across 125 seed/position combinations", crashes == 0);
         }
 
+        // Woodland mansion piece placement: MansionPiecePlacer (the largest single class in the
+        // whole vanilla structure codebase) ported in full — real NBT-template dispatch across 3
+        // floors (walls/corridors/carpets/doors/rooms of every size+orientation) plus roof
+        // geometry, reusing this project's already bit-exact-verified VTemplate transform math.
+        // Real vanilla's rotation-drawn-before-room-graph RNG order is honored here
+        // (testGenerateMansion draws rotation first, then feeds the SAME stream into the room
+        // graph + placement, matching WoodlandMansionStructure.findGenerationPoint's real order —
+        // fixing the ordering gap flagged when the room-graph-only stage was first ported).
+        {
+            var origin = new dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.Pos(0, 70, 0);
+            var pieces = dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.testGenerateMansion(20260710L, 0, 0, origin);
+            check("woodland mansion seed 20260710 (0,0): assembles a real piece list (" + pieces.size() + " pieces)",
+                    !pieces.isEmpty());
+
+            int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+            for (var p : pieces) {
+                var t = p.template();
+                int span = Math.max(t.sizeX, t.sizeZ) + 1;
+                minX = Math.min(minX, p.baseX() - span); maxX = Math.max(maxX, p.baseX() + span);
+                minZ = Math.min(minZ, p.baseZ() - span); maxZ = Math.max(maxZ, p.baseZ() + span);
+            }
+            var placed = new java.util.HashMap<String, Block>();
+            var sink = new dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.Sink() {
+                public void set(int x, int y, int z, Block b) { placed.put(x + "," + y + "," + z, b); }
+            };
+            for (int cx = minX >> 4; cx <= maxX >> 4; cx++) {
+                for (int cz = minZ >> 4; cz <= maxZ >> 4; cz++) {
+                    dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.render(pieces, sink, cx, cz);
+                }
+            }
+            long darkOakPlanks = placed.values().stream().filter(bl -> bl.compare(Block.DARK_OAK_PLANKS)).count();
+            long darkOakLog = placed.values().stream().filter(bl -> bl.compare(Block.DARK_OAK_LOG)).count();
+            long cobblestone = placed.values().stream().filter(bl -> bl.compare(Block.COBBLESTONE)).count();
+            long chests = placed.values().stream().filter(bl -> bl.compare(Block.CHEST)).count();
+            check("woodland mansion seed 20260710 (0,0) real generation: " + placed.size() + " total placed cells (97974 expected)",
+                    placed.size() == 97974);
+            check("woodland mansion seed 20260710 (0,0) real generation: dark_oak_planks=" + darkOakPlanks + ", dark_oak_log=" + darkOakLog + ", cobblestone=" + cobblestone,
+                    darkOakPlanks == 15695 && darkOakLog == 2510 && cobblestone == 2851);
+            check("woodland mansion seed 20260710 (0,0) real generation: " + chests + " chests placed (container block only, loot skipped per established precedent)",
+                    chests == 32);
+
+            var placed2 = new java.util.HashMap<String, Block>();
+            var sink2 = new dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.Sink() {
+                public void set(int x, int y, int z, Block b) { placed2.put(x + "," + y + "," + z, b); }
+            };
+            for (int cx = minX >> 4; cx <= maxX >> 4; cx++) {
+                for (int cz = minZ >> 4; cz <= maxZ >> 4; cz++) {
+                    dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.render(pieces, sink2, cx, cz);
+                }
+            }
+            check("woodland mansion seed 20260710 (0,0) real generation: re-rendering the same chunk range is idempotent", placed.equals(placed2));
+
+            var pieces2 = dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.testGenerateMansion(20260710L, 0, 0, origin);
+            boolean identical = pieces.size() == pieces2.size();
+            if (identical) {
+                for (int i = 0; i < pieces.size(); i++) {
+                    var a = pieces.get(i); var b = pieces2.get(i);
+                    if (a.baseX() != b.baseX() || a.baseY() != b.baseY() || a.baseZ() != b.baseZ()
+                            || a.rotation() != b.rotation() || a.mirror() != b.mirror()) { identical = false; break; }
+                }
+            }
+            check("woodland mansion seed 20260710 (0,0): re-generating the same (seed,chunk) reproduces an identical piece list", identical);
+
+            int crashes = 0;
+            for (long seed : new long[]{1L, 42L, 999999L, -5000L, 7L}) {
+                for (int cx = -2; cx <= 2; cx++) {
+                    for (int cz = -2; cz <= 2; cz++) {
+                        try {
+                            var p = dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.testGenerateMansion(seed, cx, cz, origin);
+                            if (p.isEmpty()) { crashes++; continue; }
+                            var pl = new java.util.HashMap<String, Block>();
+                            var s = new dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.Sink() {
+                                public void set(int x, int y, int z, Block b) { pl.put(x + "," + y + "," + z, b); }
+                            };
+                            dev.pointofpressure.minecom.worldgen.vanilla.VMansionGen.render(p, s, cx, cz);
+                        } catch (Exception e) {
+                            crashes++;
+                        }
+                    }
+                }
+            }
+            check("woodland mansion piece placement: zero crashes across 125 seed/position combinations", crashes == 0);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }
