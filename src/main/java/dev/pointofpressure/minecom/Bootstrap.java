@@ -154,6 +154,7 @@ public final class Bootstrap {
         });
         dev.pointofpressure.minecom.mobs.Breeding.register(events);
         dev.pointofpressure.minecom.mobs.Breeding.start(overworld);
+        dev.pointofpressure.minecom.mobs.Shearing.register(events);
         dev.pointofpressure.minecom.survival.Potions.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Brewing.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Anvils.register(events);

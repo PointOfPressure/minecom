@@ -972,6 +972,11 @@ public final class VanillaMobs {
         brain.addGoal(7, new Goals.LookAtPlayer(brain, 6));
         brain.addGoal(8, new Goals.RandomLookAround(brain));
         mob.setInstance(instance, pos);
+        if (spec.type() == EntityType.SHEEP && mob.getEntityMeta()
+                instanceof net.minestom.server.entity.metadata.animal.SheepMeta sheepMeta) {
+            String biome = instance.getBiome(pos.blockX(), pos.blockY(), pos.blockZ()).name();
+            sheepMeta.setColor(dev.pointofpressure.minecom.mobs.Shearing.randomColor(biome, ThreadLocalRandom.current()));
+        }
         return mob;
     }
 

@@ -153,6 +153,7 @@ public final class PlayTest {
         scenario("redstone: detector rail powers a lamp while a cart sits on it", PlayTest::scenarioDetectorRail);
         scenario("boat: sneak dismounts the rider, attacking breaks it and drops the item", PlayTest::scenarioBoatBreakAndDismount);
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
+        scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -315,6 +316,49 @@ public final class PlayTest {
                 armored >= 1 && armored <= 45);
         spawned.forEach(Entity::remove);
         clearEntitiesExceptPlayer();
+    }
+
+    /** Shears drop wool matching the sheep's color; a sheared sheep can't be re-sheared immediately. */
+    private static void scenarioShearing() {
+        clearEntitiesExceptPlayer();
+        EntityCreature sheep = Mobs.spawn("sheep", world, new Pos(0.5, Y + 1, 1.5));
+        var meta = (net.minestom.server.entity.metadata.animal.SheepMeta) sheep.getEntityMeta();
+        meta.setColor(net.minestom.server.color.DyeColor.RED);
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        player.setItemInMainHand(ItemStack.of(Material.SHEARS));
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, sheep, net.minestom.server.entity.PlayerHand.MAIN, net.minestom.server.coordinate.Vec.ZERO));
+        boolean woolDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.RED_WOOL), 1000);
+        check("shearing a red sheep drops red_wool (color-matched loot)", woolDropped);
+        check("the sheep is now marked sheared", meta.isSheared());
+        boolean shearsDamaged = player.getItemInMainHand().get(DataComponents.DAMAGE) != null;
+        check("the shears took 1 durability damage", shearsDamaged);
+
+        int woolBefore = totalRedWool();
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, sheep, net.minestom.server.entity.PlayerHand.MAIN, net.minestom.server.coordinate.Vec.ZERO));
+        tick(2);
+        int woolAfter = totalRedWool();
+        check("an already-sheared sheep can't be sheared again (wool total: " + woolBefore + " -> " + woolAfter + ")",
+                woolAfter == woolBefore);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /** Ground item entities + the player's own inventory (dropped wool is close enough to auto-pick up). */
+    private static int totalRedWool() {
+        int ground = world.getEntities().stream()
+                .filter(en -> en instanceof net.minestom.server.entity.ItemEntity ie && ie.getItemStack().material() == Material.RED_WOOL)
+                .mapToInt(en -> ((net.minestom.server.entity.ItemEntity) en).getItemStack().amount())
+                .sum();
+        int inInventory = 0;
+        for (ItemStack stack : player.getInventory().getItemStacks()) {
+            if (stack.material() == Material.RED_WOOL) inInventory += stack.amount();
+        }
+        return ground + inInventory;
     }
 
     /** Weapon holding: ~1% of zombies hold iron_sword/spear/shovel; ~10% of drowned hold trident/fishing_rod. */
