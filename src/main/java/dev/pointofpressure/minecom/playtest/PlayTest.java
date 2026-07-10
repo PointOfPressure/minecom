@@ -155,6 +155,7 @@ public final class PlayTest {
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
+        scenario("pillager: visibly charges its crossbow before firing, unlike a skeleton's bow rhythm", PlayTest::scenarioPillager);
         scenario("guardian: charges a laser beam at a target in continuous line of sight, then fires", PlayTest::scenarioGuardian);
         scenario("elder guardian: tougher stats, faster laser charge than base guardian", PlayTest::scenarioElderGuardian);
         scenario("shulker: stationary, fires a bullet that damages and levitates the target", PlayTest::scenarioShulker);
@@ -382,6 +383,26 @@ public final class PlayTest {
         boolean attacked = waitFor(() -> player.getHealth() < healthBefore, 15000);
         check("a circling phantom eventually dives and strikes the player", attacked);
         if (phantom != null) phantom.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Pillager: RangedCrossbowAttackGoal visibly charges (setChargingCrossbow=true, ~1.25s) before
+     * a post-charge delay, then fires — a distinct rhythm from a skeleton's fixed-interval bow shots.
+     */
+    private static void scenarioPillager() {
+        clearEntitiesExceptPlayer();
+        player.teleport(new Pos(0.5, Y + 1, 5.5)).join();
+        var pillager = Mobs.spawn("pillager", world, new Pos(0.5, Y + 1, 0.5));
+        boolean charged = pillager instanceof EntityCreature ec
+                && waitFor(() -> ec.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.raider.PillagerMeta pm
+                        && pm.isChargingCrossbow(), 3000);
+        check("pillager visibly charges its crossbow (setChargingCrossbow) before firing", charged);
+        float healthBefore = player.getHealth();
+        boolean shotFired = waitFor(() -> player.getHealth() < healthBefore, 8000);
+        check("a pillager with continuous line of sight completes its charge and fires an arrow", shotFired);
+        if (pillager != null) pillager.remove();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

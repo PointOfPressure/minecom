@@ -1014,12 +1014,12 @@ public final class VanillaMobs {
 
     // ---------------------------------------------------------------- raiders
 
-    /** Pillager: crossbow-ranged illager (approximated as a bow shooter), 24 HP. */
+    /** Pillager: crossbow-ranged illager, 24 HP. RangedCrossbowAttackGoal(mob, 1.0, 8.0F). */
     public static EntityCreature pillager(Instance instance, Pos pos) {
         EntityCreature mob = new EntityCreature(EntityType.PILLAGER);
         mob.setEquipment(EquipmentSlot.MAIN_HAND, ItemStack.of(Material.CROSSBOW));
         VBrain brain = brain(mob, 0.35, 16, 2, 24, 0);
-        brain.addGoal(4, new Goals.BowAttack(brain, 1.0, 20, 15));
+        brain.addGoal(4, new Goals.CrossbowAttack(brain, 1.0, 8.0f));
         brain.addGoal(7, new Goals.WaterAvoidingRandomStroll(brain, 0.6));
         brain.addGoal(8, new Goals.LookAtPlayer(brain, 8));
         brain.addGoal(8, new Goals.RandomLookAround(brain));

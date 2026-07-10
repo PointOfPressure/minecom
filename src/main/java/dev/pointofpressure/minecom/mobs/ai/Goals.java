@@ -644,6 +644,126 @@ public final class Goals {
         }
     }
 
+    /**
+     * RangedCrossbowAttackGoal: unlike a bow's fixed-interval shot, a crossbow visibly charges
+     * (25 ticks, CrossbowItem.getChargeDuration at 1.25s/no enchant) before a 20-39 tick
+     * (20+random.nextInt(20)) post-charge delay, then fires once ready and back in sight —
+     * a real vanilla pillager/illusioner/witch-adjacent AI shape, not a skeleton's bow rhythm.
+     * setChargingCrossbow drives the client-visible raised-crossbow pose during CHARGING.
+     */
+    public static class CrossbowAttack extends VGoal {
+        private enum State { UNCHARGED, CHARGING, CHARGED, READY_TO_ATTACK }
+
+        private final VBrain brain;
+        private final double speedModifier;
+        private final float attackRadiusSqr;
+        private State state = State.UNCHARGED;
+        private int seeTime;
+        private int attackDelay;
+        private int updatePathDelay;
+
+        public CrossbowAttack(VBrain brain, double speedModifier, float attackRadius) {
+            this.brain = brain;
+            this.speedModifier = speedModifier;
+            this.attackRadiusSqr = attackRadius * attackRadius;
+            setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            return brain.target != null && !brain.target.isDead();
+        }
+
+        @Override
+        public void stop() {
+            brain.stopNavigation();
+            seeTime = 0;
+            if (state != State.UNCHARGED) {
+                brain.mob.refreshActiveHand(false, false, false);
+                setCharging(false);
+            }
+            state = State.UNCHARGED;
+        }
+
+        @Override
+        public boolean requiresUpdateEveryTick() {
+            return true;
+        }
+
+        @Override
+        public void tick() {
+            LivingEntity target = brain.target;
+            if (target == null) return;
+            boolean seen = brain.hasLineOfSight(target);
+            boolean hadSeen = seeTime > 0;
+            if (seen != hadSeen) seeTime = 0;
+            seeTime += seen ? 1 : -1;
+
+            double distSq = brain.mob.getPosition().distanceSquared(target.getPosition());
+            boolean needsToMove = (distSq > attackRadiusSqr || seeTime < 5) && attackDelay == 0;
+            if (needsToMove) {
+                if (--updatePathDelay <= 0) {
+                    brain.moveTo(target.getPosition(), state == State.UNCHARGED ? speedModifier : speedModifier * 0.5);
+                    updatePathDelay = 20 + brain.random.nextInt(21); // PATHFINDING_DELAY_RANGE: rangeOfSeconds(1,2) = uniform[20,40]
+                }
+            } else {
+                updatePathDelay = 0;
+                brain.stopNavigation();
+            }
+            brain.lookAt(target);
+
+            switch (state) {
+                case UNCHARGED -> {
+                    if (!needsToMove) {
+                        brain.mob.refreshActiveHand(true, false, false);
+                        setCharging(true);
+                        state = State.CHARGING;
+                        chargeTicks = 0;
+                    }
+                }
+                case CHARGING -> {
+                    chargeTicks++;
+                    if (chargeTicks >= CHARGE_DURATION_TICKS) {
+                        brain.mob.refreshActiveHand(false, false, false);
+                        setCharging(false);
+                        state = State.CHARGED;
+                        attackDelay = 20 + brain.random.nextInt(20);
+                    }
+                }
+                case CHARGED -> {
+                    if (--attackDelay <= 0) state = State.READY_TO_ATTACK;
+                }
+                case READY_TO_ATTACK -> {
+                    if (seen) {
+                        shootArrow(target);
+                        state = State.UNCHARGED;
+                    }
+                }
+            }
+        }
+
+        private int chargeTicks;
+        private static final int CHARGE_DURATION_TICKS = 25; // CrossbowItem.getChargeDuration: floor(1.25f * 20)
+
+        private void setCharging(boolean charging) {
+            if (brain.mob.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.raider.AbstractIllagerMeta illager) {
+                if (illager instanceof net.minestom.server.entity.metadata.monster.raider.PillagerMeta pillager) {
+                    pillager.setChargingCrossbow(charging);
+                }
+            }
+        }
+
+        private void shootArrow(LivingEntity target) {
+            var arrow = new net.minestom.server.entity.EntityProjectile(brain.mob,
+                    net.minestom.server.entity.EntityType.ARROW);
+            Pos from = brain.mob.getPosition().add(0, brain.mob.getEyeHeight() - 0.1, 0);
+            arrow.setInstance(brain.mob.getInstance(), from);
+            Vec direction = target.getPosition().add(0, target.getEyeHeight() / 2, 0)
+                    .sub(from).asVec().normalize();
+            arrow.setVelocity(direction.mul(32).add(0, 3, 0));
+        }
+    }
+
     /** Creeper swell driven from SwellGoal: start under 3 blocks, abort beyond 7 or lost sight. */
     public static class Swell extends VGoal {
         private final VBrain brain;
