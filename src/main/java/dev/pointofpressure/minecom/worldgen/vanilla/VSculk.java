@@ -677,4 +677,152 @@ public final class VSculk {
         }
         return null;
     }
+
+    // ============================================================== generic multiface growth (glow_lichen, etc.)
+
+    /**
+     * MultifaceGrowthFeature.place, generalized to any MultifaceBlock (not sculk-vein-specific,
+     * unlike {@link #placeMultifaceVein}). Real vanilla precomputes a fixed direction list once
+     * from can_place_on_floor/ceiling/wall (UP if ceiling, DOWN if floor, then the horizontal
+     * plane [N,S,W,E] if wall — {@code MultifaceGrowthConfiguration}'s constructor order) and
+     * shuffles THAT filtered list — not all 6 directions filtered during iteration — which
+     * consumes a different number of RNG draws, so the pre-filter order matters for bit-exactness.
+     */
+    public static boolean placeMultifaceGrowth(World level, Block base, int ox, int oy, int oz, XWorldgenRandom random,
+                                                int searchRange, boolean canFloor, boolean canCeiling, boolean canWall,
+                                                float chanceOfSpreading, Set<String> canBePlacedOn) {
+        Block origin = level.get(ox, oy, oz);
+        if (!(isAir(origin) || is(origin, Block.WATER))) return false;
+
+        List<Dir> valid = validMultifaceDirections(canFloor, canCeiling, canWall);
+        List<Dir> searchDirections = new ArrayList<>(valid);
+        shuffle(searchDirections, random);
+        if (placeGrowthIfPossible(level, base, ox, oy, oz, origin, random, searchDirections, chanceOfSpreading, canBePlacedOn)) {
+            return true;
+        }
+        for (Dir searchDirection : searchDirections) {
+            int px = ox, py = oy, pz = oz;
+            List<Dir> placementDirections = new ArrayList<>();
+            for (Dir d : valid) if (d != searchDirection.opposite()) placementDirections.add(d);
+            shuffle(placementDirections, random);
+            for (int i = 0; i < searchRange; i++) {
+                px += searchDirection.dx; py += searchDirection.dy; pz += searchDirection.dz;
+                Block state = level.get(px, py, pz);
+                boolean airOrWater = isAir(state) || is(state, Block.WATER);
+                if (!airOrWater && !is(state, base)) break;
+                if (placeGrowthIfPossible(level, base, px, py, pz, state, random, placementDirections, chanceOfSpreading, canBePlacedOn)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** MultifaceGrowthConfiguration's constructor order: ceiling(UP), floor(DOWN), wall(HORIZONTAL N,S,W,E). */
+    private static List<Dir> validMultifaceDirections(boolean canFloor, boolean canCeiling, boolean canWall) {
+        List<Dir> out = new ArrayList<>(5);
+        if (canCeiling) out.add(Dir.UP);
+        if (canFloor) out.add(Dir.DOWN);
+        if (canWall) { out.add(Dir.NORTH); out.add(Dir.SOUTH); out.add(Dir.WEST); out.add(Dir.EAST); }
+        return out;
+    }
+
+    private static boolean placeGrowthIfPossible(World level, Block base, int px, int py, int pz, Block oldState,
+                                                  XWorldgenRandom random, List<Dir> placementDirections,
+                                                  float chanceOfSpreading, Set<String> canBePlacedOn) {
+        for (Dir placementDirection : placementDirections) {
+            int nx = px + placementDirection.dx, ny = py + placementDirection.dy, nz = pz + placementDirection.dz;
+            Block neighbour = level.get(nx, ny, nz);
+            if (canBePlacedOn.contains(name(neighbour))) {
+                Block newState = multifaceGetStateForPlacement(level, base, oldState, px, py, pz, placementDirection);
+                if (newState == null) return false;
+                level.set(px, py, pz, newState);
+                if (random.nextFloat() < chanceOfSpreading) {
+                    multifaceSpreadFromFaceTowardRandomDirection(level, base, px, py, pz, placementDirection, random);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** MultifaceBlock.getStateForPlacement(oldState, level, pos, dir): validity check + state merge. */
+    private static Block multifaceGetStateForPlacement(World level, Block base, Block oldState, int px, int py, int pz, Dir placementDirection) {
+        boolean isSelf = is(oldState, base);
+        if (isSelf && multifaceHasFace(oldState, placementDirection)) return null;
+        int nx = px + placementDirection.dx, ny = py + placementDirection.dy, nz = pz + placementDirection.dz;
+        if (!isCollisionFull(level.get(nx, ny, nz))) return null;
+
+        boolean[] faces;
+        boolean waterlogged;
+        if (isSelf) {
+            faces = multifaceFaces(oldState);
+            waterlogged = "true".equals(oldState.getProperty("waterlogged"));
+        } else {
+            faces = new boolean[6];
+            waterlogged = is(oldState, Block.WATER);
+        }
+        faces[placementDirection.ordinal()] = true;
+        return multifaceState(base, faces, waterlogged);
+    }
+
+    /** MultifaceSpreader.spreadFromFaceTowardRandomDirection (DEFAULT_SPREAD_ORDER, single attempt). */
+    private static void multifaceSpreadFromFaceTowardRandomDirection(World level, Block base, int x, int y, int z, Dir startingFace, XWorldgenRandom random) {
+        Block state = level.get(x, y, z);
+        for (Dir spreadDir : allShuffled(random)) {
+            if (axis(spreadDir) == axis(startingFace)) continue;
+            if (multifaceHasFace(state, spreadDir)) continue;
+            for (SpreadType type : DEFAULT_SPREAD_ORDER) {
+                int[] sp = spreadPos(x, y, z, spreadDir, startingFace, type);
+                Dir placeFace = DIRECTIONS[sp[3]];
+                if (multifaceCanSpreadInto(level, base, sp[0], sp[1], sp[2], placeFace)) {
+                    multifacePlaceFace(level, base, sp[0], sp[1], sp[2], placeFace);
+                    return;
+                }
+            }
+        }
+    }
+
+    /** DefaultSpreaderConfig.canSpreadInto: stateCanBeReplaced && isValidStateForPlacement. */
+    private static boolean multifaceCanSpreadInto(World level, Block base, int px, int py, int pz, Dir placeFace) {
+        Block existing = level.get(px, py, pz);
+        boolean replaceable = isAir(existing) || is(existing, base) || is(existing, Block.WATER);
+        if (!replaceable) return false;
+        if (is(existing, base) && multifaceHasFace(existing, placeFace)) return false;
+        int nx = px + placeFace.dx, ny = py + placeFace.dy, nz = pz + placeFace.dz;
+        return isCollisionFull(level.get(nx, ny, nz));
+    }
+
+    private static void multifacePlaceFace(World level, Block base, int px, int py, int pz, Dir placeFace) {
+        Block old = level.get(px, py, pz);
+        boolean[] faces;
+        boolean waterlogged;
+        if (is(old, base)) {
+            faces = multifaceFaces(old);
+            waterlogged = "true".equals(old.getProperty("waterlogged"));
+        } else {
+            faces = new boolean[6];
+            waterlogged = is(old, Block.WATER);
+        }
+        faces[placeFace.ordinal()] = true;
+        level.set(px, py, pz, multifaceState(base, faces, waterlogged));
+    }
+
+    private static boolean multifaceHasFace(Block b, Dir face) {
+        return "true".equals(b.getProperty(face.name().toLowerCase()));
+    }
+
+    private static boolean[] multifaceFaces(Block b) {
+        boolean[] f = new boolean[6];
+        for (Dir d : DIRECTIONS) f[d.ordinal()] = multifaceHasFace(b, d);
+        return f;
+    }
+
+    /** Any MultifaceBlock with the given face booleans (+waterlogged) — identical property shape across block types. */
+    private static Block multifaceState(Block base, boolean[] faces, boolean waterlogged) {
+        Map<String, String> props = new HashMap<>();
+        for (Dir d : DIRECTIONS) props.put(d.name().toLowerCase(), faces[d.ordinal()] ? "true" : "false");
+        props.put("waterlogged", waterlogged ? "true" : "false");
+        return base.withProperties(props);
+    }
 }

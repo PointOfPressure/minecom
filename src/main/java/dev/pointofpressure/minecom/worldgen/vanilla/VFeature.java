@@ -294,7 +294,14 @@ public final class VFeature {
             case "fallen_tree" -> trees.placeFallen(canvas, config, random, x, y, z);
             case "geode" -> placeGeode(canvas, config, random, x, y, z);
             case "sculk_patch" -> { if (SCULK_ENABLED) placeSculkPatch(canvas, config, random, x, y, z); }
-            case "multiface_growth" -> { if (SCULK_ENABLED && VEIN_ENABLED) placeMultifaceGrowth(canvas, config, random, x, y, z); }
+            case "multiface_growth" -> {
+                String blockName = config.has("block") ? config.get("block").getAsString() : "";
+                if (blockName.equals("minecraft:sculk_vein")) {
+                    if (SCULK_ENABLED && VEIN_ENABLED) placeMultifaceGrowthSculkVein(canvas, config, random, x, y, z);
+                } else {
+                    placeMultifaceGrowthGeneric(canvas, config, random, x, y, z);
+                }
+            }
             case "random_selector" -> {
                 for (JsonElement e : config.getAsJsonArray("features")) {
                     JsonObject entry = e.getAsJsonObject();
@@ -366,8 +373,34 @@ public final class VFeature {
                 spreadRounds, growthRounds, spreadAttempts, egMin, egMax);
     }
 
-    /** MultifaceGrowthFeature (type minecraft:multiface_growth) — sculk_vein. */
-    private void placeMultifaceGrowth(Canvas canvas, JsonObject config, XWorldgenRandom random, int x, int y, int z) {
+    /** MultifaceGrowthFeature (type minecraft:multiface_growth) — sculk_vein: gated, see SCULK_ENABLED. */
+    private void placeMultifaceGrowthSculkVein(Canvas canvas, JsonObject config, XWorldgenRandom random, int x, int y, int z) {
+        MultifaceParams p = parseMultifaceParams(config);
+        VSculk.placeMultifaceVein(sculkWorld(canvas), x, y, z, random,
+                p.searchRange, p.canFloor, p.canCeiling, p.canWall, p.chance, p.canOn);
+    }
+
+    /** MultifaceGrowthFeature, generic block target (glow_lichen, etc.) — not sculk-specific, not gated. */
+    private void placeMultifaceGrowthGeneric(Canvas canvas, JsonObject config, XWorldgenRandom random, int x, int y, int z) {
+        Block target = blockByName(config.get("block").getAsString());
+        if (target == null) return;
+        MultifaceParams p = parseMultifaceParams(config);
+        VSculk.placeMultifaceGrowth(sculkWorld(canvas), target, x, y, z, random,
+                p.searchRange, p.canFloor, p.canCeiling, p.canWall, p.chance, p.canOn);
+    }
+
+    private static Block blockByName(String name) {
+        try {
+            return Block.fromKey(name);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private record MultifaceParams(int searchRange, boolean canFloor, boolean canCeiling, boolean canWall,
+                                    float chance, Set<String> canOn) {}
+
+    private MultifaceParams parseMultifaceParams(JsonObject config) {
         int searchRange = config.has("search_range") ? config.get("search_range").getAsInt() : 10;
         boolean canFloor = config.has("can_place_on_floor") && config.get("can_place_on_floor").getAsBoolean();
         boolean canCeiling = config.has("can_place_on_ceiling") && config.get("can_place_on_ceiling").getAsBoolean();
@@ -377,8 +410,7 @@ public final class VFeature {
         if (config.has("can_be_placed_on")) {
             for (JsonElement e : config.getAsJsonArray("can_be_placed_on")) canOn.add(e.getAsString());
         }
-        VSculk.placeMultifaceVein(sculkWorld(canvas), x, y, z, random,
-                searchRange, canFloor, canCeiling, canWall, chance, canOn);
+        return new MultifaceParams(searchRange, canFloor, canCeiling, canWall, chance, canOn);
     }
 
     /** Nested placed-feature reference: registry id string or inline {feature, placement}. */
