@@ -271,6 +271,27 @@ public final class VFeature {
                     placeRecursive(canvas, featureId, feature, placement, modIndex + 1, random, x, y, z);
                 }
             }
+            case "environment_scan" -> {
+                String dir = mod.get("direction_of_search").getAsString();
+                int dy = dir.equals("up") ? 1 : -1;
+                int maxSteps = mod.get("max_steps").getAsInt();
+                JsonObject target = mod.getAsJsonObject("target_condition");
+                JsonObject allowed = mod.has("allowed_search_condition") ? mod.getAsJsonObject("allowed_search_condition") : null;
+                if (allowed == null || testPredicate(allowed, canvas, x, y, z)) {
+                    int sy = y;
+                    boolean found = false;
+                    boolean outOfBounds = false;
+                    for (int i = 0; i < maxSteps; i++) {
+                        if (testPredicate(target, canvas, x, sy, z)) { found = true; break; }
+                        sy += dy;
+                        if (sy < MIN_Y || sy >= MIN_Y + HEIGHT) { outOfBounds = true; break; }
+                        if (allowed != null && !testPredicate(allowed, canvas, x, sy, z)) break;
+                    }
+                    if (!outOfBounds && (found || testPredicate(target, canvas, x, sy, z))) {
+                        placeRecursive(canvas, featureId, feature, placement, modIndex + 1, random, x, sy, z);
+                    }
+                }
+            }
             default -> { } // unimplemented modifier: feature silently skipped
         }
     }
@@ -293,6 +314,7 @@ public final class VFeature {
             case "tree" -> trees.place(canvas, config, random, x, y, z);
             case "fallen_tree" -> trees.placeFallen(canvas, config, random, x, y, z);
             case "geode" -> placeGeode(canvas, config, random, x, y, z);
+            case "vegetation_patch" -> placeVegetationPatch(canvas, config, random, x, y, z);
             case "sculk_patch" -> { if (SCULK_ENABLED) placeSculkPatch(canvas, config, random, x, y, z); }
             case "multiface_growth" -> {
                 String blockName = config.has("block") ? config.get("block").getAsString() : "";
@@ -475,6 +497,87 @@ public final class VFeature {
                 }
             }
         }
+    }
+
+    // ------------------------------------------------------------------ vegetation_patch
+
+    /**
+     * VegetationPatchFeature.place (floor/ceiling ground patches with vegetation on top — moss
+     * patches, drip-leaf clay pools' non-waterlogged variant would need the waterlogged subclass,
+     * unported). Real vanilla's HashSet<BlockPos> iteration order for distributeVegetation matters
+     * for RNG-consumption order — reuses VTree.Pos's exact BlockPos.hashCode port for this.
+     */
+    private void placeVegetationPatch(Canvas canvas, JsonObject config, XWorldgenRandom random, int ox, int oy, int oz) {
+        Set<String> replaceable = tag(config.get("replaceable").getAsString());
+        JsonObject groundStateProvider = config.getAsJsonObject("ground_state");
+        JsonElement vegFeature = config.get("vegetation_feature");
+        boolean floor = !config.get("surface").getAsString().equals("ceiling");
+        int inwardsDy = floor ? -1 : 1;   // CaveSurface.FLOOR -> DOWN, CEILING -> UP
+        float extraBottomChance = config.get("extra_bottom_block_chance").getAsFloat();
+        int verticalRange = config.get("vertical_range").getAsInt();
+        float vegetationChance = config.get("vegetation_chance").getAsFloat();
+        float extraEdgeChance = config.get("extra_edge_column_chance").getAsFloat();
+
+        int xRadius = sampleInt(config.get("xz_radius"), random) + 1;
+        int zRadius = sampleInt(config.get("xz_radius"), random) + 1;
+
+        java.util.LinkedHashSet<VTree.Pos> surfaceIns = new java.util.LinkedHashSet<>();
+        for (int dx = -xRadius; dx <= xRadius; dx++) {
+            boolean isXEdge = dx == -xRadius || dx == xRadius;
+            for (int dz = -zRadius; dz <= zRadius; dz++) {
+                boolean isZEdge = dz == -zRadius || dz == zRadius;
+                boolean isEdge = isXEdge || isZEdge;
+                boolean isCorner = isXEdge && isZEdge;
+                boolean isEdgeButNotCorner = isEdge && !isCorner;
+                if (isCorner) continue;
+                if (isEdgeButNotCorner && extraEdgeChance != 0.0F && !(random.nextFloat() > extraEdgeChance)) continue;
+
+                int px = ox + dx, pz = oz + dz, py = oy;
+                int offset = 0;
+                while (canvas.get(px, py, pz) == null && offset < verticalRange) { py += inwardsDy; offset++; }
+                int offset2 = 0;
+                while (canvas.get(px, py, pz) != null && offset2 < verticalRange) { py -= inwardsDy; offset2++; }
+                int belowY = py + inwardsDy;
+                boolean posEmpty = canvas.get(px, py, pz) == null;
+                Block belowBlock = canvas.get(px, belowY, pz);
+                if (posEmpty && isFullCube(belowBlock)) {
+                    int depth = sampleInt(config.get("depth"), random)
+                            + ((extraBottomChance > 0.0F && random.nextFloat() < extraBottomChance) ? 1 : 0);
+                    int groundX = px, groundY = belowY, groundZ = pz;
+                    boolean placed = placeVegetationGroundColumn(canvas, groundStateProvider, replaceable, random,
+                            px, belowY, pz, depth, inwardsDy);
+                    if (placed) surfaceIns.add(new VTree.Pos(groundX, groundY, groundZ));
+                }
+            }
+        }
+        List<VTree.Pos> surface = new ArrayList<>(new HashSet<>(surfaceIns));
+        for (VTree.Pos p : surface) {
+            if (vegetationChance > 0.0F && random.nextFloat() < vegetationChance) {
+                placeNestedPlaced(canvas, vegFeature, random, p.x(), p.y() - inwardsDy, p.z());
+            }
+        }
+    }
+
+    private boolean placeVegetationGroundColumn(Canvas canvas, JsonObject groundStateProvider, Set<String> replaceable,
+                                                XWorldgenRandom random, int px, int py, int pz, int depth, int inwardsDy) {
+        int y = py;
+        for (int i = 0; i < depth; i++) {
+            Block stateToPlace = ruleBasedState(groundStateProvider, canvas, random, px, y, pz);
+            if (stateToPlace == null) return i != 0;
+            Block belowState = canvas.get(px, y, pz);
+            String belowName = belowState == null ? "minecraft:air" : belowState.key().asString();
+            if (!stateToPlace.key().asString().equals(belowName)) {
+                if (!replaceable.contains(belowName)) return i != 0;
+                canvas.set(px, y, pz, stateToPlace);
+                y += inwardsDy;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isFullCube(Block b) {
+        if (b == null) return false;
+        return VBlockShapes.isFullCube(b.key().asString(), b);
     }
 
     // ------------------------------------------------------------------ simple_block
@@ -943,6 +1046,8 @@ public final class VFeature {
                 }
                 yield fluids.getAsString().equals(name);
             }
+            case "solid" -> isFullCube(canvas.get(px, py, pz));
+            case "has_sturdy_face" -> isFullCube(canvas.get(px, py, pz)); // full-cube approximation (direction-agnostic), matches VSculk precedent
             case "would_survive" -> {
                 String state = predicate.getAsJsonObject("state").get("Name").getAsString();
                 if (state.endsWith("_sapling") || state.endsWith("_propagule")) {
