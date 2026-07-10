@@ -128,6 +128,10 @@ public final class Bootstrap {
         Survival.register(events);
         Experience.register(events);
         Combat.register(events);
+        // Redstone registers first: its shears-disarm-tripwire handling cancels the break
+        // before BlockRules.onBreak (registered next) would otherwise drop the wire item too.
+        dev.pointofpressure.minecom.redstone.Redstone.register(events);
+        dev.pointofpressure.minecom.redstone.Redstone.start(overworld);
         BlockRules.register(events);
         Placement.register(events);
         Containers.register(events);
@@ -136,8 +140,6 @@ public final class Bootstrap {
         Farming.register(events);
         Farming.start(overworld);
         Beds.register(events);
-        dev.pointofpressure.minecom.redstone.Redstone.register(events);
-        dev.pointofpressure.minecom.redstone.Redstone.start(overworld);
         dev.pointofpressure.minecom.redstone.Hoppers.start(overworld);
         dev.pointofpressure.minecom.data.Enchants.register(events, overworld);
         dev.pointofpressure.minecom.mobs.EnderDragonFight.register(events);

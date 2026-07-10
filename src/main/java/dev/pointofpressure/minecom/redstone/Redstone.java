@@ -53,6 +53,8 @@ public final class Redstone {
     private static final Map<Long, List<Runnable>> scheduled = new ConcurrentHashMap<>();
     private static final Set<Long> platePositions = ConcurrentHashMap.newKeySet();
     private static final Set<Long> detectorPositions = ConcurrentHashMap.newKeySet();
+    private static final Set<Long> tripwireHooks = ConcurrentHashMap.newKeySet();
+    private static final int TRIPWIRE_MAX_LENGTH = 41; // TripWireHookBlock: i in 1..41
     private static final Map<Long, java.util.ArrayDeque<Long>> torchFlips = new ConcurrentHashMap<>();
 
     // ------------------------------------------------------------------ lifecycle
@@ -71,9 +73,22 @@ public final class Redstone {
             if (e.getBlock().key().value().equals("detector_rail")) {
                 detectorPositions.add(pack(e.getBlockPosition()));
             }
+            if (e.getBlock().key().value().equals("tripwire_hook")) {
+                tripwireHooks.add(pack(e.getBlockPosition()));
+            }
             neighborsChanged(e.getBlockPosition());
         });
-        events.addListener(PlayerBlockBreakEvent.class, e -> neighborsChanged(e.getBlockPosition()));
+        events.addListener(PlayerBlockBreakEvent.class, e -> {
+            // TripWireBlock.playerWillDestroy: shears disarm a wire in place instead of breaking it
+            if (e.getBlock().key().value().equals("tripwire")
+                    && e.getPlayer().getItemInMainHand().material() == Material.SHEARS) {
+                e.setCancelled(true);
+                instance.setBlock(e.getBlockPosition(), e.getBlock().withProperty("disarmed", "true"));
+                neighborsChanged(e.getBlockPosition());
+                return;
+            }
+            neighborsChanged(e.getBlockPosition());
+        });
         events.addListener(net.minestom.server.event.player.PlayerUseItemOnBlockEvent.class, e -> {
             if (e.getItemStack().material() != Material.FLINT_AND_STEEL) return;
             Point clicked = e.getPosition();
@@ -147,7 +162,7 @@ public final class Redstone {
             }
         }
 
-        if (tickCount % 5 == 0) { tickPlates(); tickDetectorRails(); }
+        if (tickCount % 5 == 0) { tickPlates(); tickDetectorRails(); tickTripwires(); }
     }
 
     private static void schedule(int delayTicks, Runnable action) {
@@ -195,6 +210,11 @@ public final class Redstone {
             case "lectern" -> {
                 // LecternBlock.getSignal: 15 in every direction during the 2-tick page-turn pulse
                 return "true".equals(source.getProperty("powered")) ? 15 : 0;
+            }
+            case "tripwire_hook" -> {
+                // TripWireHookBlock.getDirectSignal: only out the back, opposite its FACING
+                if (!"true".equals(source.getProperty("powered"))) return 0;
+                return sameDir(opp(facingVec(source.getProperty("facing"))), toTarget) ? 15 : 0;
             }
             case "redstone_wire" -> {
                 int power = Integer.parseInt(source.getProperty("power"));
@@ -830,6 +850,81 @@ public final class Redstone {
     /** Track detector rails loaded from a saved world when someone approaches them. */
     public static void trackDetector(Point pos) {
         detectorPositions.add(pack(pos));
+    }
+
+    // ------------------------------------------------------------------ tripwire
+
+    /** Track tripwire hooks loaded from a saved world when someone approaches them. */
+    public static void trackTripwireHook(Point pos) {
+        tripwireHooks.add(pack(pos));
+    }
+
+    private static void tickTripwires() {
+        for (long key : tripwireHooks) {
+            Point pos = unpackVec(key);
+            if (!instance.isChunkLoaded(pos.blockX() >> 4, pos.blockZ() >> 4)) continue;
+            if (!instance.getBlock(pos).key().value().equals("tripwire_hook")) {
+                tripwireHooks.remove(key);
+                continue;
+            }
+            recomputeTripwireHook(pos);
+        }
+    }
+
+    /**
+     * TripWireHookBlock.calculateState: scan up to 41 blocks along FACING; a run of unbroken,
+     * undisarmed tripwire blocks ending in a hook facing back (and at least 1 wire block
+     * between them — adjacent hooks never attach) makes both ends ATTACHED. POWERED follows
+     * whether any entity currently overlaps any connected wire block.
+     */
+    private static void recomputeTripwireHook(Point hookPos) {
+        Block hook = instance.getBlock(hookPos);
+        Vec facing = facingVec(hook.getProperty("facing"));
+        List<Point> wire = new ArrayList<>();
+        boolean attached = false;
+        boolean disarmedAlong = false;
+        for (int i = 1; i <= TRIPWIRE_MAX_LENGTH; i++) {
+            Point p = hookPos.add(facing.mul(i));
+            Block b = instance.getBlock(p);
+            String key = b.key().value();
+            if (key.equals("tripwire_hook")) {
+                if (i > 1 && sameDir(facingVec(b.getProperty("facing")).mul(-1), facing)) attached = true;
+                break;
+            } else if (key.equals("tripwire")) {
+                wire.add(p);
+                if ("true".equals(b.getProperty("disarmed"))) disarmedAlong = true;
+            } else {
+                break;
+            }
+        }
+        if (disarmedAlong) attached = false;
+
+        boolean powered = attached && wire.stream().anyMatch(Redstone::entityOnTripwire);
+
+        if (attached != "true".equals(hook.getProperty("attached"))
+                || powered != "true".equals(hook.getProperty("powered"))) {
+            instance.setBlock(hookPos, hook.withProperty("attached", String.valueOf(attached))
+                    .withProperty("powered", String.valueOf(powered)));
+            neighborsChanged(hookPos);
+        }
+        for (Point wp : wire) {
+            Block w = instance.getBlock(wp);
+            if (!w.key().value().equals("tripwire")) continue;
+            if (attached != "true".equals(w.getProperty("attached"))
+                    || powered != "true".equals(w.getProperty("powered"))) {
+                instance.setBlock(wp, w.withProperty("attached", String.valueOf(attached))
+                        .withProperty("powered", String.valueOf(powered)));
+            }
+        }
+    }
+
+    /** TripWireBlock.checkPressed: any non-item entity whose feet overlap the wire tile. */
+    private static boolean entityOnTripwire(Point wp) {
+        return instance.getEntities().stream().anyMatch(entity -> {
+            if (entity.isRemoved() || entity instanceof net.minestom.server.entity.ItemEntity) return false;
+            Point ep = entity.getPosition();
+            return ep.blockX() == wp.blockX() && ep.blockZ() == wp.blockZ() && Math.abs(ep.y() - wp.blockY()) < 1.0;
+        });
     }
 
     // ------------------------------------------------------------------ util

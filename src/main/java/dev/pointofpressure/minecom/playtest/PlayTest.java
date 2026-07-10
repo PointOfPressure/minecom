@@ -161,6 +161,7 @@ public final class PlayTest {
         scenario("composter: fills toward ready, then empties into bone_meal", PlayTest::scenarioComposter);
         scenario("jukebox: playing emits a direct signal, disc keeps its comparator reading, eject drops it", PlayTest::scenarioJukebox);
         scenario("lectern: books drives a real page-count comparator signal, page-turns pulse redstone, taking returns the book", PlayTest::scenarioLectern);
+        scenario("tripwire: two facing hooks connect through wire, stepping on it powers a direct signal, shears disarm in place", PlayTest::scenarioTripwire);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -481,6 +482,63 @@ public final class PlayTest {
         clearEntitiesExceptPlayer();
         world.setBlock(49, Y + 1, z, Block.AIR);
         world.setBlock(50, Y + 1, z, Block.AIR);
+        resetPlayer();
+    }
+
+    /**
+     * TripWireHookBlock.calculateState + TripWireBlock.checkPressed: two hooks facing each
+     * other with tripwire in between connect (ATTACHED); an entity standing on any connected
+     * wire segment powers both hooks, which emit a direct signal only out their own back
+     * (opposite their FACING). TripWireBlock.playerWillDestroy: breaking a wire with shears
+     * disarms it in place instead of removing it, and a disarmed segment breaks the connection.
+     */
+    private static void scenarioTripwire() {
+        clearEntitiesExceptPlayer();
+        int z = 115;
+        rs(45, Y + 1, z, Block.TRIPWIRE_HOOK.withProperty("facing", "east"));
+        dev.pointofpressure.minecom.redstone.Redstone.trackTripwireHook(new Vec(45, Y + 1, z));
+        rs(46, Y + 1, z, Block.TRIPWIRE);
+        rs(47, Y + 1, z, Block.TRIPWIRE);
+        rs(48, Y + 1, z, Block.TRIPWIRE_HOOK.withProperty("facing", "west"));
+        dev.pointofpressure.minecom.redstone.Redstone.trackTripwireHook(new Vec(48, Y + 1, z));
+        rs(44, Y + 1, z, Block.REDSTONE_LAMP); // behind hook A (opposite its east facing)
+        tick(2);
+
+        boolean attached = waitFor(() -> "true".equals(prop(45, Y + 1, z, "attached"))
+                && "true".equals(prop(48, Y + 1, z, "attached")), 3000);
+        check("two hooks facing each other with tripwire between connect (attached)", attached);
+
+        player.teleport(new Pos(46.5, Y + 1, z + 0.5)).join();
+        tick(2);
+        boolean poweredOn = waitFor(() -> "true".equals(prop(45, Y + 1, z, "powered"))
+                && "true".equals(prop(48, Y + 1, z, "powered")), 3000);
+        check("stepping on a connected wire segment powers both hooks", poweredOn);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(45, Y + 1, z));
+        check("a powered hook emits a direct signal out its own back (lights the lamp behind it)",
+                waitFor(() -> "true".equals(prop(44, Y + 1, z, "lit")), 3000));
+
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        tick(2);
+        check("stepping off clears the powered state",
+                waitFor(() -> "false".equals(prop(45, Y + 1, z, "powered")), 3000));
+
+        player.setItemInMainHand(ItemStack.of(Material.SHEARS));
+        Block wireBlock = world.getBlock(46, Y + 1, z);
+        EventDispatcher.call(new PlayerBlockBreakEvent(player, world, wireBlock, Block.AIR,
+                new BlockVec(46, Y + 1, z), BlockFace.TOP));
+        tick(1);
+        check("breaking a wire with shears disarms it in place instead of removing it",
+                world.getBlock(46, Y + 1, z).key().value().equals("tripwire")
+                        && "true".equals(prop(46, Y + 1, z, "disarmed")));
+        check("a disarmed segment breaks the hook-to-hook connection",
+                waitFor(() -> "false".equals(prop(45, Y + 1, z, "attached")), 3000));
+
+        world.setBlock(44, Y + 1, z, Block.AIR);
+        world.setBlock(45, Y + 1, z, Block.AIR);
+        world.setBlock(46, Y + 1, z, Block.AIR);
+        world.setBlock(47, Y + 1, z, Block.AIR);
+        world.setBlock(48, Y + 1, z, Block.AIR);
+        clearEntitiesExceptPlayer();
         resetPlayer();
     }
 

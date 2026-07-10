@@ -39,6 +39,7 @@ public final class BlockRules {
     }
 
     private static void onBreak(PlayerBlockBreakEvent e) {
+        if (e.isCancelled()) return; // e.g. Redstone's shears-disarm-in-place tripwire handling
         Block block = e.getBlock();
         Instance instance = e.getInstance();
         Point pos = e.getBlockPosition();
