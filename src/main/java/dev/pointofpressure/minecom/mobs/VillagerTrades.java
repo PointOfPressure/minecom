@@ -155,30 +155,41 @@ public final class VillagerTrades {
     private static final Map<Instance, Set<Long>> CLAIMED_JOBSITES = new ConcurrentHashMap<>();
 
     /**
-     * Scan a small radius around a jobless villager for the nearest real vanilla job-site
-     * block (JOB_SITE_BLOCKS, decompiled from PoiTypes.bootstrap) and claim it, assigning
-     * the matching profession. No-op if the villager already has a profession, or no
-     * unclaimed job site is in range. Real vanilla claims via pathfinding to a POI up to
-     * 48 blocks away over several seconds; this approximates it as an immediate radius
-     * scan, close enough for a villager settled near its village's job blocks.
+     * Scan around a jobless villager for the NEAREST unclaimed real vanilla job-site block
+     * (JOB_SITE_BLOCKS, decompiled from PoiTypes.bootstrap) and claim it, assigning the matching
+     * profession. No-op if the villager already has a profession, or no unclaimed job site is in
+     * range. Real vanilla claims via pathfinding to a POI up to 48 blocks away over several
+     * seconds (a brain "AcquirePoi" task); this approximates the claim as immediate (no walk
+     * animation) but widened from an earlier 8-block radius to 24 and changed from
+     * first-found-in-scan-order to nearest-by-distance, both closer to how real vanilla actually
+     * selects a job site for a village-sized search area.
      */
     public static void assignProfession(Entity villager, Instance instance) {
         if (villager.getTag(PROFESSION) != null) return;
         int bx = villager.getPosition().blockX(), by = villager.getPosition().blockY(), bz = villager.getPosition().blockZ();
         Set<Long> claimed = CLAIMED_JOBSITES.computeIfAbsent(instance, i -> ConcurrentHashMap.newKeySet());
-        int radius = 8;
+        int radius = 24;
+        String bestProfession = null;
+        long bestKey = 0;
+        int bestDistSq = Integer.MAX_VALUE;
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
-                for (int dy = -3; dy <= 3; dy++) {
+                for (int dy = -4; dy <= 4; dy++) {
+                    int distSq = dx * dx + dy * dy + dz * dz;
+                    if (distSq >= bestDistSq) continue;
                     int x = bx + dx, y = by + dy, z = bz + dz;
                     String prof = JOB_SITE_BLOCKS.get(instance.getBlock(x, y, z));
                     if (prof == null) continue;
                     long key = packBlockPos(x, y, z);
-                    if (!claimed.add(key)) continue;
-                    villager.setTag(PROFESSION, prof);
-                    return;
+                    if (claimed.contains(key)) continue;
+                    bestProfession = prof;
+                    bestKey = key;
+                    bestDistSq = distSq;
                 }
             }
+        }
+        if (bestProfession != null && claimed.add(bestKey)) {
+            villager.setTag(PROFESSION, bestProfession);
         }
     }
 
