@@ -22,6 +22,7 @@ public final class Recipes {
     private Recipes() {}
 
     public record Smelt(ItemStack result, int cookTicks, float xp) {}
+    public record Cook(ItemStack result, int cookTicks, float xp) {}
 
     private record Ingredient(Set<String> allowed) {
         boolean matches(ItemStack stack) {
@@ -35,18 +36,21 @@ public final class Recipes {
     private static final List<Shaped> SHAPED = new ArrayList<>();
     private static final List<Shapeless> SHAPELESS = new ArrayList<>();
     private static final Map<String, Smelt> SMELTING = new HashMap<>();
+    private static final Map<String, Cook> CAMPFIRE = new HashMap<>();
     private static final Map<String, Integer> FUEL = new HashMap<>();
 
     static void index() {
         SHAPED.clear();
         SHAPELESS.clear();
         SMELTING.clear();
+        CAMPFIRE.clear();
         for (Map.Entry<String, JsonElement> e : VanillaData.recipes.entrySet()) {
             JsonObject r = e.getValue().getAsJsonObject();
             switch (VanillaData.path(r.get("type").getAsString())) {
                 case "crafting_shaped" -> indexShaped(r);
                 case "crafting_shapeless" -> indexShapeless(r);
                 case "smelting" -> indexSmelting(r);
+                case "campfire_cooking" -> indexCampfireCooking(r);
                 default -> { /* stonecutting, smithing, special: not supported */ }
             }
         }
@@ -118,6 +122,15 @@ public final class Recipes {
         for (String id : in.allowed()) SMELTING.put(id, new Smelt(result, time, xp));
     }
 
+    private static void indexCampfireCooking(JsonObject r) {
+        ItemStack result = result(r);
+        if (result.isAir()) return;
+        int time = r.has("cookingtime") ? r.get("cookingtime").getAsInt() : 600;
+        float xp = r.has("experience") ? r.get("experience").getAsFloat() : 0f;
+        Ingredient in = ingredient(r.get("ingredient"));
+        for (String id : in.allowed()) CAMPFIRE.put(id, new Cook(result, time, xp));
+    }
+
     /** Match a row-major width×width crafting grid; returns result or AIR. */
     public static ItemStack matchCrafting(ItemStack[] grid, int width) {
         int height = grid.length / width;
@@ -182,6 +195,10 @@ public final class Recipes {
         return input == null ? null : SMELTING.get(input.key().asString());
     }
 
+    public static Cook campfireCook(Material input) {
+        return input == null ? null : CAMPFIRE.get(input.key().asString());
+    }
+
     public static boolean isFuel(Material m) {
         return fuelTicks(m) > 0;
     }
@@ -217,4 +234,5 @@ public final class Recipes {
     static int shapedCount() { return SHAPED.size(); }
     static int shapelessCount() { return SHAPELESS.size(); }
     static int smeltingCount() { return SMELTING.size(); }
+    static int campfireCount() { return CAMPFIRE.size(); }
 }

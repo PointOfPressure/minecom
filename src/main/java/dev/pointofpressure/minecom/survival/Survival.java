@@ -45,6 +45,7 @@ public final class Survival {
         int starveTicks;
         int voidTicks;
         int lavaTicks;
+        int campfireTicks;
     }
 
     private static final Map<UUID, State> STATES = new ConcurrentHashMap<>();
@@ -134,6 +135,19 @@ public final class Survival {
             }
         } else {
             s.lavaTicks = 0;
+        }
+
+        // CampfireBlock.entityInside: 1 damage (soul_campfire: 2) while lit and standing inside
+        String standingKey = standing.key().value();
+        boolean inLitCampfire = ("campfire".equals(standingKey) || "soul_campfire".equals(standingKey))
+                && "true".equals(standing.getProperty("lit"));
+        if (inLitCampfire) {
+            if (++s.campfireTicks >= 10) {
+                s.campfireTicks = 0;
+                p.damage(DamageType.CAMPFIRE, "soul_campfire".equals(standingKey) ? 2f : 1f);
+            }
+        } else {
+            s.campfireTicks = 0;
         }
     }
 

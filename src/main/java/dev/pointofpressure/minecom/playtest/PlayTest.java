@@ -156,6 +156,8 @@ public final class PlayTest {
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
         scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
+        scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
+        scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -409,6 +411,54 @@ public final class PlayTest {
         check("harvesting a berry-bearing cave vine drops glow_berries", glowBerriesDropped);
         check("harvesting clears the vine's berries state", "false".equals(world.getBlock(vine).getProperty("berries")));
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /** NoteBlock.setInstrument (below-block material) + right-click NOTE cycling (0-24). */
+    private static void scenarioNoteBlock() {
+        clearEntitiesExceptPlayer();
+        BlockVec stonePos = new BlockVec(0, Y, 0);
+        BlockVec notePos = new BlockVec(0, Y + 1, 0);
+        world.setBlock(stonePos, Block.STONE);
+        world.setBlock(notePos, Block.NOTE_BLOCK);
+        check("note block on stone selects BASEDRUM (real vanilla's material-instrument table)",
+                dev.pointofpressure.minecom.blocks.NoteBlocks.instrumentFor(world, notePos)
+                        == dev.pointofpressure.minecom.blocks.NoteBlocks.Instrument.BASEDRUM);
+
+        world.setBlock(stonePos, Block.GOLD_BLOCK);
+        check("note block on gold_block selects BELL",
+                dev.pointofpressure.minecom.blocks.NoteBlocks.instrumentFor(world, notePos)
+                        == dev.pointofpressure.minecom.blocks.NoteBlocks.Instrument.BELL);
+
+        interact(notePos);
+        check("right-click cycles the note property from 0 to 1",
+                "1".equals(world.getBlock(notePos).getProperty("note")));
+        for (int i = 0; i < 24; i++) interact(notePos); // 1 + 24 = 25 -> wraps to 0
+        check("cycling wraps at 25 notes (0-24) back to 0",
+                "0".equals(world.getBlock(notePos).getProperty("note")));
+
+        world.setBlock(notePos, Block.AIR);
+        world.setBlock(stonePos, Block.AIR);
+        resetPlayer();
+    }
+
+    /**
+     * CampfireBlockEntity.cookTick against the bundled campfire_cooking recipe data (600 ticks).
+     * Placed well away from (0,Y,0) — the default resetPlayer() stand tile — since the 30-second
+     * real-time wait would otherwise leave the player standing in the lit campfire's fire-damage
+     * zone (Survival.java's standing-in-campfire check) for the whole test.
+     */
+    private static void scenarioCampfire() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(20, Y, 20);
+        world.setBlock(pos, Block.CAMPFIRE); // lit=true by default (placed away from water)
+        useItemOnBlock(ItemStack.of(Material.BEEF), pos, BlockFace.TOP);
+        boolean cooked = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.COOKED_BEEF), 40000);
+        check("a lit campfire cooks raw beef into cooked_beef and drops it (600-tick recipe)", cooked);
+        clearEntitiesExceptPlayer();
+        world.setBlock(pos, Block.AIR);
         resetPlayer();
     }
 

@@ -503,6 +503,14 @@ public final class Redstone {
                     });
                 }
             }
+            case "note_block" -> {
+                // NoteBlock.neighborChanged: no scheduling delay, unlike lamp/repeater/comparator
+                boolean signal = activated(pos);
+                if (signal != "true".equals(block.getProperty("powered"))) {
+                    if (signal) dev.pointofpressure.minecom.blocks.NoteBlocks.playNote(instance, pos, block);
+                    instance.setBlock(pos, block.withProperty("powered", String.valueOf(signal)));
+                }
+            }
             case "piston", "sticky_piston" -> Pistons.evaluate(instance, pos, block);
             case "dispenser", "dropper" -> {
                 boolean powered = activated(pos) || activated(pos.add(0, 1, 0)); // quasi-connectivity

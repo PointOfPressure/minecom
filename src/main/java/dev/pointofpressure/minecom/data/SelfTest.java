@@ -20,7 +20,8 @@ public final class SelfTest {
         VanillaData.load();
         REPORT.append("indexed: ").append(Recipes.shapedCount()).append(" shaped, ")
                 .append(Recipes.shapelessCount()).append(" shapeless, ")
-                .append(Recipes.smeltingCount()).append(" smeltable inputs\n");
+                .append(Recipes.smeltingCount()).append(" smeltable inputs, ")
+                .append(Recipes.campfireCount()).append(" campfire-cookable inputs\n");
 
         ItemStack ironPick = ItemStack.of(Material.IRON_PICKAXE);
         ItemStack shears = ItemStack.of(Material.SHEARS);
@@ -93,6 +94,12 @@ public final class SelfTest {
         check("coal is fuel 1600", Recipes.fuelTicks(Material.COAL) == 1600);
         check("planks are fuel 300", Recipes.fuelTicks(Material.OAK_PLANKS) == 300);
         check("dirt is not fuel", !Recipes.isFuel(Material.DIRT));
+
+        Recipes.Cook campfireMutton = Recipes.campfireCook(Material.MUTTON);
+        check("campfire-cook mutton -> cooked_mutton in 600 ticks",
+                campfireMutton != null && campfireMutton.result().material() == Material.COOKED_MUTTON
+                        && campfireMutton.cookTicks() == 600);
+        check("campfire-cook dirt not cookable", Recipes.campfireCook(Material.DIRT) == null);
 
         int flesh = 0, runs = 200;
         for (int i = 0; i < runs; i++) {
