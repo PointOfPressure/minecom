@@ -1747,6 +1747,15 @@ public final class PlayTest {
         check("a direct lightning strike damages a nearby entity", directStrikeHit);
         clearEntitiesExceptPlayer();
 
+        // a struck villager converts directly to a witch (Villager.thunderHit: unconditional,
+        // no damage/fire applied — replaces it entirely, not an additional effect)
+        EntityCreature villager = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(3.5, Y + 1, 0.5));
+        dev.pointofpressure.minecom.survival.Lightning.strikeAt(world, 3.5, 0.5);
+        boolean becameWitch = waitFor(() -> villager.isRemoved()
+                && world.getEntities().stream().anyMatch(en -> en.getEntityType() == EntityType.WITCH), 2000);
+        check("a lightning-struck villager converts directly to a witch", becameWitch);
+        clearEntitiesExceptPlayer();
+
         // melee Channeling during a thunderstorm strikes the target
         world.setWeather(net.minestom.server.instance.Weather.THUNDER);
         zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 1.5));

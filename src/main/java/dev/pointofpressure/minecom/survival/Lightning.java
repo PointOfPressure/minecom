@@ -66,11 +66,13 @@ public final class Lightning {
 
     /**
      * Strikes at the given XZ, landing on the current top-solid block; damages nearby
-     * living entities (LightningBolt.tick: 5 damage) and charges any creeper struck
+     * living entities (LightningBolt.tick: 5 damage), charges any creeper struck
      * (Creeper.thunderHit sets DATA_IS_POWERED — real vanilla's charged-creeper source,
-     * see {@link dev.pointofpressure.minecom.blocks.Explosions#explode}). Bounded: no
-     * fire-starting, no villager-to-witch conversion — real vanilla side effects this
-     * project doesn't model.
+     * see {@link dev.pointofpressure.minecom.blocks.Explosions#explode}), and converts
+     * any villager struck directly to a witch (Villager.thunderHit: unconditional on any
+     * non-peaceful difficulty, no probability roll — replaces the damage/fire entirely,
+     * matched here since this project has no difficulty setting below normal). Bounded:
+     * no fire-starting.
      */
     public static void strikeAt(Instance instance, double x, double z) {
         int y = topSolidY(instance, (int) Math.floor(x), (int) Math.floor(z));
@@ -79,12 +81,18 @@ public final class Lightning {
         Entity bolt = new Entity(EntityType.LIGHTNING_BOLT);
         bolt.setInstance(instance, pos);
         for (Entity e : instance.getNearbyEntities(pos, 3.0)) {
-            if (e instanceof LivingEntity le && !le.isDead()) {
-                le.damage(DamageType.LIGHTNING_BOLT, 5f);
-                if (e.getEntityType() == EntityType.CREEPER
-                        && e.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.CreeperMeta cm) {
-                    cm.setCharged(true);
-                }
+            if (!(e instanceof LivingEntity le) || le.isDead()) continue;
+            if (e.getEntityType() == EntityType.VILLAGER) {
+                Pos at = le.getPosition();
+                Instance in = le.getInstance();
+                le.remove();
+                dev.pointofpressure.minecom.mobs.ai.VanillaMobs.witch(in, at);
+                continue;
+            }
+            le.damage(DamageType.LIGHTNING_BOLT, 5f);
+            if (e.getEntityType() == EntityType.CREEPER
+                    && e.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.CreeperMeta cm) {
+                cm.setCharged(true);
             }
         }
         bolt.scheduler().buildTask(bolt::remove).delay(TaskSchedule.tick(2)).schedule();
