@@ -158,6 +158,7 @@ public final class PlayTest {
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
+        scenario("composter: fills toward ready, then empties into bone_meal", PlayTest::scenarioComposter);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -411,6 +412,34 @@ public final class PlayTest {
         check("harvesting a berry-bearing cave vine drops glow_berries", glowBerriesDropped);
         check("harvesting clears the vine's berries state", "false".equals(world.getBlock(vine).getProperty("berries")));
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /** ComposterBlock: fills toward level 8 (READY) using a guaranteed-chance item, then empties. */
+    private static void scenarioComposter() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(5, Y, 5);
+        world.setBlock(pos, Block.COMPOSTER);
+        // cake has a real 1.0 compost chance, so 7 additions deterministically reach level 7
+        // (the first is guaranteed anyway per ComposterBlock.addItem's empty-composter rule)
+        for (int i = 0; i < 7; i++) {
+            useItemOnBlock(ItemStack.of(Material.CAKE), pos, BlockFace.TOP);
+        }
+        check("7 guaranteed-chance items fill the composter to level 7",
+                "7".equals(world.getBlock(pos).getProperty("level")));
+
+        boolean ready = waitFor(() -> "8".equals(world.getBlock(pos).getProperty("level")), 3000);
+        check("composter becomes READY (level 8) 20 ticks after reaching level 7", ready);
+
+        interact(pos);
+        boolean boneMealDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.BONE_MEAL), 1000);
+        check("emptying a ready composter drops bone_meal and resets to level 0",
+                boneMealDropped && "0".equals(world.getBlock(pos).getProperty("level")));
+
+        clearEntitiesExceptPlayer();
+        world.setBlock(pos, Block.AIR);
         resetPlayer();
     }
 
