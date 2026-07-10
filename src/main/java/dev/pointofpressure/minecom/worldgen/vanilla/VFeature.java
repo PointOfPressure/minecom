@@ -647,6 +647,19 @@ public final class VFeature {
         String type = path(provider.get("type").getAsString());
         return switch (type) {
             case "simple_state_provider" -> VSurface.parseBlockState(provider.getAsJsonObject("state"));
+            case "weighted_state_provider" -> {
+                JsonArray entries = provider.getAsJsonArray("entries");
+                int total = 0;
+                for (JsonElement e : entries) total += e.getAsJsonObject().get("weight").getAsInt();
+                int r = random.nextInt(total);
+                Block picked = null;
+                for (JsonElement e : entries) {
+                    JsonObject entry = e.getAsJsonObject();
+                    r -= entry.get("weight").getAsInt();
+                    if (r < 0) { picked = VSurface.parseBlockState(entry.getAsJsonObject("data")); break; }
+                }
+                yield picked;
+            }
             case "rule_based_state_provider" -> {
                 for (JsonElement e : provider.getAsJsonArray("rules")) {
                     JsonObject rule = e.getAsJsonObject();
