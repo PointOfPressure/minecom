@@ -155,6 +155,7 @@ public final class PlayTest {
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
         scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
+        scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -382,6 +383,31 @@ public final class PlayTest {
         useItemOnBlock(ItemStack.of(Material.SHEARS), pos, BlockFace.TOP);
         check("shearing the top face carves away from the player's own facing (south-facing player -> north)",
                 "north".equals(world.getBlock(pos).getProperty("facing")));
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /** Sweet berry bush (age>1) and cave vine (berries=true) both drop items and reset their state. */
+    private static void scenarioHarvesting() {
+        clearEntitiesExceptPlayer();
+        BlockVec bush = new BlockVec(0, Y, 0);
+        world.setBlock(bush, Block.SWEET_BERRY_BUSH.withProperty("age", "3"));
+        interact(bush);
+        boolean berriesDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.SWEET_BERRIES), 1000);
+        check("harvesting a fully-grown (age 3) sweet berry bush drops sweet_berries", berriesDropped);
+        check("harvesting resets the bush to age 1 (not 0)", "1".equals(world.getBlock(bush).getProperty("age")));
+        clearEntitiesExceptPlayer();
+
+        BlockVec vine = new BlockVec(0, Y, 1);
+        world.setBlock(vine, Block.CAVE_VINES.withProperty("berries", "true"));
+        interact(vine);
+        boolean glowBerriesDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.GLOW_BERRIES), 1000);
+        check("harvesting a berry-bearing cave vine drops glow_berries", glowBerriesDropped);
+        check("harvesting clears the vine's berries state", "false".equals(world.getBlock(vine).getProperty("berries")));
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
