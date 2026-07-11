@@ -689,6 +689,8 @@ public final class Redstone {
         Inventory inv = null;
         if (key.equals("chest") || key.equals("barrel") || key.equals("trapped_chest")) {
             inv = Containers.CHESTS.get(Containers.posKey(pos));
+        } else if (key.endsWith("shulker_box")) {
+            inv = dev.pointofpressure.minecom.blocks.ShulkerBoxes.inventoryAt(pos);
         }
         else if (key.equals("furnace") || key.equals("blast_furnace") || key.equals("smoker")) {
             var state = dev.pointofpressure.minecom.blocks.Furnaces.FURNACES.get(Containers.posKey(pos));

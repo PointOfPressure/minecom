@@ -46,11 +46,16 @@ public final class BlockRules {
 
         Containers.onBlockRemoved(instance, pos, block);
 
+        boolean isShulkerBox = block.key().value().endsWith("shulker_box");
         if (e.getPlayer().getGameMode() != GameMode.CREATIVE) {
             ItemStack tool = e.getPlayer().getItemInMainHand();
             if (canHarvest(block, tool)) {
-                for (ItemStack drop : LootTables.blockDrops(block, tool)) {
-                    dropAt(instance, pos, drop);
+                if (isShulkerBox) {
+                    ShulkerBoxes.onBroken(instance, pos, block, true);
+                } else {
+                    for (ItemStack drop : LootTables.blockDrops(block, tool)) {
+                        dropAt(instance, pos, drop);
+                    }
                 }
                 int xp = Experience.oreXp(block);
                 if (xp > 0) Experience.orb(instance, pos.add(0.5, 0.5, 0.5), xp);
@@ -58,6 +63,8 @@ public final class BlockRules {
             if (block.registry().hardness() > 0) {
                 e.getPlayer().setItemInMainHand(Items.damageItem(e.getPlayer(), tool, 1));
             }
+        } else if (isShulkerBox) {
+            ShulkerBoxes.onBroken(instance, pos, block, false);
         }
         scheduleFallCheck(instance, pos);
         if (block.key().value().endsWith("_log")) scheduleLeafDecay(instance, pos);

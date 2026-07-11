@@ -112,6 +112,7 @@ public final class PlayTest {
         scenario("double chest: placing a matching chest alongside merges into one shared 54-slot inventory", PlayTest::scenarioDoubleChest);
         scenario("cauldron: bucket/bottle fills and empties across water/lava/powder_snow states, lava fizzles under water", PlayTest::scenarioCauldron);
         scenario("bell: right-click, a redstone rising edge, and an arrow hit all ring it", PlayTest::scenarioBell);
+        scenario("shulker box: contents travel with the dropped item and survive a break-and-replace round trip", PlayTest::scenarioShulkerBox);
         scenario("redstone: 16th block signal dies", PlayTest::scenarioRedstoneDecay);
         scenario("redstone: torch inversion", PlayTest::scenarioTorch);
         scenario("redstone: repeater delay", PlayTest::scenarioRepeater);
@@ -4163,6 +4164,87 @@ public final class PlayTest {
                 waitFor(() -> dev.pointofpressure.minecom.blocks.Bells.ringCount(pos) > beforeArrow, 3000));
 
         world.setBlock(pos, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * ShulkerBoxBlock/ShulkerBoxBlockEntity (decompile-verified): the one container whose
+     * contents travel with the ITEM, not the block position — surviving a break-and-replace
+     * round trip via DataComponents.CONTAINER, unlike every other container in this project.
+     */
+    private static void scenarioShulkerBox() {
+        int z = 155;
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+        BlockVec pos = new BlockVec(50, Y + 1, z);
+
+        player.setItemInMainHand(ItemStack.of(Material.SHULKER_BOX));
+        var place = new PlayerBlockPlaceEvent(player, world, Block.SHULKER_BOX, BlockFace.TOP,
+                pos, new Vec(0.5, 1.0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(place);
+        world.setBlock(pos, place.getBlock());
+        tick(1);
+        check("a plain shulker_box item places as an empty shulker box",
+                world.getBlock(pos).key().value().equals("shulker_box"));
+
+        interact(pos);
+        check("opening it gives a 27-slot inventory",
+                player.getOpenInventory() instanceof Inventory inv0
+                        && inv0.getInventoryType() == net.minestom.server.inventory.InventoryType.CHEST_3_ROW);
+        ((Inventory) player.getOpenInventory()).setItemStack(5, ItemStack.of(Material.DIAMOND, 7));
+        ((Inventory) player.getOpenInventory()).setItemStack(9, ItemStack.of(Material.EMERALD, 3));
+        player.closeInventory();
+
+        rs(51, Y + 1, z, Block.COMPARATOR.withProperty("facing", "west"));
+        rs(52, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(51, Y + 1, z));
+        check("a non-empty shulker box is comparator-readable for fullness",
+                waitFor(() -> "true".equals(prop(52, Y + 1, z, "lit")), 3000));
+        rs(51, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+
+        breakBlock(pos);
+        net.minestom.server.entity.ItemEntity dropped = (net.minestom.server.entity.ItemEntity) world.getEntities().stream()
+                .filter(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.SHULKER_BOX)
+                .findFirst().orElse(null);
+        check("breaking a non-empty shulker box drops an item carrying its contents",
+                dropped != null && dropped.getItemStack().get(DataComponents.CONTAINER) != null
+                        && dropped.getItemStack().get(DataComponents.CONTAINER).stream().filter(s -> !s.isAir()).count() == 2);
+
+        BlockVec pos2 = new BlockVec(55, Y + 1, z);
+        player.setItemInMainHand(dropped.getItemStack());
+        var place2 = new PlayerBlockPlaceEvent(player, world, Block.SHULKER_BOX, BlockFace.TOP,
+                pos2, new Vec(0.5, 1.0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(place2);
+        world.setBlock(pos2, place2.getBlock());
+        tick(1);
+        interact(pos2);
+        Inventory reopened = (Inventory) player.getOpenInventory();
+        check("re-placing that dropped item hydrates the same contents back",
+                reopened.getItemStack(5).material() == Material.DIAMOND && reopened.getItemStack(5).amount() == 7
+                        && reopened.getItemStack(9).material() == Material.EMERALD && reopened.getItemStack(9).amount() == 3);
+        player.closeInventory();
+        dropped.remove();
+        world.setBlock(pos2, Block.AIR);
+
+        BlockVec pos3 = new BlockVec(58, Y + 1, z);
+        player.setItemInMainHand(ItemStack.of(Material.SHULKER_BOX));
+        var place3 = new PlayerBlockPlaceEvent(player, world, Block.SHULKER_BOX, BlockFace.TOP,
+                pos3, new Vec(0.5, 1.0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(place3);
+        world.setBlock(pos3, place3.getBlock());
+        tick(1);
+        breakBlock(pos3);
+        boolean emptyDropHasNoContainer = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.SHULKER_BOX
+                        && (ie.getItemStack().get(DataComponents.CONTAINER) == null
+                                || ie.getItemStack().get(DataComponents.CONTAINER).stream().allMatch(ItemStack::isAir))), 1000);
+        check("breaking an empty shulker box drops a plain item with no contents component", emptyDropHasNoContainer);
+
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
