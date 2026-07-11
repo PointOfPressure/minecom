@@ -132,6 +132,8 @@ public final class Bootstrap {
         // before BlockRules.onBreak (registered next) would otherwise drop the wire item too.
         dev.pointofpressure.minecom.redstone.Redstone.register(events);
         dev.pointofpressure.minecom.redstone.Redstone.start(overworld);
+        dev.pointofpressure.minecom.redstone.Crafters.register(events);
+        dev.pointofpressure.minecom.redstone.Vibrations.register(events);
         BlockRules.register(events);
         Placement.register(events);
         Containers.register(events);

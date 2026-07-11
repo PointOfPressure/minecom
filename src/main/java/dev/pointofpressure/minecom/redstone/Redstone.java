@@ -32,11 +32,16 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Vanilla redstone: wire networks with 15-block signal decay, strong vs weak
- * power, torches (1rt inversion), repeaters (1-4rt delay + locking), comparators
- * (compare/subtract + container reading), lamps, doors, buttons, levers,
- * pressure plates, TNT, dispensers/droppers, and pistons — including
- * quasi-connectivity: pistons/dispensers/droppers also accept power at the
- * block above them and only re-check on a block update (BUD behavior emerges).
+ * power, torches (1rt inversion + burnout), repeaters (1-4rt delay + locking),
+ * comparators (compare/subtract + container/item-frame reading), lamps, doors,
+ * buttons, levers, pressure plates (weighted plates emit analog counts), TNT,
+ * dispensers/droppers (behavior table: projectiles, spawn eggs, minecarts,
+ * bone meal, flint&amp;steel, buckets, boats, shulker placement), pistons with
+ * full slime/honey chains, targets, tripwire, trapped chests, copper bulbs,
+ * lightning rods, crafters ({@link Crafters}) and sculk sensors
+ * ({@link Vibrations}) — including quasi-connectivity: pistons/dispensers/
+ * droppers also accept power at the block above them and only re-check on a
+ * block update (BUD behavior emerges).
  */
 public final class Redstone {
     private Redstone() {}
@@ -55,6 +60,7 @@ public final class Redstone {
     private static final Set<Long> detectorPositions = ConcurrentHashMap.newKeySet();
     private static final Set<Long> daylightDetectors = ConcurrentHashMap.newKeySet();
     private static final Set<Long> tripwireHooks = ConcurrentHashMap.newKeySet();
+    private static final Set<Long> lightningRods = ConcurrentHashMap.newKeySet();
     private static final int TRIPWIRE_MAX_LENGTH = 41; // TripWireHookBlock: i in 1..41
     private static final Map<Long, java.util.ArrayDeque<Long>> torchFlips = new ConcurrentHashMap<>();
 
@@ -79,6 +85,9 @@ public final class Redstone {
             }
             if (e.getBlock().key().value().equals("daylight_detector")) {
                 daylightDetectors.add(pack(e.getBlockPosition()));
+            }
+            if (e.getBlock().key().value().equals("lightning_rod")) {
+                lightningRods.add(pack(e.getBlockPosition()));
             }
             neighborsChanged(e.getBlockPosition());
         });
@@ -166,11 +175,11 @@ public final class Redstone {
             }
         }
 
-        if (tickCount % 5 == 0) { tickPlates(); tickDetectorRails(); tickTripwires(); }
+        if (tickCount % 5 == 0) { tickPlates(); tickDetectorRails(); tickTripwires(); Vibrations.tickSteps(); }
         if (tickCount % 20 == 0) tickDaylightDetectors();
     }
 
-    private static void schedule(int delayTicks, Runnable action) {
+    static void schedule(int delayTicks, Runnable action) {
         scheduled.computeIfAbsent(tickCount + Math.max(1, delayTicks), t -> new ArrayList<>()).add(action);
     }
 
@@ -229,6 +238,18 @@ public final class Redstone {
                 if (!"true".equals(source.getProperty("powered"))) return 0;
                 return sameDir(opp(facingVec(source.getProperty("facing"))), toTarget) ? 15 : 0;
             }
+            case "lightning_rod" -> {
+                // LightningRodBlock.getSignal: 15 in every direction for 8gt after a strike
+                return "true".equals(source.getProperty("powered")) ? 15 : 0;
+            }
+            case "sculk_sensor" -> {
+                return Integer.parseInt(source.getProperty("power"));
+            }
+            case "calibrated_sculk_sensor" -> {
+                // CalibratedSculkSensorBlock.getSignal: silent toward its FACING side
+                if (sameDir(facingVec(source.getProperty("facing")), toTarget)) return 0;
+                return Integer.parseInt(source.getProperty("power"));
+            }
             case "trapped_chest" -> {
                 // TrappedChestBlock.isSignalSource/getSignal: unlike a plain chest (not a
                 // signal source at all), a trapped chest powers redstone in every direction
@@ -245,6 +266,8 @@ public final class Redstone {
             }
             default -> {
                 if (key.endsWith("_button")) return "true".equals(source.getProperty("powered")) ? 15 : 0;
+                // weighted plates carry an analog POWER value, not the boolean POWERED
+                if (key.endsWith("weighted_pressure_plate")) return Integer.parseInt(source.getProperty("power"));
                 if (key.endsWith("_pressure_plate")) return "true".equals(source.getProperty("powered")) ? 15 : 0;
                 if (key.equals("detector_rail")) return "true".equals(source.getProperty("powered")) ? 15 : 0;
                 return 0;
@@ -277,11 +300,18 @@ public final class Redstone {
                 case "lever" -> {
                     if ("true".equals(n.getProperty("powered")) && attachedTo(n, toMe)) max = 15;
                 }
+                case "lightning_rod" -> {
+                    // getDirectSignal: strongly powers only its attachment block (opposite FACING)
+                    if ("true".equals(n.getProperty("powered"))
+                            && sameDir(facingVec(n.getProperty("facing")).mul(-1), toMe)) max = 15;
+                }
                 default -> {
                     if (key.endsWith("_button") && "true".equals(n.getProperty("powered"))
                             && attachedTo(n, toMe)) max = 15;
-                    if (key.endsWith("_pressure_plate") && "true".equals(n.getProperty("powered"))
-                            && d.y() > 0) max = 15; // plate on top strongly powers below? vanilla: block underneath
+                    if (key.endsWith("weighted_pressure_plate") && d.y() > 0) {
+                        max = Math.max(max, Integer.parseInt(n.getProperty("power")));
+                    } else if (key.endsWith("_pressure_plate") && "true".equals(n.getProperty("powered"))
+                            && d.y() > 0) max = 15; // plate on top strongly powers the block underneath
                     if (key.equals("detector_rail") && "true".equals(n.getProperty("powered"))
                             && d.y() > 0) max = 15; // detector rail on top strongly powers the block below
                 }
@@ -453,7 +483,9 @@ public final class Redstone {
         if (key.equals("redstone_torch") || key.equals("redstone_wall_torch")
                 || key.equals("lever") || key.equals("redstone_block")
                 || key.endsWith("_button") || key.endsWith("_pressure_plate")
-                || key.equals("target") || key.equals("daylight_detector")) return true;
+                || key.equals("target") || key.equals("daylight_detector")
+                || key.equals("lightning_rod") || key.equals("tripwire_hook")
+                || key.endsWith("sculk_sensor")) return true;
         if (key.equals("repeater") || key.equals("comparator")) {
             Vec facing = facingVec(block.getProperty("facing"));
             return sameDir(facing, dir) || sameDir(opp(facing), dir);
@@ -563,7 +595,10 @@ public final class Redstone {
                 // NoteBlock.neighborChanged: no scheduling delay, unlike lamp/repeater/comparator
                 boolean signal = activated(pos);
                 if (signal != "true".equals(block.getProperty("powered"))) {
-                    if (signal) dev.pointofpressure.minecom.blocks.NoteBlocks.playNote(instance, pos, block);
+                    if (signal) {
+                        dev.pointofpressure.minecom.blocks.NoteBlocks.playNote(instance, pos, block);
+                        Vibrations.emit("note_block_play", pos, null);
+                    }
                     instance.setBlock(pos, block.withProperty("powered", String.valueOf(signal)));
                 }
             }
@@ -576,6 +611,7 @@ public final class Redstone {
                 }
             }
             case "piston", "sticky_piston" -> Pistons.evaluate(instance, pos, block);
+            case "crafter" -> Crafters.evaluate(instance, pos, block);
             case "dispenser", "dropper" -> {
                 boolean powered = activated(pos) || activated(pos.add(0, 1, 0)); // quasi-connectivity
                 boolean triggered = "true".equals(block.getProperty("triggered"));
@@ -600,6 +636,30 @@ public final class Redstone {
                 }
             }
             default -> {
+                if (key.equals("powered_rail") || key.equals("activator_rail")) {
+                    boolean powered = railPowered(pos, block, key);
+                    if (powered != "true".equals(block.getProperty("powered"))) {
+                        instance.setBlock(pos, block.withProperty("powered", String.valueOf(powered)));
+                        neighborsChanged(pos);
+                    }
+                    return;
+                }
+                if (key.endsWith("copper_bulb")) {
+                    // CopperBulbBlock.checkAndFlip: LIT toggles only on the RISING edge of
+                    // POWERED; falling edge just records the new powered state. No delay.
+                    boolean signal = activated(pos);
+                    boolean powered = "true".equals(block.getProperty("powered"));
+                    if (signal != powered) {
+                        Block updated = block;
+                        if (!powered) {
+                            updated = updated.withProperty("lit",
+                                    String.valueOf(!"true".equals(block.getProperty("lit"))));
+                        }
+                        instance.setBlock(pos, updated.withProperty("powered", String.valueOf(signal)));
+                        dirty.add(pack(pos)); // comparators reading LIT re-evaluate
+                    }
+                    return;
+                }
                 if (key.endsWith("_door") || key.endsWith("_trapdoor") || key.endsWith("_fence_gate")) {
                     boolean powered = activated(pos)
                             || (key.endsWith("_door") && doorOtherHalfPowered(pos, block));
@@ -609,10 +669,41 @@ public final class Redstone {
                                 .withProperty("open", String.valueOf(powered));
                         instance.setBlock(pos, updated);
                         if (key.endsWith("_door")) syncDoorHalf(pos, updated);
+                        Vibrations.emit(powered ? "block_open" : "block_close", pos, null);
                     }
                 }
             }
         }
+    }
+
+    /**
+     * PoweredRailBlock.findPoweredRailSignal: a powered/activator rail is on if
+     * directly powered or within 8 same-type rails (along its axis, allowing the
+     * one-block rises of ascending shapes) of a directly powered one.
+     */
+    private static boolean railPowered(Point pos, Block rail, String key) {
+        if (activated(pos)) return true;
+        String shape = rail.getProperty("shape");
+        boolean zAxis = shape == null || shape.contains("north") || shape.contains("south");
+        Vec dir = zAxis ? new Vec(0, 0, 1) : new Vec(1, 0, 0);
+        for (int sign : new int[]{1, -1}) {
+            Point at = pos;
+            for (int i = 0; i < 8; i++) {
+                Point step = at.add(dir.x() * sign, 0, dir.z() * sign);
+                Point foundAt = null;
+                for (int dy : new int[]{0, 1, -1}) {
+                    Point p = step.add(0, dy, 0);
+                    if (instance.getBlock(p).key().value().equals(key)) {
+                        foundAt = p;
+                        break;
+                    }
+                }
+                if (foundAt == null) break;
+                if (activated(foundAt)) return true;
+                at = foundAt;
+            }
+        }
+        return false;
     }
 
     private static boolean doorOtherHalfPowered(Point pos, Block door) {
@@ -632,7 +723,7 @@ public final class Redstone {
     }
 
     /** Power into a repeater/comparator's input face (the side it faces). */
-    private static int inputPower(Point pos, Vec facing) {
+    static int inputPower(Point pos, Vec facing) {
         Point inputPos = pos.add(facing);
         Block input = instance.getBlock(inputPos);
         int direct = emitted(input, inputPos, facing.mul(-1));
@@ -750,6 +841,13 @@ public final class Redstone {
         } else if (key.equals("end_portal_frame")) {
             // EndPortalFrameBlock.getAnalogOutputSignal: HAS_EYE ? 15 : 0, nothing fancier.
             return "true".equals(block.getProperty("eye")) ? 15 : 0;
+        } else if (key.endsWith("copper_bulb")) {
+            // CopperBulbBlock.getAnalogOutputSignal: LIT ? 15 : 0
+            return "true".equals(block.getProperty("lit")) ? 15 : 0;
+        } else if (key.equals("crafter")) {
+            return Crafters.comparatorOutput(pos);
+        } else if (key.endsWith("sculk_sensor")) {
+            return Vibrations.comparatorOutput(pos, block);
         } else {
             return -1;
         }
@@ -792,10 +890,77 @@ public final class Redstone {
         Vec spawnAt = new Vec(front.blockX() + 0.5, front.blockY() + 0.5, front.blockZ() + 0.5);
         boolean dropper = block.key().value().equals("dropper");
 
-        if (!dropper && mat == Material.ARROW) {
-            EntityProjectile arrow = new EntityProjectile(null, EntityType.ARROW);
-            arrow.setInstance(instance, spawnAt);
-            arrow.setVelocity(facing.mul(20).add(0, 1, 0));
+        if (!dropper && (mat == Material.ARROW || mat == Material.TIPPED_ARROW || mat == Material.SPECTRAL_ARROW
+                || mat == Material.SNOWBALL || mat == Material.EGG || mat == Material.WIND_CHARGE)) {
+            // DispenserBlock.registerProjectileBehavior family: shot, not dropped
+            EntityType type = switch (mat.key().value()) {
+                case "snowball" -> EntityType.SNOWBALL;
+                case "egg" -> EntityType.EGG;
+                case "wind_charge" -> EntityType.BREEZE_WIND_CHARGE; // reuses the breeze burst-on-hit
+                case "spectral_arrow" -> EntityType.SPECTRAL_ARROW;
+                default -> EntityType.ARROW;
+            };
+            EntityProjectile projectile = new EntityProjectile(null, type);
+            projectile.setInstance(instance, spawnAt);
+            projectile.setVelocity(facing.mul(20).add(0, 1, 0));
+        } else if (!dropper && mat == Material.FIRE_CHARGE) {
+            // fire charge shoots a small fireball that ignites what it hits
+            EntityProjectile fireball = new EntityProjectile(null, EntityType.SMALL_FIREBALL);
+            fireball.setInstance(instance, spawnAt);
+            fireball.setVelocity(facing.mul(20));
+        } else if (!dropper && mat.key().value().endsWith("_spawn_egg")) {
+            // SpawnEggItemBehavior: spawn the mob directly in front
+            String kind = mat.key().value().replace("_spawn_egg", "");
+            try {
+                dev.pointofpressure.minecom.mobs.Mobs.spawn(kind, instance,
+                        new net.minestom.server.coordinate.Pos(spawnAt.x(), front.blockY(), spawnAt.z()));
+            } catch (Exception unknownKind) {
+                return; // unknown mob: fizzle without consuming, like a failed optional behavior
+            }
+        } else if (!dropper && (mat == Material.MINECART || mat == Material.CHEST_MINECART
+                || mat == Material.HOPPER_MINECART || mat == Material.FURNACE_MINECART
+                || mat == Material.TNT_MINECART)
+                && instance.getBlock(front).key().value().endsWith("rail")) {
+            // MinecartDispenseItemBehavior: place carts only onto rails
+            var cartPos = new net.minestom.server.coordinate.Pos(spawnAt.x(), front.blockY() + 0.1, spawnAt.z());
+            if (mat == Material.MINECART) {
+                dev.pointofpressure.minecom.blocks.Minecarts.spawn(instance, cartPos);
+            } else {
+                EntityType cartType = switch (mat.key().value()) {
+                    case "chest_minecart" -> EntityType.CHEST_MINECART;
+                    case "hopper_minecart" -> EntityType.HOPPER_MINECART;
+                    case "furnace_minecart" -> EntityType.FURNACE_MINECART;
+                    default -> EntityType.TNT_MINECART;
+                };
+                dev.pointofpressure.minecom.blocks.Minecarts.spawn(instance, cartPos, cartType);
+            }
+        } else if (!dropper && mat == Material.BONE_MEAL) {
+            // OptionalDispenseItemBehavior: failure fizzles without consuming
+            if (!dev.pointofpressure.minecom.blocks.Farming.boneMeal(instance, front)) return;
+        } else if (!dropper && mat == Material.FLINT_AND_STEEL) {
+            Block target = instance.getBlock(front);
+            String tk = target.key().value();
+            if (target.isAir()) {
+                instance.setBlock(front, Block.FIRE);
+                neighborsChanged(front);
+            } else if ((tk.endsWith("campfire") || tk.endsWith("candle") || tk.endsWith("candle_cake"))
+                    && "false".equals(target.getProperty("lit"))) {
+                instance.setBlock(front, target.withProperty("lit", "true"));
+            } else if (tk.equals("tnt")) {
+                instance.setBlock(front, Block.AIR);
+                Explosions.primeTnt(instance, front, 80, null);
+                neighborsChanged(front);
+            }
+            return; // tool: never consumed (durability not modeled for container items, see AUDIT)
+        } else if (!dropper && mat == Material.POWDER_SNOW_BUCKET) {
+            if (!instance.getBlock(front).isAir()) return;
+            instance.setBlock(front, Block.POWDER_SNOW);
+            inv.setItemStack(slot, ItemStack.of(Material.BUCKET));
+            return;
+        } else if (!dropper && mat.key().value().endsWith("shulker_box")
+                && instance.getBlock(front).isAir()) {
+            // ShulkerBoxDispenseBehavior: place the box as a block
+            instance.setBlock(front, Block.fromKey(mat.key()));
         } else if (!dropper && mat == Material.WATER_BUCKET) {
             instance.setBlock(front, Block.WATER);
             dev.pointofpressure.minecom.blocks.Fluids.notifyAround(front);
@@ -865,6 +1030,10 @@ public final class Redstone {
                 e.setBlockingItemUse(true);
                 e.getPlayer().openInventory(dispenserInventory(pos));
             }
+            case "crafter" -> {
+                e.setBlockingItemUse(true);
+                e.getPlayer().openInventory(Crafters.inventory(pos));
+            }
             case "daylight_detector" -> {
                 // DaylightDetectorBlock.useWithoutItem: cycle INVERTED + immediate re-read
                 e.setBlockingItemUse(true);
@@ -915,7 +1084,27 @@ public final class Redstone {
                 platePositions.remove(key);
                 continue;
             }
-            boolean wooden = !bk.startsWith("stone") && !bk.contains("weighted");
+            if (bk.endsWith("weighted_pressure_plate")) {
+                // WeightedPressurePlateBlock.getSignalStrength: count ALL entities on the
+                // plate, signal = ceil(min(count,maxWeight)/maxWeight * 15). Gold ("light")
+                // maxWeight 15, iron ("heavy") 150 — from the block registry definitions.
+                int maxWeight = bk.startsWith("light") ? 15 : 150;
+                long count = instance.getEntities().stream().filter(entity -> {
+                    if (entity.isRemoved()) return false;
+                    Point ep = entity.getPosition();
+                    return ep.blockX() == pos.blockX() && ep.blockZ() == pos.blockZ()
+                            && Math.abs(ep.y() - pos.blockY()) < 0.6;
+                }).count();
+                int signal = count == 0 ? 0
+                        : (int) Math.ceil(Math.min(count, maxWeight) / (double) maxWeight * 15.0);
+                if (signal != Integer.parseInt(block.getProperty("power"))) {
+                    instance.setBlock(pos, block.withProperty("power", String.valueOf(signal)));
+                    neighborsChanged(pos);
+                    neighborsChanged(pos.add(0, -1, 0));
+                }
+                continue;
+            }
+            boolean wooden = !bk.startsWith("stone") && !bk.startsWith("polished");
             boolean pressed = instance.getEntities().stream().anyMatch(entity -> {
                 if (!(entity instanceof LivingEntity) && !wooden) return false;
                 if (entity instanceof Entity en && en.isRemoved()) return false;
@@ -978,6 +1167,55 @@ public final class Redstone {
             if (!instance.isChunkLoaded(pos.blockX() >> 4, pos.blockZ() >> 4)) continue;
             if (!DaylightDetectors.recompute(instance, pos)) daylightDetectors.remove(key);
         }
+    }
+
+    // ------------------------------------------------------------------ lightning rod
+
+    /** Track lightning rods loaded from a saved world (or placed by tests). */
+    public static void trackLightningRod(Point pos) {
+        lightningRods.add(pack(pos));
+    }
+
+    /**
+     * ServerLevel.findLightningRod: nearest tracked rod within 128 blocks of the
+     * strike point (vanilla uses a POI sphere search of radius 128). Returns null
+     * if this isn't the redstone instance or no rod is in range.
+     */
+    public static Point nearestLightningRod(Instance in, Point ground) {
+        if (in != instance) return null;
+        Point best = null;
+        double bestSq = 128.0 * 128.0;
+        for (long key : lightningRods) {
+            Point pos = unpackVec(key);
+            if (!instance.isChunkLoaded(pos.blockX() >> 4, pos.blockZ() >> 4)) continue;
+            if (!instance.getBlock(pos).key().value().equals("lightning_rod")) {
+                lightningRods.remove(key);
+                continue;
+            }
+            double dsq = pos.distanceSquared(ground);
+            if (dsq <= bestSq) {
+                bestSq = dsq;
+                best = pos;
+            }
+        }
+        return best;
+    }
+
+    /** LightningRodBlock.onLightningStrike: POWERED for 8gt, strong power out the base. */
+    public static void lightningRodStruck(Point pos) {
+        Block rod = instance.getBlock(pos);
+        if (!rod.key().value().equals("lightning_rod")) return;
+        instance.setBlock(pos, rod.withProperty("powered", "true"));
+        neighborsChanged(pos);
+        neighborsChanged(pos.add(facingVec(rod.getProperty("facing")).mul(-1))); // attachment
+        schedule(8, () -> {
+            Block now = instance.getBlock(pos);
+            if (now.key().value().equals("lightning_rod")) {
+                instance.setBlock(pos, now.withProperty("powered", "false"));
+                neighborsChanged(pos);
+                neighborsChanged(pos.add(facingVec(now.getProperty("facing")).mul(-1)));
+            }
+        });
     }
 
     // ------------------------------------------------------------------ tripwire

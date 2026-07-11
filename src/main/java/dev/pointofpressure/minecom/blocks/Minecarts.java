@@ -285,7 +285,8 @@ public final class Minecarts {
     }
 
     private static boolean isPowered(Block b) {
-        return b.key().value().equals("powered_rail");
+        // golden rails only boost while actually redstone-powered (Redstone rail propagation)
+        return b.key().value().equals("powered_rail") && "true".equals(b.getProperty("powered"));
     }
 
     private static boolean isCorner(String shape) {

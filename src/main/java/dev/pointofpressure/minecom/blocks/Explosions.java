@@ -46,6 +46,7 @@ public final class Explosions {
 
     public static void explode(Instance instance, Point center, float power,
                                double dropChance, Entity source, boolean charged) {
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("explode", center, source);
         Set<Long> destroyed = new HashSet<>();
         double cx = center.x(), cy = center.y(), cz = center.z();
 
@@ -124,6 +125,7 @@ public final class Explosions {
 
     /** Replace a TNT block with a primed TNT entity; explodes when the fuse runs out. */
     public static void primeTnt(Instance instance, Point pos, int fuseTicks, Entity source) {
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("prime_fuse", pos, source);
         Entity tnt = new Entity(EntityType.TNT);
         PrimedTntMeta meta = (PrimedTntMeta) tnt.getEntityMeta();
         meta.setFuseTime(fuseTicks);

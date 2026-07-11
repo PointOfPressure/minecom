@@ -317,6 +317,26 @@ public final class Combat {
 
     /** LargeFireball hitting a block instead of an entity: still explodes, just no direct hit. */
     private static void projectileHitBlock(ProjectileCollideWithBlockEvent e) {
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("projectile_land",
+                e.getCollisionPosition(), e.getEntity());
+        if (e.getEntity().getEntityType() == EntityType.SMALL_FIREBALL) {
+            // SmallFireball.onHitBlock: start a fire on the struck face (dispenser fire charges)
+            Instance instance = e.getEntity().getInstance();
+            if (instance != null) {
+                var hit = e.getCollisionPosition();
+                var vel = e.getEntity().getVelocity();
+                double len = Math.max(1e-6, vel.length());
+                var firePos = new net.minestom.server.coordinate.Vec(
+                        (int) Math.floor(hit.x() - vel.x() / len * 0.01),
+                        (int) Math.floor(hit.y() - vel.y() / len * 0.01),
+                        (int) Math.floor(hit.z() - vel.z() / len * 0.01));
+                if (instance.getBlock(firePos).isAir()) {
+                    instance.setBlock(firePos, net.minestom.server.instance.block.Block.FIRE);
+                }
+            }
+            e.getEntity().remove();
+            return;
+        }
         if (e.getEntity().getEntityType() != EntityType.FIREBALL) return;
         explodeFireball(e.getEntity());
     }

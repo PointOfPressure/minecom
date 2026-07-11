@@ -1,6 +1,7 @@
 package dev.pointofpressure.minecom.survival;
 
 import net.minestom.server.MinecraftServer;
+import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.EntityType;
@@ -72,20 +73,26 @@ public final class Lightning {
      * {@link dev.pointofpressure.minecom.blocks.Explosions#explode}), and converts any
      * villager struck directly to a witch (Villager.thunderHit: unconditional on any
      * non-Peaceful difficulty, no probability roll — replaces the damage/fire
-     * entirely). Bounded: no
-     * fire-starting, no lightning-rod redirection (ServerLevel.findLightningRod: a 128-block
-     * POI-manager search, real vanilla's FIRST target-redirect check, tried before the
-     * entity-redirect below — this project has no spatial index of placed rods and a brute-
-     * force 128-radius scan on every strike would be far too expensive; needs a lightweight
-     * tracked-position registry as a prerequisite, logged in docs/HANDOFF.md).
+     * entirely). Lightning-rod redirection implemented 2026-07-11: real vanilla's FIRST
+     * target-redirect check (ServerLevel.findLightningRod, 128-block search) runs against
+     * Redstone's tracked-rod registry before the entity-redirect below, and a struck rod
+     * emits redstone power for 8gt (LightningRodBlock.onLightningStrike). Bounded: no
+     * fire-starting, no copper-oxidation scrubbing on rod strikes (no oxidation system).
      */
     public static void strikeAt(Instance instance, double x, double z) {
         int y = topSolidY(instance, (int) Math.floor(x), (int) Math.floor(z));
         if (y < -63) return;
         Pos ground = new Pos(x, y + 1, z);
-        Pos pos = redirectToEntity(instance, ground);
+        Point rod = dev.pointofpressure.minecom.redstone.Redstone.nearestLightningRod(instance, ground);
+        if (rod != null) {
+            dev.pointofpressure.minecom.redstone.Redstone.lightningRodStruck(rod);
+        }
+        Pos pos = rod != null
+                ? new Pos(rod.blockX() + 0.5, rod.blockY() + 1, rod.blockZ() + 0.5)
+                : redirectToEntity(instance, ground);
         Entity bolt = new Entity(EntityType.LIGHTNING_BOLT);
         bolt.setInstance(instance, pos);
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("lightning_strike", pos, null);
         for (Entity e : instance.getNearbyEntities(pos, 3.0)) {
             if (!(e instanceof LivingEntity le) || le.isDead()) continue;
             if (e.getEntityType() == EntityType.VILLAGER

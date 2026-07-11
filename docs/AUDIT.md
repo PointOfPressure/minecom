@@ -41,21 +41,42 @@ leftovers.
 
 ## blocks/
 
-- Redstone.java — dispenser/dropper item behaviors cover only arrow,
-  water/lava bucket, TNT, plain drop. Vanilla DispenserBehavior registry also
-  does: bone meal, fire charge, flint&steel, shears (sheep/carve), armor
-  equipping, spawn eggs, boats/minecarts placement, splash/lingering potions,
-  projectiles (snowball, egg, trident, wind charge, firework), bucket pickup,
-  shulker box placement, candles, honeycomb... (M — data-driven table + handlers)
-- Redstone.java `containerSignal` — comparator reads chest, furnace,
-  dispenser/dropper, hopper, composter, jukebox, lectern, respawn anchor. Missing:
-  brewing stand, barrel (no barrel container at all?), beehive honey level, cake,
-  end portal frame eye, chiseled bookshelf, decorated pot, crafter. (S each)
-- Redstone.java — no crafter block (26.x auto-crafter) at all. (M)
-- Redstone.java — sculk sensors/calibrated sculk: no vibration system anywhere.
-  (L)
-- Pistons.java:121 — pushes/pulls single blocks; no 12-block push chains? (verify)
-  no slime/honey block chain semantics, no block-entity move denial nuances. (M/L)
+- Redstone.java dispenser behaviors — **expanded 2026-07-11 (Fable)**: now
+  covers arrows (tipped/spectral), snowball, egg, wind charge, fire charge
+  (small fireball ignites on impact via Combat), spawn eggs (via Mobs.spawn),
+  minecarts incl. chest/hopper/furnace/TNT variants (rails only), bone meal
+  (Farming.boneMeal), flint&steel (fire/campfire/candle relight/TNT prime; no
+  tool durability inside containers), powder snow bucket, shulker box
+  placement, plus the pre-existing water/lava/empty buckets, TNT, boats.
+  Still missing: splash/lingering potions (no thrown-potion system at all),
+  armor equipping onto entities, armor stands (no armor-stand system), XP
+  bottle, firework rocket, shears, honeycomb, brush, chest-onto-donkey,
+  candle placement, glass bottle filling. (S each once their base systems exist)
+- Redstone.java `containerSignal` — **expanded 2026-07-11 (Fable)**: added
+  copper bulb (LIT=15), crafter (filled+locked slots), sculk sensors (last
+  vibration frequency while active). Still missing: beehive honey level (no
+  bee/hive system). Barrel/brewing/cake/end-portal-frame/chiseled-bookshelf/
+  decorated-pot reads were already present.
+- ~~Redstone.java — no crafter block~~ **Done 2026-07-11 (Fable)**:
+  `redstone/Crafters.java` — trigger edge + 4gt delay, 6gt CRAFTING, eject
+  into containers or as item, slot locking via empty-cursor click, comparator
+  = filled+locked. Not modeled: recipe remainder items (bucket returns),
+  fail/success level events, locked-slot client visuals (container property
+  packets), smallest-stack insert balancing, crafter persistence
+  (session-scoped like dispensers).
+- ~~Redstone.java — sculk sensors: no vibration system~~ **Done 2026-07-11
+  (Fable)**: `redstone/Vibrations.java` — full frequency table, 1 block/gt
+  travel, distance power, sensor 8/30gt + calibrated 16/10gt with back-face
+  frequency filter, 10gt cooldown, comparator = last frequency, wool
+  occlusion as a straight-line sample (vanilla probes a curved occlusion set),
+  step sweep every 5gt (sneaking players silent). Emission taps: block
+  place/break, note blocks, doors/trapdoors/gates, TNT prime, explosions,
+  lightning, projectile land. Not modeled: sculk shriekers/warden chain,
+  amethyst resonance, container open/close + eat/drink/equip-class events,
+  waterlogged silencing, swim/splash/flap emissions.
+- ~~Pistons.java — no slime/honey chains~~ **Done 2026-07-11 (Fable)** — full
+  structure resolver port; see docs/HANDOFF.md Done entry. Block-entity move
+  denial is inherent (isPushable rejects block entities).
 - Hoppers.java — check minecart-with-hopper pull-from-above and
   hopper-into-minecart paths (Minecarts variants exist; the connection is
   suspect). (S/M)
@@ -91,10 +112,12 @@ leftovers.
   chiseled bookshelves, decorated pots (break/insert), cauldrons (water/lava/
   powder snow storage, bottle fill), bells (raid pings, ring on hit), candles
   on cakes, item frames, armor stands, banners, signs (editing), skulk, spore
-  blossoms, big dripleaf tilt, pointed dripstone falling/filling, lightning rod
-  (see Lightning.java note), scaffolding, ladders/vine climb speed (client-side
-  anyway), lodestone+compass, respawn-anchor charge particles. (each S-M;
-  cauldron and bells most player-visible)
+  blossoms, big dripleaf tilt, pointed dripstone falling/filling, scaffolding,
+  ladders/vine climb speed (client-side anyway), lodestone+compass,
+  respawn-anchor charge particles. (each S-M; cauldron and bells most
+  player-visible) — lightning rod done 2026-07-11 (Fable): tracked-rod
+  registry + 128-block strike redirect + 8gt pulse, weighted pressure plates
+  analog + copper bulbs also landed in the same redstone-parity pass.
 - TrialChambers.java (mine, for the record) — not modeled: ominous item
   spawner drips, per-mob ominous equipment loot tables, spawn-potential custom
   NBT (slime size etc.), vault client display-item cycling/connected-player

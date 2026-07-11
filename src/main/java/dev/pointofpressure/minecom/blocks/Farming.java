@@ -83,18 +83,29 @@ public final class Farming {
         }
 
         if (held == Material.BONE_MEAL) {
-            Block target = clicked;
-            String age = target.getProperty("age");
-            if (age != null && CROPS.contains(key(pos))) {
-                int max = maxAge(target);
-                int newAge = Math.min(max, Integer.parseInt(age) + 2 + RANDOM.nextInt(2));
-                e.getInstance().setBlock(pos, target.withProperty("age", String.valueOf(newAge)));
-                consume(player, e);
-            } else if (clickedKey.endsWith("_sapling")) {
-                growTree(e.getInstance(), pos, target);
-                consume(player, e);
-            }
+            if (boneMeal(e.getInstance(), pos)) consume(player, e);
         }
+    }
+
+    /**
+     * Bone-meal a position: crops jump 2-3 ages, saplings grow into trees.
+     * Shared by player use above and the dispenser BONE_MEAL behavior
+     * (DispenseItemBehavior.bootStrap -> BoneMealItem.growCrop).
+     */
+    public static boolean boneMeal(net.minestom.server.instance.Instance instance, Point pos) {
+        Block target = instance.getBlock(pos);
+        String age = target.getProperty("age");
+        if (age != null && CROPS.contains(key(pos))) {
+            int max = maxAge(target);
+            int newAge = Math.min(max, Integer.parseInt(age) + 2 + RANDOM.nextInt(2));
+            instance.setBlock(pos, target.withProperty("age", String.valueOf(newAge)));
+            return true;
+        }
+        if (target.key().value().endsWith("_sapling")) {
+            growTree(instance, pos, target);
+            return true;
+        }
+        return false;
     }
 
     private static void consume(Player player, PlayerUseItemOnBlockEvent e) {

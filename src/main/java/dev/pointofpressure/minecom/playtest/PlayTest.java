@@ -121,6 +121,14 @@ public final class PlayTest {
         scenario("redstone: piston slime T-branch push + full pull-back", PlayTest::scenarioPistonSlimeChain);
         scenario("redstone: piston honey-slime boundary + glazed terracotta", PlayTest::scenarioPistonHoneyBoundary);
         scenario("redstone: piston 12-limit on branched slime column", PlayTest::scenarioPistonChainLimit);
+        scenario("redstone: copper bulb toggles on rising edges only", PlayTest::scenarioCopperBulb);
+        scenario("redstone: weighted plates emit analog entity counts", PlayTest::scenarioWeightedPlates);
+        scenario("redstone: lightning rod redirects strikes and pulses", PlayTest::scenarioLightningRod);
+        scenario("redstone: crafter auto-crafts on a pulse", PlayTest::scenarioCrafter);
+        scenario("redstone: sculk sensor hears a note block, wool blocks it", PlayTest::scenarioSculkSensor);
+        scenario("redstone: calibrated sculk sensor filters frequencies", PlayTest::scenarioSculkCalibrated);
+        scenario("redstone: dispenser spawn egg + minecart placement", PlayTest::scenarioDispenserBehaviors);
+        scenario("redstone: powered rails carry power 8 rails down the line", PlayTest::scenarioPoweredRails);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -4458,6 +4466,206 @@ public final class PlayTest {
         rs(50, y0, z - 1, Block.AIR);
         waitFor(() -> "false".equals(prop(50, y0, z, "extended")), 3000);
         for (int x = 50; x <= 53; x++) for (int dy = -1; dy <= 13; dy++) rs(x, y0 + dy, z, Block.AIR);
+    }
+
+    /** CopperBulbBlock.checkAndFlip: LIT toggles only when POWERED goes false->true. */
+    private static void scenarioCopperBulb() {
+        int z = 175;
+        rs(51, Y + 1, z, Block.COPPER_BULB);
+        tick(2);
+        rs(50, Y + 1, z, Block.REDSTONE_BLOCK); // rising edge #1
+        boolean litOn = waitFor(() -> "true".equals(prop(51, Y + 1, z, "lit"))
+                && "true".equals(prop(51, Y + 1, z, "powered")), 3000);
+        check("copper bulb lights on the first rising edge", litOn);
+        rs(50, Y + 1, z, Block.AIR); // falling edge: lit must NOT change
+        boolean staysLit = waitFor(() -> "false".equals(prop(51, Y + 1, z, "powered")), 3000)
+                && "true".equals(prop(51, Y + 1, z, "lit"));
+        check("copper bulb stays lit when power is removed", staysLit);
+        rs(50, Y + 1, z, Block.REDSTONE_BLOCK); // rising edge #2
+        boolean litOff = waitFor(() -> "false".equals(prop(51, Y + 1, z, "lit")), 3000);
+        check("second rising edge turns the bulb off", litOff);
+        rs(50, Y + 1, z, Block.AIR);
+        tick(2);
+        rs(51, Y + 1, z, Block.AIR);
+    }
+
+    /** WeightedPressurePlateBlock: ceil(min(count,max)/max*15), gold max 15, iron max 150. */
+    private static void scenarioWeightedPlates() {
+        int z = 180;
+        rs(50, Y + 1, z, Block.LIGHT_WEIGHTED_PRESSURE_PLATE);
+        rs(53, Y + 1, z, Block.HEAVY_WEIGHTED_PRESSURE_PLATE);
+        dev.pointofpressure.minecom.redstone.Redstone.trackPlate(new Vec(50, Y + 1, z));
+        dev.pointofpressure.minecom.redstone.Redstone.trackPlate(new Vec(53, Y + 1, z));
+        // items count too in vanilla, and unlike pigs they don't wander off the plate
+        Material[] mats = {Material.STONE, Material.DIRT, Material.OAK_LOG};
+        for (Material m : mats) {
+            for (int x : new int[]{50, 53}) {
+                var drop = new net.minestom.server.entity.ItemEntity(ItemStack.of(m));
+                drop.setNoGravity(true);
+                drop.setInstance(world, new Pos(x + 0.5, Y + 1.1, z + 0.5));
+            }
+        }
+        boolean light = waitFor(() -> "3".equals(prop(50, Y + 1, z, "power")), 3000);
+        check("gold plate reads 3 entities as power 3", light);
+        boolean heavy = waitFor(() -> "1".equals(prop(53, Y + 1, z, "power")), 3000);
+        check("iron plate reads 3 entities as power 1 (ceil(3/150*15))", heavy);
+        clearEntitiesExceptPlayer();
+        boolean cleared = waitFor(() -> "0".equals(prop(50, Y + 1, z, "power"))
+                && "0".equals(prop(53, Y + 1, z, "power")), 3000);
+        check("weighted plates fall back to 0 when entities leave", cleared);
+        rs(50, Y + 1, z, Block.AIR);
+        rs(53, Y + 1, z, Block.AIR);
+    }
+
+    /** LightningRodBlock: strikes within 128 blocks redirect to the rod, 8gt pulse. */
+    private static void scenarioLightningRod() {
+        int z = 190;
+        rs(50, Y + 1, z, Block.STONE);
+        rs(50, Y + 2, z, Block.LIGHTNING_ROD.withProperty("facing", "up"));
+        dev.pointofpressure.minecom.redstone.Redstone.trackLightningRod(new Vec(50, Y + 2, z));
+        dev.pointofpressure.minecom.survival.Lightning.strikeAt(world, 55.5, z + 0.5);
+        boolean powered = waitFor(() -> "true".equals(prop(50, Y + 2, z, "powered")), 3000);
+        check("nearby strike redirects to the rod and powers it", powered);
+        boolean released = waitFor(() -> "false".equals(prop(50, Y + 2, z, "powered")), 3000);
+        check("rod pulse ends after 8gt", released);
+        rs(50, Y + 2, z, Block.AIR);
+        rs(50, Y + 1, z, Block.AIR);
+        clearEntitiesExceptPlayer();
+    }
+
+    /** Crafter: pulse -> 4gt -> crafts from its grid and ejects out the front. */
+    private static void scenarioCrafter() {
+        int z = 195;
+        rs(50, Y + 1, z, Block.CRAFTER.withProperty("orientation", "east_up"));
+        var inv = dev.pointofpressure.minecom.redstone.Crafters.inventory(new Vec(50, Y + 1, z));
+        // 2x2 planks -> crafting table
+        inv.setItemStack(0, ItemStack.of(Material.OAK_PLANKS));
+        inv.setItemStack(1, ItemStack.of(Material.OAK_PLANKS));
+        inv.setItemStack(3, ItemStack.of(Material.OAK_PLANKS));
+        inv.setItemStack(4, ItemStack.of(Material.OAK_PLANKS));
+        tick(2);
+        rs(50, Y + 2, z, Block.REDSTONE_BLOCK); // rising edge
+        boolean triggered = waitFor(() -> "true".equals(prop(50, Y + 1, z, "triggered")), 3000);
+        check("pulse sets the crafter triggered", triggered);
+        boolean crafted = waitFor(() -> world.getEntities().stream().anyMatch(en ->
+                en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.CRAFTING_TABLE
+                        && ie.getPosition().blockZ() == z), 3000);
+        check("crafter ejects a crafting table out its east face", crafted);
+        boolean consumed = inv.getItemStack(0).isAir() && inv.getItemStack(1).isAir()
+                && inv.getItemStack(3).isAir() && inv.getItemStack(4).isAir();
+        check("each grid slot consumed one ingredient", consumed);
+        rs(50, Y + 2, z, Block.AIR);
+        tick(2);
+        rs(50, Y + 1, z, Block.AIR);
+        clearEntitiesExceptPlayer();
+    }
+
+    /** Sculk sensor: note-block vibration (freq 10) travels 1 block/gt, wool blocks the path. */
+    private static void scenarioSculkSensor() {
+        int z = 200;
+        rs(50, Y + 1, z, Block.SCULK_SENSOR);
+        dev.pointofpressure.minecom.redstone.Vibrations.trackSensor(new Vec(50, Y + 1, z));
+        rs(54, Y + 1, z, Block.NOTE_BLOCK);
+        tick(2);
+        rs(54, Y + 2, z, Block.REDSTONE_BLOCK); // rising edge: note plays, vibration emitted
+        boolean heard = waitFor(() -> "active".equals(prop(50, Y + 1, z, "sculk_sensor_phase"))
+                && "9".equals(prop(50, Y + 1, z, "power")), 3000); // 15 - floor(15/8*3.57) = 9
+        check("sensor activates from a note block 4 blocks away with distance power", heard);
+        rs(54, Y + 2, z, Block.AIR);
+        boolean recovered = waitFor(() -> "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase"))
+                && "0".equals(prop(50, Y + 1, z, "power")), 4000); // 30gt active + 10gt cooldown
+        check("sensor returns to inactive through the cooldown phase", recovered);
+
+        rs(52, Y + 1, z, Block.WHITE_WOOL); // wool on the straight path
+        tick(2);
+        rs(54, Y + 2, z, Block.REDSTONE_BLOCK); // retrigger the note
+        tick(20);
+        check("wool on the path keeps the sensor silent",
+                "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase")));
+        rs(54, Y + 2, z, Block.AIR);
+        for (int x = 50; x <= 54; x++) for (int dy = 1; dy <= 2; dy++) rs(x, Y + dy, z, Block.AIR);
+    }
+
+    /** Calibrated sensor: radius 16, back-face signal filters to one frequency (0 = all). */
+    private static void scenarioSculkCalibrated() {
+        int z = 205;
+        rs(50, Y + 1, z, Block.CALIBRATED_SCULK_SENSOR.withProperty("facing", "north"));
+        dev.pointofpressure.minecom.redstone.Vibrations.trackSensor(new Vec(50, Y + 1, z));
+        rs(54, Y + 1, z, Block.NOTE_BLOCK);
+        tick(2);
+        rs(54, Y + 2, z, Block.REDSTONE_BLOCK);
+        boolean unfiltered = waitFor(() -> "active".equals(prop(50, Y + 1, z, "sculk_sensor_phase"))
+                && "12".equals(prop(50, Y + 1, z, "power")), 3000); // 15 - floor(15/16*~3.6)
+        check("calibrated sensor with no filter hears the note (radius-16 power)", unfiltered);
+        rs(54, Y + 2, z, Block.AIR);
+        boolean idle = waitFor(() -> "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 4000);
+        check("calibrated sensor recovers (10gt active + 10gt cooldown)", idle);
+
+        rs(50, Y + 1, z + 1, Block.REDSTONE_BLOCK); // back face (south): filter = 15 != 10
+        tick(2);
+        rs(54, Y + 2, z, Block.REDSTONE_BLOCK); // retrigger
+        tick(20);
+        check("filter 15 rejects the frequency-10 note vibration",
+                "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase")));
+        rs(54, Y + 2, z, Block.AIR);
+        rs(50, Y + 1, z + 1, Block.AIR);
+        for (int x = 50; x <= 54; x++) rs(x, Y + 1, z, Block.AIR);
+    }
+
+    /** Dispenser behaviors: spawn eggs place mobs, minecarts only land on rails. */
+    private static void scenarioDispenserBehaviors() {
+        int z = 210;
+        // house convention: dispense() outputs opposite the facing property (see scenarioDispenser)
+        rs(50, Y + 1, z, Block.DISPENSER.withProperty("facing", "west"));
+        var inv = dev.pointofpressure.minecom.redstone.Redstone.dispenserInventory(new Vec(50, Y + 1, z));
+        inv.setItemStack(0, ItemStack.of(Material.PIG_SPAWN_EGG));
+        tick(2);
+        rs(50, Y + 2, z, Block.REDSTONE_BLOCK);
+        boolean pig = waitFor(() -> world.getEntities().stream().anyMatch(en ->
+                en.getEntityType() == EntityType.PIG && en.getPosition().blockZ() == z
+                        && Math.abs(en.getPosition().blockX() - 51) <= 1), 3000);
+        check("dispensed spawn egg places a pig in front", pig);
+        check("spawn egg was consumed", inv.getItemStack(0).isAir());
+        rs(50, Y + 2, z, Block.AIR);
+        clearEntitiesExceptPlayer();
+
+        int z2 = z + 3;
+        rs(50, Y + 1, z2, Block.DISPENSER.withProperty("facing", "west"));
+        rs(51, Y + 1, z2, Block.RAIL);
+        var inv2 = dev.pointofpressure.minecom.redstone.Redstone.dispenserInventory(new Vec(50, Y + 1, z2));
+        inv2.setItemStack(0, ItemStack.of(Material.MINECART));
+        tick(2);
+        rs(50, Y + 2, z2, Block.REDSTONE_BLOCK);
+        boolean cart = waitFor(() -> world.getEntities().stream().anyMatch(en ->
+                en.getEntityType() == EntityType.MINECART
+                        && en.getPosition().blockZ() == z2), 3000);
+        check("dispensed minecart lands on the rail in front", cart);
+        rs(50, Y + 2, z2, Block.AIR);
+        for (int zz : new int[]{z, z2}) {
+            rs(50, Y + 1, zz, Block.AIR);
+            rs(51, Y + 1, zz, Block.AIR);
+        }
+        clearEntitiesExceptPlayer();
+    }
+
+    /** PoweredRailBlock: power travels 8 rails along the line, the 9th stays dark. */
+    private static void scenarioPoweredRails() {
+        int z = 220;
+        for (int x = 50; x <= 59; x++) {
+            rs(x, Y + 1, z, Block.POWERED_RAIL.withProperty("shape", "east_west"));
+        }
+        tick(2);
+        rs(49, Y + 1, z, Block.REDSTONE_BLOCK); // powers the first rail directly
+        boolean chain = waitFor(() -> "true".equals(prop(50, Y + 1, z, "powered"))
+                && "true".equals(prop(58, Y + 1, z, "powered")), 3000);
+        check("power reaches the 8th rail down the line", chain);
+        check("the 9th rail stays unpowered", "false".equals(prop(59, Y + 1, z, "powered")));
+        rs(49, Y + 1, z, Block.AIR);
+        boolean dark = waitFor(() -> "false".equals(prop(50, Y + 1, z, "powered"))
+                && "false".equals(prop(58, Y + 1, z, "powered")), 3000);
+        check("removing the source darkens the whole line", dark);
+        for (int x = 50; x <= 59; x++) rs(x, Y + 1, z, Block.AIR);
     }
 
     private static void scenarioButton() {

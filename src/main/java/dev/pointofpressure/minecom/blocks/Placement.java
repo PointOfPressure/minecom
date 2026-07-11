@@ -82,6 +82,26 @@ public final class Placement {
             return;
         }
 
+        // calibrated sculk sensor: amethyst input faces the player's look direction
+        // (CalibratedSculkSensorBlock.getStateForPlacement: FACING = horizontal look)
+        if (key.equals("calibrated_sculk_sensor")) {
+            e.setBlock(block.withProperty("facing", look));
+            return;
+        }
+
+        // crafter: FrontAndTop orientation — front faces the player like a dispenser;
+        // vertical fronts take their TOP from the player's horizontal look
+        // (CrafterBlock.getStateForPlacement)
+        if (key.equals("crafter")) {
+            float pitch = player.getPosition().pitch();
+            String orientation;
+            if (pitch > 60) orientation = "up_" + look;
+            else if (pitch < -60) orientation = "down_" + opposite;
+            else orientation = opposite + "_up";
+            e.setBlock(block.withProperty("orientation", orientation));
+            return;
+        }
+
         // pistons/dispensers/droppers/observers: 6-directional, face the player
         if (key.equals("piston") || key.equals("sticky_piston") || key.equals("dispenser")
                 || key.equals("dropper") || key.equals("observer")) {

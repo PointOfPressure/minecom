@@ -16,6 +16,37 @@ of what got escalated and why.
 
 ## Open
 
+### Redstone parity — remaining summit after the 2026-07-11 pass — mixed
+
+The redstone-parity pass (see Done entries + AUDIT.md updates of this date)
+landed: piston slime/honey chains, copper bulbs, weighted plates, lightning
+rods, crafter, sculk sensors + calibrated + vibration engine, powered/
+activator rail line propagation, target-block emission wiring (pre-existing),
+and the dispenser behavior table (projectiles, spawn eggs, minecarts, bone
+meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
+
+1. **Thrown potions** (Opus) — splash/lingering dispensing AND player throwing
+   are both blocked on a thrown-potion entity system; Potions.java has the
+   effect machinery, nothing models the projectile + area cloud.
+2. **Sculk shrieker → warden chain** (Fable) — shrieker warning levels,
+   darkness pulses, warden spawn/AI. Own feature, not a sensor patch.
+3. **Dispenser exotics** (Sonnet, batch) — armor equip, armor stands, XP
+   bottle, firework, shears, honeycomb, brush, candles, glass-bottle fill,
+   chest-onto-donkey: each blocked on (or trivial once) its base system
+   exists. List with details in AUDIT.md.
+4. **Update-order semantics** (DESIGN DECISION, not a task yet) — minecom
+   batches dirty positions per tick instead of vanilla's depth-first
+   neighbor-update recursion, so update-order-dependent contraptions
+   (locational dupers, order-sensitive comparator chains) can behave
+   differently. Real vanilla 26.x itself ships the deterministic
+   "experimental redstone" Orientation system (ExperimentalRedstoneUtils) —
+   porting THAT is the right target, but do NOT attempt it before the
+   multi-core redstone design lands (COMMUNITY-INTEL.md: region-threaded
+   redstone islands), or the update-order work gets done twice.
+5. **Crafter persistence + locked-slot client visuals**, vibration-tap gaps
+   (container open/close, eat/drink/equip), waterlogged sensor silencing —
+   AUDIT.md has the itemized list.
+
 ### Piston reorder-collision differential test — Opus
 
 The 2026-07-11 slime/honey structure-resolver port (see the Done entry below)
@@ -47,6 +78,9 @@ way the trial-chamber scenario does) or gate on the underlying state
 (inventory contents) instead of downstream behavior. Logs:
 test-logs/playtest_piston_chains.log (5 fails),
 test-logs/playtest_piston_rerun.log (2 fails).
+Also observed once (playtest_redstone_batch2.log): "the enderman later
+places the carried block back down" — same class of AI-timing flake; fold it
+into the same determinism pass.
 
 ### Unification-pass mechanical cleanups — Sonnet (BLOCKED until first pass done)
 
@@ -206,6 +240,9 @@ behave like a real one long-term (won't regenerate after
 water-flow disruption) without it.
 
 
+
+## Done
+
 ### Lightning-rod redirection (tracked-position registry) — Sonnet/Opus
 
 `Lightning.java` claims this was "logged in docs/HANDOFF.md" but no entry
@@ -216,7 +253,16 @@ tracked-position registry for placed rods (the same pattern as
 `Lightning.strikeAt` before the entity-redirect. See docs/AUDIT.md for the full
 gap list this came from.
 
-## Done
+**Done 2026-07-11 (Fable), as part of the redstone-parity pass.** Exactly the
+prescribed shape: `lightningRods` tracked-position registry in Redstone.java
+(placement event + `trackLightningRod` for tests/world-load),
+`nearestLightningRod` 128-block search tried FIRST in `Lightning.strikeAt`
+(before the entity redirect, matching ServerLevel.findLightningTargetAround
+order), and `lightningRodStruck`: POWERED 15 for 8gt, strong power out the
+attachment face (LightningRodBlock.getDirectSignal), weak 15 everywhere.
+Playtest green (redirect + pulse decay). No copper-oxidation scrub (no
+oxidation system — AUDIT).
+
 
 ### Piston slime/honey block chains (structure resolver) — Opus/Fable
 
