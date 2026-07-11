@@ -125,6 +125,7 @@ public final class PlayTest {
         scenario("breeding: two fed cows make a calf", PlayTest::scenarioBreeding);
         scenario("combat: falling crit 1.5x", PlayTest::scenarioCrit);
         scenario("saturation fast regen: full food + saturation heals every 10 ticks, not just the 80-tick path", PlayTest::scenarioSaturationFastRegen);
+        scenario("admin commands: /seed /effect /setblock /fill(+cap) /xp /clear /kill <target> /tp <player>", PlayTest::scenarioAdminCommands);
         scenario("leaf decay after logging", PlayTest::scenarioLeafDecay);
         scenario("potions: drink + effects + combat modifiers", PlayTest::scenarioPotions);
         scenario("brewing: wart -> awkward -> swiftness", PlayTest::scenarioBrewing);
@@ -189,6 +190,7 @@ public final class PlayTest {
         scenario("elder guardian: tougher stats, faster laser charge than base guardian", PlayTest::scenarioElderGuardian);
         scenario("shulker: stationary, fires a bullet that damages and levitates the target", PlayTest::scenarioShulker);
         scenario("wither: 300 HP flying boss fires wither skulls that damage the target", PlayTest::scenarioWither);
+        scenario("cave spider: 12 HP (not 16), same AI as a regular spider, bite poisons on Normal/Hard", PlayTest::scenarioCaveSpider);
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
         scenario("snow golem: fragile ranged defender, snowballs deal real damage only to blazes", PlayTest::scenarioSnowGolem);
         scenario("boat: floats up to the water surface", PlayTest::scenarioBoat);
@@ -1311,6 +1313,38 @@ public final class PlayTest {
         boolean hit = waitFor(() -> player.getHealth() < healthBefore, 8000);
         check("a wither fires skulls that damage the target", hit);
         if (wither != null) wither.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Cave spider (decompile-verified: extends Spider with no AI override at all — same
+     * leap/daylight-averse attack, same night-only targeting; only createAttributes overrides
+     * MAX_HEALTH to 12, and doHurtTarget adds a poison bite). Combat.java already carried the
+     * exact real poison formula (7s Normal/15s Hard/none Easy-Peaceful) before this mob's own
+     * factory existed to actually spawn one — wiring it up (VanillaMobs.caveSpider +
+     * Mobs.spawn's dispatch) was the only real gap.
+     */
+    private static void scenarioCaveSpider() {
+        clearEntitiesExceptPlayer();
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.NORMAL);
+        world.setTime(14000); // night: spiders (including cave spiders) only engage after dark
+        var spider = Mobs.spawn("cave_spider", world, new Pos(2.5, Y + 1, 0.5));
+        check("cave spider spawns with real vanilla stats (12 HP, not the regular spider's 16)",
+                spider instanceof net.minestom.server.entity.LivingEntity le
+                        && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 12.0);
+
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        player.setHealth(20f);
+        float healthBefore = player.getHealth();
+        boolean hit = waitFor(() -> player.getHealth() < healthBefore, 15000);
+        check("a cave spider attacks a nearby player unprompted (same AI as a regular spider)", hit);
+        if (hit) {
+            check("a Normal-difficulty cave spider bite poisons the target (7s)",
+                    waitFor(() -> dev.pointofpressure.minecom.survival.Potions.effectLevel(player,
+                            net.minestom.server.potion.PotionEffect.POISON) > 0, 2000));
+        }
+        if (spider != null) spider.remove();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
@@ -3559,6 +3593,76 @@ public final class PlayTest {
         check("food>=18 with no saturation does NOT heal yet in the same short window (slow path needs 80 ticks, health "
                 + healthWithoutSaturation + ")", healthWithoutSaturation == 10f);
 
+        resetPlayer();
+    }
+
+    /** New admin commands: /seed, /effect, /setblock, /fill (+ its size cap), /xp, /clear, /kill <target>, /tp <player>. */
+    /**
+     * The test harness's TestPlayer is a lightweight double that never registers with
+     * MinecraftServer.getConnectionManager() (no real login/config/play handshake), so
+     * name-based entity selectors (e.g. "TestSteve") that resolve against the online-players
+     * registry can never find it — a genuine test-harness limitation, not a bug in the
+     * commands themselves. Spawned mobs ARE real instance entities regardless of that
+     * registry, so target-selector commands are exercised against those (via the bare "@e"
+     * selector, matching whichever single mob is alive at the time) instead; the two
+     * onlyPlayers(true)-restricted commands (/xp, /tp <player>) can only be smoke-tested for
+     * "doesn't throw against a real command string", since there's no way to hand them a
+     * selector-resolvable player in this harness.
+     */
+    private static void scenarioAdminCommands() {
+        resetPlayer();
+        clearEntitiesExceptPlayer();
+        var commands = MinecraftServer.getCommandManager();
+
+        check("/seed runs without error",
+                commands.execute(player, "seed") != null);
+
+        EntityCreature effectTarget = Mobs.spawn("cow", world, player.getPosition().add(2, 0, 0));
+        tick(2);
+        check("/effect resolves a real selector-matched entity without erroring",
+                commands.execute(player, "effect @e speed 30 1") != null && !effectTarget.isRemoved());
+        effectTarget.remove();
+
+        int sx = 60, sy = Y + 1, sz = 150;
+        world.setBlock(sx, sy, sz, Block.AIR);
+        commands.execute(player, "setblock " + sx + " " + sy + " " + sz + " gold_block");
+        check("/setblock places the exact block requested",
+                world.getBlock(sx, sy, sz).compare(Block.GOLD_BLOCK));
+
+        commands.execute(player, "fill " + sx + " " + sy + " " + sz + " " + (sx + 2) + " " + sy + " " + (sz + 2) + " diamond_block");
+        boolean allFilled = true;
+        for (int x = sx; x <= sx + 2; x++) for (int z = sz; z <= sz + 2; z++) {
+            if (!world.getBlock(x, sy, z).compare(Block.DIAMOND_BLOCK)) allFilled = false;
+        }
+        check("/fill fills the whole requested cuboid (3x1x3)", allFilled);
+
+        // gold_block (never naturally generated in this flat test world) rather than stone,
+        // which the flat generator ALREADY fills y=0..Y+1 with — checking against stone here
+        // would trivially "pass" regardless of whether the cap rejection actually worked.
+        commands.execute(player, "fill 0 0 0 200 200 200 gold_block");
+        check("/fill refuses a region over the 32768-block cap (doesn't touch the world)",
+                !world.getBlock(0, 0, 0).compare(Block.GOLD_BLOCK));
+
+        for (int x = sx; x <= sx + 2; x++) for (int z = sz; z <= sz + 2; z++) world.setBlock(x, sy, z, Block.AIR);
+
+        check("/xp runs against a real command string without erroring (target resolution untestable "
+                + "in this harness — see class javadoc)", commands.execute(player, "xp TestSteve 50") != null);
+
+        player.getInventory().addItemStack(ItemStack.of(Material.DIRT));
+        commands.execute(player, "clear"); // no-arg: operates on the sender directly, no selector needed
+        check("/clear with no target empties the sender's own inventory",
+                player.getInventory().getItemStack(0).isAir() && player.getItemInMainHand().isAir());
+
+        check("/tp <player> runs against a real command string without erroring (target resolution "
+                + "untestable in this harness — see class javadoc)", commands.execute(player, "tp TestSteve") != null);
+
+        EntityCreature killTarget = Mobs.spawn("cow", world, player.getPosition().add(2, 0, 0));
+        tick(2);
+        commands.execute(player, "kill @e");
+        boolean killed = waitFor(killTarget::isRemoved, 2000);
+        check("/kill <target> kills the real selector-matched entity", killed);
+
+        clearEntitiesExceptPlayer();
         resetPlayer();
     }
 

@@ -40,6 +40,14 @@ public final class Commands {
                     player.teleport(new Pos(context.get(x), context.get(y), context.get(z)));
                 }
             }, x, y, z);
+
+            var target = ArgumentType.Entity("target").singleEntity(true).onlyPlayers(true);
+            addSyntax((sender, context) -> {
+                if (!(sender instanceof Player player)) return;
+                Player destination = context.get(target).findFirstPlayer(sender);
+                if (destination == null) return;
+                player.teleport(destination.getPosition());
+            }, target);
         }
     }
 
@@ -153,7 +161,7 @@ public final class Commands {
     public static final class Summon extends Command {
         public Summon(Instance instance) {
             super("summon");
-            var kind = ArgumentType.Word("mob").from("zombie", "spider", "skeleton", "creeper",
+            var kind = ArgumentType.Word("mob").from("zombie", "spider", "cave_spider", "skeleton", "creeper",
                     "cow", "pig", "sheep", "chicken", "zombified_piglin", "magma_cube", "blaze");
             addSyntax((sender, context) -> {
                 if (sender instanceof Player player) {
@@ -190,6 +198,13 @@ public final class Commands {
             setDefaultExecutor((sender, context) -> {
                 if (sender instanceof Player player) player.kill();
             });
+            var target = ArgumentType.Entity("target");
+            addSyntax((sender, context) -> {
+                for (var entity : context.get(target).find(sender)) {
+                    if (entity instanceof net.minestom.server.entity.LivingEntity living) living.kill();
+                    else entity.remove();
+                }
+            }, target);
         }
     }
 
@@ -268,6 +283,122 @@ public final class Commands {
                 sender.sendMessage(Component.text("Nearest stronghold: " + bx + ", ~20, " + bz,
                         NamedTextColor.LIGHT_PURPLE));
             });
+        }
+    }
+
+    /** Reports the world seed, like vanilla's /seed. */
+    public static final class SeedCmd extends Command {
+        public SeedCmd() {
+            super("seed");
+            setDefaultExecutor((sender, context) -> {
+                var gen = dev.pointofpressure.minecom.Bootstrap.vanillaGen();
+                long seed = gen == null ? 0L : gen.seed();
+                sender.sendMessage(Component.text("Seed: " + seed, NamedTextColor.LIGHT_PURPLE));
+            });
+        }
+    }
+
+    /** Applies a potion effect to the target(s), like vanilla's /effect give. */
+    public static final class EffectCmd extends Command {
+        public EffectCmd() {
+            super("effect");
+            var target = ArgumentType.Entity("target");
+            var effect = ArgumentType.Word("effect");
+            var duration = ArgumentType.Integer("seconds").between(1, 1000000).setDefaultValue(30);
+            var amplifier = ArgumentType.Integer("amplifier").between(0, 255).setDefaultValue(0);
+            addSyntax((sender, context) -> {
+                String effectKey = context.get(effect);
+                var potionEffect = net.minestom.server.potion.PotionEffect.fromKey(
+                        effectKey.contains(":") ? effectKey : "minecraft:" + effectKey);
+                if (potionEffect == null) {
+                    sender.sendMessage(Component.text("Unknown effect: " + context.get(effect), NamedTextColor.RED));
+                    return;
+                }
+                for (var entity : context.get(target).find(sender)) {
+                    if (!(entity instanceof net.minestom.server.entity.LivingEntity living)) continue;
+                    living.addEffect(new net.minestom.server.potion.Potion(potionEffect,
+                            context.get(amplifier), context.get(duration) * 20));
+                }
+            }, target, effect, duration, amplifier);
+        }
+    }
+
+    /** Places a single block, like vanilla's /setblock. */
+    public static final class SetBlockCmd extends Command {
+        public SetBlockCmd(Instance instance) {
+            super("setblock");
+            var x = ArgumentType.Integer("x");
+            var y = ArgumentType.Integer("y");
+            var z = ArgumentType.Integer("z");
+            var block = ArgumentType.BlockState("block");
+            addSyntax((sender, context) -> instance.setBlock(context.get(x), context.get(y), context.get(z),
+                    context.get(block)), x, y, z, block);
+        }
+    }
+
+    /** Fills a bounded cuboid region, like vanilla's /fill (capped at 32768 blocks, same as vanilla). */
+    public static final class FillCmd extends Command {
+        private static final int MAX_BLOCKS = 32768;
+
+        public FillCmd(Instance instance) {
+            super("fill");
+            var x1 = ArgumentType.Integer("x1");
+            var y1 = ArgumentType.Integer("y1");
+            var z1 = ArgumentType.Integer("z1");
+            var x2 = ArgumentType.Integer("x2");
+            var y2 = ArgumentType.Integer("y2");
+            var z2 = ArgumentType.Integer("z2");
+            var block = ArgumentType.BlockState("block");
+            addSyntax((sender, context) -> {
+                int minX = Math.min(context.get(x1), context.get(x2)), maxX = Math.max(context.get(x1), context.get(x2));
+                int minY = Math.min(context.get(y1), context.get(y2)), maxY = Math.max(context.get(y1), context.get(y2));
+                int minZ = Math.min(context.get(z1), context.get(z2)), maxZ = Math.max(context.get(z1), context.get(z2));
+                long volume = (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+                if (volume > MAX_BLOCKS) {
+                    sender.sendMessage(Component.text("Too many blocks (" + volume + " > " + MAX_BLOCKS + ").",
+                            NamedTextColor.RED));
+                    return;
+                }
+                var b = context.get(block);
+                for (int x = minX; x <= maxX; x++) {
+                    for (int y = minY; y <= maxY; y++) {
+                        for (int z = minZ; z <= maxZ; z++) instance.setBlock(x, y, z, b);
+                    }
+                }
+                sender.sendMessage(Component.text("Filled " + volume + " blocks.", NamedTextColor.GRAY));
+            }, x1, y1, z1, x2, y2, z2, block);
+        }
+    }
+
+    /** Grants raw XP points to the target(s), like vanilla's /xp add <target> <amount> points. */
+    public static final class XpCmd extends Command {
+        public XpCmd() {
+            super("xp");
+            var target = ArgumentType.Entity("target").onlyPlayers(true);
+            var amount = ArgumentType.Integer("amount");
+            addSyntax((sender, context) -> {
+                for (var entity : context.get(target).find(sender)) {
+                    if (entity instanceof Player player) {
+                        dev.pointofpressure.minecom.survival.Experience.add(player, context.get(amount));
+                    }
+                }
+            }, target, amount);
+        }
+    }
+
+    /** Clears the target's (or, with no target, the sender's own) inventory, like vanilla's /clear. */
+    public static final class ClearCmd extends Command {
+        public ClearCmd() {
+            super("clear");
+            setDefaultExecutor((sender, context) -> {
+                if (sender instanceof Player player) player.getInventory().clear();
+            });
+            var target = ArgumentType.Entity("target").onlyPlayers(true);
+            addSyntax((sender, context) -> {
+                for (var entity : context.get(target).find(sender)) {
+                    if (entity instanceof Player player) player.getInventory().clear();
+                }
+            }, target);
         }
     }
 }

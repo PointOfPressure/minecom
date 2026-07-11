@@ -190,6 +190,39 @@ public final class VanillaMobs {
         return mob;
     }
 
+    /**
+     * CaveSpider extends Spider (decompile-verified: no registerGoals override at all — same
+     * leap/daylight-averse-attack/night-only-target AI, unchanged) with only two real
+     * differences: createAttributes overrides MAX_HEALTH to 12 (vs Spider's 16, everything
+     * else — speed/followRange/attackDamage/armor — inherited as-is), and doHurtTarget adds
+     * a poison bite (Combat.java's attack() already carries this exact CAVE_SPIDER branch —
+     * 7s Normal/15s Hard/none Easy-Peaceful — added ahead of this factory existing, so wiring
+     * this mob up is the only piece that was actually missing).
+     */
+    public static EntityCreature caveSpider(Instance instance, Pos pos) {
+        EntityCreature mob = new EntityCreature(EntityType.CAVE_SPIDER);
+        VBrain brain = brain(mob, 0.3, 16, 2, 12, 0);
+        brain.addGoal(4, new Goals.LeapAtTarget(brain, 0.4f));
+        brain.addGoal(5, new Goals.MeleeAttack(brain, 1.0, true) {
+            @Override
+            public boolean canContinueToUse() {
+                return !isDaySurface(mob) && super.canContinueToUse();
+            }
+        });
+        brain.addGoal(7, new Goals.WaterAvoidingRandomStroll(brain, 0.8));
+        brain.addGoal(8, new Goals.LookAtPlayer(brain, 8));
+        brain.addGoal(8, new Goals.RandomLookAround(brain));
+        brain.addTargetGoal(1, new Goals.HurtByTarget(brain, false));
+        brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true) {
+            @Override
+            public boolean canUse() {
+                return !isDaySurface(mob) && super.canUse();
+            }
+        });
+        mob.setInstance(instance, pos);
+        return mob;
+    }
+
     /** Creeper: swell 2, melee-approach 4, stroll 5; swell counter explodes at 30 (radius 3). */
     public static EntityCreature creeper(Instance instance, Pos pos) {
         EntityCreature mob = new EntityCreature(EntityType.CREEPER);

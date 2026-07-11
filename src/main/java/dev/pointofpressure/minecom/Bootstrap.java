@@ -222,6 +222,12 @@ public final class Bootstrap {
         commands.register(new Commands.RaidCmd());
         commands.register(new Commands.LocateStrongholdCmd());
         commands.register(new Commands.DifficultyCmd());
+        commands.register(new Commands.SeedCmd());
+        commands.register(new Commands.EffectCmd());
+        commands.register(new Commands.SetBlockCmd(overworld));
+        commands.register(new Commands.FillCmd(overworld));
+        commands.register(new Commands.XpCmd());
+        commands.register(new Commands.ClearCmd());
 
         Difficulty.startTracking();
 
