@@ -190,9 +190,21 @@ public final class Survival {
     private static void move(PlayerMoveEvent e) {
         Player p = e.getPlayer();
         if (p.getGameMode() != GameMode.SURVIVAL || p.isDead()) return;
+        State s = state(p);
+        if (p.getVehicle() != null) {
+            // A rider's own fall distance isn't tracked independently of its vehicle in
+            // real vanilla (a boat/minecart/horse absorbs the landing itself; the entity
+            // riding it never takes fall damage from the ride). Reset tracking so
+            // dismounting doesn't replay a bogus fall from whatever height the player was
+            // at right before boarding. Previously this project tracked the player's own
+            // Y position unconditionally, so a player who boarded a boat mid-fall (or flew
+            // one off a cliff) still took fall damage the instant they stepped off,
+            // matching neither the vehicle's landing nor the player's own actual fall.
+            s.highestY = Double.NEGATIVE_INFINITY;
+            return;
+        }
         Pos from = p.getPosition();
         Pos to = e.getNewPosition();
-        State s = state(p);
 
         if (p.isSprinting()) {
             double dx = to.x() - from.x(), dz = to.z() - from.z();

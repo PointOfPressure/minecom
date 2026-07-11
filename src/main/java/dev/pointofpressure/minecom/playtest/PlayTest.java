@@ -205,6 +205,7 @@ public final class PlayTest {
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
         scenario("snow golem: fragile ranged defender, snowballs deal real damage only to blazes", PlayTest::scenarioSnowGolem);
         scenario("boat: floats up to the water surface", PlayTest::scenarioBoat);
+        scenario("boat: a rider takes no fall damage from the ride", PlayTest::scenarioBoatFallDamage);
         scenario("natural spawn: vanilla NaturalSpawner + parallel bench", PlayTest::scenarioNaturalSpawn);
         scenario("nether: terrain generates", PlayTest::scenarioNetherGen);
         scenario("nether: portal ignites + travels + returns", PlayTest::scenarioPortal);
@@ -347,6 +348,37 @@ public final class PlayTest {
             }
         }
         clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * A rider's own fall distance isn't tracked independently of its vehicle in real
+     * vanilla (a boat absorbs the landing; the passenger never takes fall damage from
+     * the ride). Previously Survival.move tracked the player's own Y position
+     * unconditionally regardless of vehicle state, so boarding a boat mid-fall (or
+     * riding one off a cliff) still dealt fall damage the instant the player stepped
+     * off, matching neither the boat's landing nor the player's actual fall.
+     */
+    private static void scenarioBoatFallDamage() {
+        clearEntitiesExceptPlayer();
+        int bx = 25, bz = 25;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) world.setBlock(bx + dx, Y, bz + dz, Block.STONE);
+        }
+        player.teleport(new Pos(bx + 0.5, Y + 20, bz + 0.5)).join();
+        player.setHealth(20f);
+        var boat = dev.pointofpressure.minecom.blocks.Boats.spawn(
+                world, EntityType.OAK_BOAT, new Pos(bx + 0.5, Y + 20, bz + 0.5));
+        boat.addPassenger(player);
+        tick(60); // fall ~20 blocks and land
+        check("riding a boat down a 20-block fall takes no fall damage (health=" + player.getHealth() + ")",
+                player.getHealth() == 20f);
+        boat.removePassenger(player);
+        boat.remove();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) world.setBlock(bx + dx, Y, bz + dz, Block.AIR);
+        }
+        clearEntitiesExceptPlayer();
+        resetPlayer();
     }
 
     /** Mob equipment: a fraction of zombies spawn wearing armor (difficulty variety). */
@@ -2618,6 +2650,16 @@ public final class PlayTest {
         Pos at = new Pos(24.5, Y + 1, 24.5);
 
         EntityCreature normal = Mobs.spawn("zombie", world, at);
+        // VanillaMobs.maybeBabyZombie gives every spawned zombie a natural 5% chance of
+        // coming out as a baby on its own — force it off here so this "normal" control
+        // can't randomly collide with the explicit-baby case below and make normalXp ==
+        // babyXp (seen twice in a row across full-suite runs: ThreadLocalRandom's state
+        // at this exact point is deterministic given the fixed scenario order, so an
+        // unlucky roll reproduces identically every time the full suite runs, even
+        // though it never showed up running this scenario in isolation).
+        if (normal.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.zombie.ZombieMeta nzm) {
+            nzm.setBaby(false);
+        }
         normal.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 100);
         tick(3);
         int normalXp = world.getEntities().stream()
