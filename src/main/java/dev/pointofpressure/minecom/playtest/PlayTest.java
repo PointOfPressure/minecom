@@ -175,6 +175,7 @@ public final class PlayTest {
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
         scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
+        scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -490,6 +491,38 @@ public final class PlayTest {
         check("shearing the top face carves away from the player's own facing (south-facing player -> north)",
                 "north".equals(world.getBlock(pos).getProperty("facing")));
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * CompassItem.useOn: a single compass binds to the lodestone in place; a larger stack splits
+     * off one newly-bound compass instead, leaving the rest of the original stack untouched.
+     */
+    private static void scenarioLodestone() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(0, Y, 0);
+        world.setBlock(pos, Block.LODESTONE);
+
+        player.setItemInMainHand(ItemStack.of(Material.COMPASS, 1));
+        useItemOnBlock(ItemStack.of(Material.COMPASS, 1), pos, BlockFace.TOP);
+        net.minestom.server.item.component.LodestoneTracker singleTracker =
+                player.getItemInMainHand().get(DataComponents.LODESTONE_TRACKER);
+        check("a lone compass (stack of 1) binds itself in place rather than splitting",
+                player.getItemInMainHand().amount() == 1
+                        && singleTracker != null && singleTracker.tracked()
+                        && singleTracker.target().blockPosition().sameBlock(pos));
+        resetPlayer();
+
+        player.setItemInMainHand(ItemStack.of(Material.COMPASS, 3));
+        useItemOnBlock(ItemStack.of(Material.COMPASS, 3), pos, BlockFace.TOP);
+        check("a stack of 3 compasses keeps 2 unbound in the original stack",
+                player.getItemInMainHand().amount() == 2
+                        && player.getItemInMainHand().get(DataComponents.LODESTONE_TRACKER) == null);
+        boolean gotBoundCopy = java.util.Arrays.stream(player.getInventory().getItemStacks())
+                .anyMatch(s -> s.material() == Material.COMPASS && s.amount() == 1
+                        && s.get(DataComponents.LODESTONE_TRACKER) != null
+                        && s.get(DataComponents.LODESTONE_TRACKER).tracked());
+        check("splitting off a bound compass adds exactly one new bound copy to the inventory", gotBoundCopy);
         resetPlayer();
     }
 
