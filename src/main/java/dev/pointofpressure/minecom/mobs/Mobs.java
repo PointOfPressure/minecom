@@ -152,6 +152,7 @@ public final class Mobs {
             case "piglin" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.piglin(instance, pos);
             case "piglin_brute" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.piglinBrute(instance, pos);
             case "hoglin" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.hoglin(instance, pos);
+            case "zoglin" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.zoglin(instance, pos);
             case "strider" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.strider(instance, pos);
             case "breeze" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.breeze(instance, pos);
             case "wither_skeleton" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.witherSkeleton(instance, pos);

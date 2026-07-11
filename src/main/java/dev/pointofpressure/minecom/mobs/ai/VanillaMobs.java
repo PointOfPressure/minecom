@@ -639,6 +639,23 @@ public final class VanillaMobs {
         return melee(EntityType.HOGLIN, i, p, 0.3, 16, 6, 40, 0, true);
     }
 
+    /**
+     * Zoglin: hoglin's nether-corrupted zombified form (decompile-verified createAttributes:
+     * MAX_HEALTH 40, MOVEMENT_SPEED 0.3, KNOCKBACK_RESISTANCE 0.6, ATTACK_DAMAGE 6 — same
+     * numbers as hoglin() aside from the knockback resistance, since it's literally the same
+     * base creature). Real vanilla is hostile to every nearby living entity except other
+     * zoglins/creepers, not just players — approximated here as player-hostile only, matching
+     * the same non-player-targeting simplification already accepted throughout this codebase
+     * (e.g. iron golem's own village-defense targeting is a fixed hostile-mob whitelist, not
+     * "attacks anything"). The 20%-chance baby variant (0.5 attack damage) is also not
+     * modeled, matching skeleton's own already-documented baby-variant gap.
+     */
+    public static EntityCreature zoglin(Instance i, Pos p) {
+        EntityCreature mob = melee(EntityType.ZOGLIN, i, p, 0.3, 16, 6, 40, 0, true);
+        mob.getAttribute(Attribute.KNOCKBACK_RESISTANCE).setBaseValue(0.6);
+        return mob;
+    }
+
     /** Wither skeleton: fortress melee brute with a stone sword. */
     public static EntityCreature witherSkeleton(Instance i, Pos p) {
         EntityCreature mob = melee(EntityType.WITHER_SKELETON, i, p, 0.25, 20, 4, 20, 4, true);

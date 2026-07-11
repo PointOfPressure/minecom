@@ -194,6 +194,7 @@ public final class PlayTest {
         scenario("endermite: plain melee AI, real stats", PlayTest::scenarioEndermite);
         scenario("illusioner: real stats + bow attack", PlayTest::scenarioIllusioner);
         scenario("piglin brute: always-hostile elite bastion guard, real stats", PlayTest::scenarioPiglinBrute);
+        scenario("zoglin: hoglin's zombified form, real stats", PlayTest::scenarioZoglin);
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
         scenario("snow golem: fragile ranged defender, snowballs deal real damage only to blazes", PlayTest::scenarioSnowGolem);
         scenario("boat: floats up to the water surface", PlayTest::scenarioBoat);
@@ -1435,6 +1436,30 @@ public final class PlayTest {
         check("a piglin brute attacks a nearby player unprompted (always hostile, unlike a regular piglin)", hit);
 
         if (brute != null) brute.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Zoglin: decompile-verified stats (40 HP, 0.6 knockback resistance, base 6 attack
+     * damage) — hoglin's zombified form, hostile on sight like every other brute in this
+     * codebase.
+     */
+    private static void scenarioZoglin() {
+        clearEntitiesExceptPlayer();
+        var zoglin = Mobs.spawn("zoglin", world, new Pos(2.5, Y + 1, 0.5));
+        double zoglinHp = zoglin.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH);
+        double zoglinKb = zoglin.getAttributeValue(net.minestom.server.entity.attribute.Attribute.KNOCKBACK_RESISTANCE);
+        check("zoglin spawns with real vanilla stats (40 HP, 0.6 knockback resistance; got hp="
+                + zoglinHp + " kb=" + zoglinKb + ")", zoglinHp == 40.0 && zoglinKb == 0.6);
+
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        player.setHealth(20f);
+        float healthBefore = player.getHealth();
+        boolean hit = waitFor(() -> player.getHealth() < healthBefore, 15000);
+        check("a zoglin attacks a nearby player unprompted", hit);
+
+        if (zoglin != null) zoglin.remove();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
