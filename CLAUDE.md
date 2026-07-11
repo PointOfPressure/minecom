@@ -1,0 +1,28 @@
+# Standing instructions for agents working in this repo
+
+1. **Before writing any code, follow `docs/CONVENTIONS.md`.** It codifies
+   the canonical patterns; the deviations it lists in §11 are unification
+   targets, not precedents to copy.
+2. **`vanilla-src/` is decompiled Mojang reference ONLY.** Never commit it,
+   never copy code verbatim from it into `src/` — port behavior, cite the
+   source class in the class Javadoc. `world/`, `world_backup_customgen/`,
+   `logs/`, `test-logs/`, `target/` also stay uncommitted.
+3. **Escalation log: `docs/HANDOFF.md`** — if a task needs a stronger model,
+   log it there (newest first) instead of attempting it half-correctly.
+   Mark entries done, don't delete them. Known-gaps ledger: `docs/AUDIT.md`.
+   Business/licensing/roadmap decisions: `docs/STRATEGY.md`.
+4. **Verification is the product.** Every behavior change ships with
+   `check(desc, cond)` coverage in `SelfTest` (`--selftest`) and/or
+   `PlayTest` (`--playtest`, port via `MINECOM_TEST_PORT`). No JUnit.
+   Deliberate simplifications are stated in source + AUDIT.md, never
+   silently faked. Test logs go to `test-logs/`, not `/tmp`.
+5. **Other models may be editing this tree concurrently.** A transient
+   compile error can be another agent mid-save — wait and retry before
+   "fixing" a half-written file, and never run `mvn compile` while a
+   verify run is executing (shared `target/classes`).
+6. **Decompiling new reference classes** (26.x is unobfuscated): extract
+   the `.class` files from `~/versions/26.1.2/server-26.1.2.jar` into a
+   temp dir, run `java -jar vanilla-src/tools/vineflower.jar <classdir>
+   <outdir>`, and cache the resulting `.java` under the matching
+   `vanilla-src/net/...` path so the next session finds it. Check
+   `vanilla-src/` first — don't re-decompile what's already cached.

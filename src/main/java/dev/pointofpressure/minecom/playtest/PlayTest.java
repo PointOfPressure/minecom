@@ -118,6 +118,9 @@ public final class PlayTest {
         scenario("redstone: repeater delay", PlayTest::scenarioRepeater);
         scenario("redstone: piston push + sticky pull", PlayTest::scenarioPiston);
         scenario("redstone: quasi-connectivity BUD", PlayTest::scenarioQuasiConnectivity);
+        scenario("redstone: piston slime T-branch push + full pull-back", PlayTest::scenarioPistonSlimeChain);
+        scenario("redstone: piston honey-slime boundary + glazed terracotta", PlayTest::scenarioPistonHoneyBoundary);
+        scenario("redstone: piston 12-limit on branched slime column", PlayTest::scenarioPistonChainLimit);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -4363,6 +4366,98 @@ public final class PlayTest {
         tick(6);
         rs(50, Y + 1, z, Block.AIR);
         rs(51, Y + 1, z, Block.AIR);
+    }
+
+    /** Slime T: branches move with the line, and sticky retraction pulls the whole structure back. */
+    private static void scenarioPistonSlimeChain() {
+        int z = 160, y0 = Y + 4; // elevated so branch walks only see blocks we place
+        rs(50, y0, z, Block.STICKY_PISTON.withProperty("facing", "east"));
+        rs(51, y0, z, Block.SLIME_BLOCK);
+        rs(51, y0 + 1, z, Block.IRON_BLOCK);  // top branch
+        rs(51, y0 - 1, z, Block.GOLD_BLOCK);  // bottom branch
+        rs(52, y0, z, Block.STONE);           // in front: line block, also pulled via back-walk
+        tick(2);
+        rs(50, y0 - 1, z, Block.REDSTONE_BLOCK); // power through the bottom face
+        boolean extended = waitFor(() -> "true".equals(prop(50, y0, z, "extended"))
+                && world.getBlock(52, y0, z).key().value().equals("slime_block")
+                && world.getBlock(53, y0, z).key().value().equals("stone")
+                && world.getBlock(52, y0 + 1, z).key().value().equals("iron_block")
+                && world.getBlock(52, y0 - 1, z).key().value().equals("gold_block")
+                && world.getBlock(51, y0 + 1, z).isAir()
+                && world.getBlock(51, y0 - 1, z).isAir(), 3000);
+        check("slime T-structure pushes as one unit (perpendicular branches)", extended);
+        rs(50, y0 - 1, z, Block.AIR);
+        boolean retracted = waitFor(() -> "false".equals(prop(50, y0, z, "extended"))
+                && world.getBlock(51, y0, z).key().value().equals("slime_block")
+                && world.getBlock(52, y0, z).key().value().equals("stone")
+                && world.getBlock(51, y0 + 1, z).key().value().equals("iron_block")
+                && world.getBlock(51, y0 - 1, z).key().value().equals("gold_block")
+                && world.getBlock(53, y0, z).isAir()
+                && world.getBlock(52, y0 + 1, z).isAir()
+                && world.getBlock(52, y0 - 1, z).isAir(), 3000);
+        check("sticky retraction pulls the whole T back (back-pull through slime)", retracted);
+        for (int x = 50; x <= 53; x++) for (int dy = -1; dy <= 1; dy++) rs(x, y0 + dy, z, Block.AIR);
+    }
+
+    /** Honey never sticks to slime; glazed terracotta pushes but is never pulled or dragged. */
+    private static void scenarioPistonHoneyBoundary() {
+        int z = 165, y0 = Y + 4;
+        rs(50, y0, z, Block.STICKY_PISTON.withProperty("facing", "east"));
+        rs(51, y0, z, Block.SLIME_BLOCK);
+        rs(51, y0 + 1, z, Block.HONEY_BLOCK); // above slime: must stay behind
+        tick(2);
+        rs(50, y0 - 1, z, Block.REDSTONE_BLOCK);
+        boolean extended = waitFor(() -> "true".equals(prop(50, y0, z, "extended"))
+                && world.getBlock(52, y0, z).key().value().equals("slime_block")
+                && world.getBlock(51, y0 + 1, z).key().value().equals("honey_block")
+                && world.getBlock(52, y0 + 1, z).isAir(), 3000);
+        check("honey above slime is NOT dragged (honey-slime never stick)", extended);
+        rs(50, y0 - 1, z, Block.AIR);
+        boolean retracted = waitFor(() -> "false".equals(prop(50, y0, z, "extended"))
+                && world.getBlock(51, y0, z).key().value().equals("slime_block")
+                && world.getBlock(51, y0 + 1, z).key().value().equals("honey_block"), 3000);
+        check("slime pulls back alone, honey untouched", retracted);
+        for (int x = 50; x <= 52; x++) for (int dy = -1; dy <= 1; dy++) rs(x, y0 + dy, z, Block.AIR);
+
+        // glazed terracotta: pushed head-on, never pulled, never dragged sideways by slime
+        int z2 = z + 2;
+        rs(50, y0, z2, Block.STICKY_PISTON.withProperty("facing", "east"));
+        rs(51, y0, z2, Block.SLIME_BLOCK);
+        rs(51, y0 + 1, z2, Block.MAGENTA_GLAZED_TERRACOTTA); // above slime: the contraption trick
+        tick(2);
+        rs(50, y0 - 1, z2, Block.REDSTONE_BLOCK);
+        boolean gtStays = waitFor(() -> "true".equals(prop(50, y0, z2, "extended"))
+                && world.getBlock(52, y0, z2).key().value().equals("slime_block")
+                && world.getBlock(51, y0 + 1, z2).key().value().equals("magenta_glazed_terracotta"), 3000);
+        check("glazed terracotta above slime is not dragged (push-only)", gtStays);
+        rs(50, y0 - 1, z2, Block.AIR);
+        waitFor(() -> "false".equals(prop(50, y0, z2, "extended")), 3000);
+        for (int x = 50; x <= 52; x++) for (int dy = -1; dy <= 1; dy++) rs(x, y0 + dy, z2, Block.AIR);
+    }
+
+    /** The 12-block limit counts the whole branched structure, not just the line. */
+    private static void scenarioPistonChainLimit() {
+        int z = 170, y0 = Y + 4;
+        rs(50, y0, z, Block.PISTON.withProperty("facing", "east"));
+        rs(51, y0, z, Block.SLIME_BLOCK);
+        for (int dy = 1; dy <= 12; dy++) rs(51, y0 + dy, z, Block.SLIME_BLOCK); // 13 total
+        tick(2);
+        rs(50, y0 - 1, z, Block.REDSTONE_BLOCK);
+        tick(8);
+        boolean stayed = "false".equals(prop(50, y0, z, "extended"))
+                && world.getBlock(51, y0, z).key().value().equals("slime_block");
+        check("13-block slime column exceeds the push limit, piston stays retracted", stayed);
+        rs(51, y0 + 12, z, Block.AIR); // trim to exactly 12
+        rs(50, y0, z - 1, Block.STONE); // block update wakes the piston
+        boolean extended = waitFor(() -> "true".equals(prop(50, y0, z, "extended"))
+                && world.getBlock(52, y0, z).key().value().equals("slime_block")
+                && world.getBlock(52, y0 + 11, z).key().value().equals("slime_block")
+                && world.getBlock(51, y0 + 11, z).isAir(), 3000);
+        check("exactly 12 branched blocks push fine (whole column moves)", extended);
+        rs(50, y0 - 1, z, Block.AIR);
+        rs(50, y0, z - 1, Block.AIR);
+        waitFor(() -> "false".equals(prop(50, y0, z, "extended")), 3000);
+        for (int x = 50; x <= 53; x++) for (int dy = -1; dy <= 13; dy++) rs(x, y0 + dy, z, Block.AIR);
     }
 
     private static void scenarioButton() {

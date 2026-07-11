@@ -16,6 +16,50 @@ of what got escalated and why.
 
 ## Open
 
+### Piston reorder-collision differential test — Opus
+
+The 2026-07-11 slime/honey structure-resolver port (see the Done entry below)
+ships `reorderListAtCollision` as a verbatim port, but none of the three new
+playtest rigs actually exercises it — the collision path (a branch line's
+FORWARD walk reaching a cell an earlier line already claimed) needs an exotic
+wrap-around slime/honey arrangement that resisted quick construction, because
+branching never runs along the push axis and forward walks usually claim
+their own row first. Two ways to close the gap: (a) build a known
+collision contraption from the technical-MC community in the playtest and
+assert exact final positions, or (b) better, a differential test: run the
+same randomized slime/honey structures through real vanilla (region diff,
+same harness pattern as worldgen) and compare final block layouts. Until
+then the reorder path is faithful-by-construction but unverified.
+
+### Flaky villager-breeding playtest scenarios — Sonnet
+
+Observed 2026-07-11 across two consecutive full playtest runs of the same
+jar: run 1 failed 5 villager checks (breeding pair, baby offspring, bread
+pickup "a=0 pts", 12-food-points breed, farmer food-sharing), run 2 failed
+only the first two — different subsets, so it's timing flakiness, not a
+functional regression (pistons untouched by these; both runs 479-482
+passed). The villager scenarios depend on real-time AI sweeps (40-tick
+farmer harvest, pickup scan loops from `mobs/VillagerFood.java`) racing
+fixed `waitFor` windows, which lose on this slow-HDD box under load.
+Fix by making the scenarios deterministic rather than raising timeouts:
+drive the relevant sweeps directly (call the tick hooks from the test the
+way the trial-chamber scenario does) or gate on the underlying state
+(inventory contents) instead of downstream behavior. Logs:
+test-logs/playtest_piston_chains.log (5 fails),
+test-logs/playtest_piston_rerun.log (2 fails).
+
+### Unification-pass mechanical cleanups — Sonnet (BLOCKED until first pass done)
+
+Queued per docs/STRATEGY.md §6 step 3 and docs/CONVENTIONS.md §11 — do these
+as ONE dedicated pass, not opportunistically: (1) rename camelCase
+static-final collections in `redstone/Redstone.java` + `blocks/Fluids.java`
+to UPPER_SNAKE; (2) converge `start(Instance)` (~11 files), `Recipes.index()`
+and the one `load()` onto `register(...)`; (3) make `Bootstrap.java` use
+imported simple names consistently (42 FQN call sites); (4) unify the
+mixed plain/concurrent map pairs (e.g. `Hoppers.COOLDOWN`); (5) split-plan
+for the §11.6 god classes (PlayTest 5.3k lines first). Every rename must
+compile + full selftest/playtest green before commit.
+
 ### Creaking + Creaking Heart block entity — Opus
 
 `VanillaMobs.java` has no creaking factory. Decompiled `Creaking.java` and
@@ -42,6 +86,39 @@ dormant/awake/uprooted, decompile `CreakingHeartBlock`/
 worth attempting. vanilla-src/ has `Creaking.java` cached; heart classes
 still need decompiling.
 
+**Decompiles cached + spec extracted 2026-07-11 (Fable)** —
+`CreakingHeartBlock.java` (195 l), `CreakingHeartBlockEntity.java` (358 l),
+`CreakingHeartState.java` now in vanilla-src/. The concrete state machine,
+so scoping needs no further investigation:
+
+- Block: properties AXIS (x/y/z), STATE (uprooted/dormant/awake), NATURAL.
+  `hasRequiredLogs` = pale-oak logs on BOTH sides along AXIS with matching
+  axis, else → UPROOTED. Non-uprooted + logs → AWAKE when the
+  CREAKING_ACTIVE environment attribute is on (night — same day-timeline
+  attribute system DaylightDetectors already implements), else DORMANT.
+  Comparator output: `15 - floor(clamp(dist_to_creaking,0..32)/32 * 15)`,
+  0 if uprooted/no creaking. Breaking or exploding the heart kills the
+  linked creaking with death effects; NATURAL=true hearts pop 20-24 XP.
+- Block entity tick (every 20+rand(5) ticks): re-derive STATE; if AWAKE,
+  monsters-spawning on, and a player is within 32 → spawn ONE Creaking
+  protector (5 attempts, ±16 xz / ±8 y, on-solid-not-leaves) and link it
+  (store UUID; survives reload with a 30-tick grace resolve — minecom's
+  session-scoped equivalent: just hold the entity ref, note the Anvil
+  limitation in AUDIT.md like TrialChambers does). Unlink/kill when day,
+  distance > 34, or player-stuck check.
+- `creakingHurt()` (called from the mob's damage redirect): 100-tick
+  "hurt call" — sound every 10 ticks interpolating position from creaking
+  toward heart, particle trails for the first 50; if AWAKE also place 2-3
+  resin clumps: BFS depth 2 / max 64 over pale-oak logs, extend a
+  multiface `resin_clump` on a random free adjacent face (waterlogged on
+  source water).
+- Existing minecom precedent for every piece: TrialChambers (state machine
+  + block-entity ticker + session-scoped config), DaylightDetectors
+  (day-timeline attribute), Redstone tracked-position registries.
+  The genuinely new bit is multiface resin_clump placement (face-property
+  accumulation) and the Creaking mob itself (`Creaking.java` cached,
+  freeze-when-looked-at + damage redirect to heart + tearDown).
+
 ### Happy Ghast + multi-passenger riding — Opus
 
 No `happyGhast()` factory. Decompiled `HappyGhast.java`: unlike every
@@ -57,6 +134,16 @@ framework a new flying mount could plug into. Building a real multi-
 passenger flying-mount system (harness item, up to 4 riders, leash-driven
 steering) is cross-cutting infrastructure work, not a mob-factory
 addition. vanilla-src/ has `HappyGhast.java` cached (633 lines).
+
+**Scope update 2026-07-11 (Fable):** Minestom itself ships a native
+protocol-level passenger API — `Entity.addPassenger()` / `getPassengers()` /
+`getVehicle()` — so the packet/mounting half of this task already exists
+upstream; what minecom needs to build is only the gameplay layer (harness
+item gating, 4-seat arrangement, steering input from the riding player,
+GhastMoveControl flight). Community-reported gotchas from the Minestom
+Discord help channel: the Navigator breaks while an entity has a passenger,
+and passenger movement interpolation misbehaves for far-away mounts —
+design around both.
 
 ### Silverfish + infested blocks — Opus
 
@@ -118,6 +205,19 @@ since a bubble column a player manually built via `/setblock` wouldn't
 behave like a real one long-term (won't regenerate after
 water-flow disruption) without it.
 
+
+### Lightning-rod redirection (tracked-position registry) — Sonnet/Opus
+
+`Lightning.java` claims this was "logged in docs/HANDOFF.md" but no entry
+existed until now. Strikes should first redirect to a lightning rod within 128
+blocks (`ServerLevel.findLightningRod`, a POI search). Needs a lightweight
+tracked-position registry for placed rods (the same pattern as
+`Redstone.trackDaylightDetector` / `TrialChambers`), then a nearest-rod check in
+`Lightning.strikeAt` before the entity-redirect. See docs/AUDIT.md for the full
+gap list this came from.
+
+## Done
+
 ### Piston slime/honey block chains (structure resolver) — Opus/Fable
 
 AUDIT.md flagged "no slime/honey block chain semantics" as unverified;
@@ -149,17 +249,28 @@ adversarial test cases (L-shaped honey/slime chains, colliding branches,
 honey-slime boundary) — not a quick patch to the existing `extend()`
 loop.
 
-### Lightning-rod redirection (tracked-position registry) — Sonnet/Opus
+**Done 2026-07-11 (Fable).** `PistonStructureResolver` was not actually cached
+in vanilla-src/ (only read in the earlier session) — decompiled fresh from
+server-26.1.2.jar with Vineflower (now cached: all 7 piston-package classes)
+and ported line-by-line into a private `Resolver` class inside
+`redstone/Pistons.java`: back-pull walk behind sticky line starts, recursive
+perpendicular branching (never along the push axis), `reorderListAtCollision`
+verbatim, honey-slime mutual non-stick (symmetric, both orders — the HANDOFF
+"asymmetric" note was slightly off), 12-block cap counted across the whole
+structure, and `PistonBaseBlock.isPushable` ported alongside (obsidian family,
+world-Y bounds, glazed terracotta PUSH_ONLY, DESTROY-on-push for
+no-collision blocks, fluids destroyed without drops). Retraction now runs the
+resolver too (vanilla triggerEvent gate: only NORMAL-pushable targets or
+piston bases get pulled), so sticky pulls drag whole chains instead of the
+old single block. Instant movement kept (no moving-piston block entity —
+usual client-visual simplification); QC approximation unchanged. Three new
+adversarial playtest scenarios (slime T-branch push + full pull-back,
+honey-slime boundary + glazed-terracotta-above-slime contraption trick,
+13-vs-12 block branched column limit) — all green, 479 playtest checks
+passed. The reorder-collision path is faithful-by-construction but not yet
+exercised by any rig — logged as its own Open task above. Log:
+test-logs/playtest_piston_chains.log.
 
-`Lightning.java` claims this was "logged in docs/HANDOFF.md" but no entry
-existed until now. Strikes should first redirect to a lightning rod within 128
-blocks (`ServerLevel.findLightningRod`, a POI search). Needs a lightweight
-tracked-position registry for placed rods (the same pattern as
-`Redstone.trackDaylightDetector` / `TrialChambers`), then a nearest-rod check in
-`Lightning.strikeAt` before the entity-redirect. See docs/AUDIT.md for the full
-gap list this came from.
-
-## Done
 
 ### Daylight detector — Opus
 
