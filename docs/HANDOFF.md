@@ -16,6 +16,139 @@ of what got escalated and why.
 
 ## Open
 
+### Creaking + Creaking Heart block entity — Opus
+
+`VanillaMobs.java` has no creaking factory. Decompiled `Creaking.java` and
+confirmed this isn't a normal mob-stats-and-AI addition (unlike the 6
+hostile mobs closed 2026-07-11 — cave_spider, endermite, illusioner,
+piglin_brute, zoglin, giant): a Creaking's entire identity is that it's
+near-invulnerable EXCEPT via a paired `CreakingHeartBlockEntity` (which
+doesn't exist in this codebase — no `CreakingHeart` block at all), and it
+FREEZES (can't move/be knocked back, `canMove()` gated on
+`checkCanMove()`) whenever a player is looking directly at it
+(`isLookingAtMe`), matching the "Weeping Angel" pattern — the opposite of
+every other mob's AI in this project. `hurtServer` redirects most damage
+to `creakingHeartBlockEntity.creakingHurt()` on the heart instead of
+directly hurting the creaking itself; killing it for real means breaking
+the heart (or landing damage that bypasses invulnerability). `tickDeath`
+has its own 45-tick "tearing down" particle sequence
+(`tearDown()`/`CREAKING_ORANGE`/`CREAKING_GRAY`) distinct from a normal
+death. Shipping the mob without the heart mechanic would be a different
+creature wearing the same texture, not a documented simplification like
+this project's usual "skip the client-visual half" pattern — the heart
+IS the mechanic. Needs its own block-entity design pass (state machine:
+dormant/awake/uprooted, decompile `CreakingHeartBlock`/
+`CreakingHeartBlockEntity`/`CreakingHeartState`) before the mob itself is
+worth attempting. vanilla-src/ has `Creaking.java` cached; heart classes
+still need decompiling.
+
+### Happy Ghast + multi-passenger riding — Opus
+
+No `happyGhast()` factory. Decompiled `HappyGhast.java`: unlike every
+other passive mob in this codebase, its whole point is being a rideable
+flying mount — `MAX_PASSANGERS = 4`, a harness equipment item gates
+riding/steering, `Ghast.GhastMoveControl`-based flight with a
+leash-holder-driven direction system, baby scale 0.2375, and a
+still-timeout mechanic pausing movement when idle. Confirmed via grep
+this session: **no entity-riding-entity passenger system exists anywhere
+in this codebase at all** — `Boats.java`/`Minecarts.java` are separate,
+vehicle-specific placement/physics code, not a general passenger
+framework a new flying mount could plug into. Building a real multi-
+passenger flying-mount system (harness item, up to 4 riders, leash-driven
+steering) is cross-cutting infrastructure work, not a mob-factory
+addition. vanilla-src/ has `HappyGhast.java` cached (633 lines).
+
+### Silverfish + infested blocks — Opus
+
+Deferred in the same "missing hostile mobs" pass that closed cave_spider/
+endermite/illusioner/piglin_brute/zoglin/giant (2026-07-11) — silverfish
+was the one NOT attempted, because real vanilla's version needs actual
+infested-block mechanics (silverfish merge into stone/cobblestone/brick
+variants on spawn, and hitting an infested block "wakes" a hidden
+silverfish out of it), which is block-state/world-interaction work, not
+just AI+stats like the other six. AUDIT.md's own framing already flagged
+this as bigger than the rest of that batch; decompile `Silverfish.java`
+(cached in vanilla-src/, read but not implemented) plus whatever block
+class encodes "infested_*" variants before scoping the real size.
+
+### Slime/magma cube split-on-death (+ mob size scaling) — Opus
+
+AUDIT.md asked to "verify Slime handling — magma cube too"; investigated
+2026-07-11 and it's a real gap, but bigger than a missing death hook.
+Decompiled `Slime.java`: `remove()` spawns `2 + random.nextInt(3)`
+half-size children when a slime with `size > 1` dies — but this
+project's `slime()`/`magmaCube()` factories (`VanillaMobs.java`) have NO
+size parameter at all; they're hardcoded to a single fixed small size
+(4 HP / 16 HP respectively), and neither the natural spawner nor
+`/summon` can ever produce a larger one. Implementing split-on-death
+alone would be dead code — it can only ever trigger on a size that
+never exists. Needs a real size system first: a size parameter threaded
+through both factories scaling HP/attack/hitbox (decompile
+`Slime.createAttributes`/`getDefaultDimensions` for the exact per-size
+formula), natural-spawn size-roll logic (currently always implicitly
+size 1), and only then the split-on-death hook itself (which becomes
+almost free once size exists — real vanilla's `remove()` override is
+~15 lines). Scope the size system as its own task; split-on-death rides
+along with it, not separately.
+
+### Bubble columns (soul sand/magma push mechanic) — Opus
+
+AUDIT.md's "Fluids.java" note only covers flow/waterlogging; bubble
+columns are a separate gap found while checking Boats.java's "bubble
+column sink?" item (2026-07-11). Decompiled `BubbleColumnBlock.java`:
+this is not a simple "check block, apply velocity" mechanic — bubble
+columns are a **self-propagating pseudo-fluid block** that generates and
+maintains itself: `updateColumn()` grows a column upward one block at a
+time above a soul-sand (drag-down) or magma-block (push-up) source
+underneath flowing/source water, re-checked via scheduled ticks
+(`CHECK_PERIOD = 5`) and neighbor updates, with its own `DRAG_DOWN`
+block-state property. Confirmed via grep: **no bubble-column generation
+logic exists anywhere in this codebase** — `bubble_column` is referenced
+only as an equivalent-to-water wetness check (`Trident.java`,
+`Breath.java`), never actually created by placing soul sand/magma under
+water, and no entity (player, mob, or boat) is ever pushed by one. A
+real implementation needs: (1) the propagation/maintenance system
+(similar in shape to `Fluids.java`'s own flow engine, but a distinct
+block type with its own up/down growth rule), and (2) the actual push
+force applied per-tick to entities standing in or above a column
+(`entity.onInsideBubbleColumn`/`onAboveBubbleColumn` in real vanilla).
+Boats "sinking" in one is just the entity-push half applied to a boat —
+not worth doing in isolation before the block-propagation half exists,
+since a bubble column a player manually built via `/setblock` wouldn't
+behave like a real one long-term (won't regenerate after
+water-flow disruption) without it.
+
+### Piston slime/honey block chains (structure resolver) — Opus/Fable
+
+AUDIT.md flagged "no slime/honey block chain semantics" as unverified;
+confirmed missing 2026-07-11. The existing 12-block push-length limit
+IS already correct (verified — `Pistons.java`'s `extend()` already caps
+at 12), so that half of the audit's uncertainty is resolved. What's
+actually missing is real: pistons currently only push/pull blocks in a
+single straight line along the push axis. Decompiled
+`PistonStructureResolver.java` (196 lines) — real vanilla's slime/honey
+mechanic is a genuine graph-traversal algorithm, not a simple extension
+of the existing linear scan: a sticky block being pushed also drags every
+directly-adjacent block along all 4 perpendicular axes
+(`addBranchingBlocks`, recursive), a sticky block also pulls whatever's
+stacked BEHIND it opposite the push direction before the branching check
+runs (the `while (isSticky(nextState))` backward line-walk inside
+`addBlockLine`), and if the branching search's forward projection
+collides with blocks already queued from a different branch, the whole
+pending list has to be reordered in place (`reorderListAtCollision`) to
+preserve correct push ordering. Honey and slime stick to each other and
+themselves but honey does NOT stick to slime in the pull direction
+(`canStickToEachOther`'s asymmetric check) — an easy edge case to get
+backwards. This is exactly the kind of thing the standing rule says not
+to guess at: a naive/simplified version risks silent bugs (block
+duplication/loss, infinite loops on cyclic structures, wrong push
+ordering) that a shallow test wouldn't catch. Treat as a from-scratch
+reimplementation of `Pistons.java`'s structure-detection, ported
+faithfully from the decompiled resolver above, with deliberately
+adversarial test cases (L-shaped honey/slime chains, colliding branches,
+honey-slime boundary) — not a quick patch to the existing `extend()`
+loop.
+
 ### Lightning-rod redirection (tracked-position registry) — Sonnet/Opus
 
 `Lightning.java` claims this was "logged in docs/HANDOFF.md" but no entry
