@@ -171,7 +171,7 @@ public final class BlockRules {
         }
     }
 
-    private static void startFalling(Instance instance, Point pos, Block block) {
+    static void startFalling(Instance instance, Point pos, Block block) {
         instance.setBlock(pos, Block.AIR);
         Entity entity = new Entity(EntityType.FALLING_BLOCK);
         FallingBlockMeta meta = (FallingBlockMeta) entity.getEntityMeta();

@@ -664,7 +664,7 @@ public final class Redstone {
     private static int containerSignal(Point pos, Block block) {
         String key = block.key().value();
         Inventory inv = null;
-        if (key.equals("chest")) inv = Containers.CHESTS.get(Containers.posKey(pos));
+        if (key.equals("chest") || key.equals("barrel")) inv = Containers.CHESTS.get(Containers.posKey(pos));
         else if (key.equals("furnace")) {
             var state = dev.pointofpressure.minecom.blocks.Furnaces.FURNACES.get(Containers.posKey(pos));
             if (state != null) inv = state.inv;
@@ -684,6 +684,8 @@ public final class Redstone {
             return (int) Math.floor(charges / 4.0 * 15);
         } else if (key.equals("cake")) {
             return dev.pointofpressure.minecom.blocks.Cake.comparatorOutput(block);
+        } else if (key.equals("decorated_pot")) {
+            return dev.pointofpressure.minecom.blocks.DecoratedPot.comparatorOutput(pos);
         } else {
             return -1;
         }

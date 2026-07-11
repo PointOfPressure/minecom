@@ -89,9 +89,10 @@ public final class Hoppers {
         ItemStack moving = inv.getItemStack(sourceSlot).withAmount(1);
 
         switch (key) {
-            case "chest" -> {
+            case "chest", "barrel" -> {
+                String title = key.equals("barrel") ? "Barrel" : "Chest";
                 Inventory chest = Containers.CHESTS.computeIfAbsent(Containers.posKey(target),
-                        k -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Chest")));
+                        k -> new Inventory(InventoryType.CHEST_3_ROW, Component.text(title)));
                 if (!chest.addItemStack(moving)) return false;
             }
             case "hopper" -> {
@@ -125,7 +126,7 @@ public final class Hoppers {
         Point above = pos.add(0, 1, 0);
         Block block = instance.getBlock(above);
         Inventory source = switch (block.key().value()) {
-            case "chest" -> Containers.CHESTS.get(Containers.posKey(above));
+            case "chest", "barrel" -> Containers.CHESTS.get(Containers.posKey(above));
             case "hopper" -> HOPPERS.get(Containers.posKey(above));
             case "dispenser", "dropper" -> Redstone.DISPENSERS.get(Containers.posKey(above));
             case "furnace" -> {

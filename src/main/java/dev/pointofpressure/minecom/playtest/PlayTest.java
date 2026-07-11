@@ -173,6 +173,10 @@ public final class PlayTest {
         scenario("target block: a bullseye arrow hit gives max signal, a grazing hit gives a low one, and mid-reset hits are ignored", PlayTest::scenarioTargetBlock);
         scenario("candle: flint and steel lights it, stacking requires a matching color, empty-hand extinguishes it", PlayTest::scenarioCandle);
         scenario("cake: eating a slice restores hunger and advances bites, the comparator signal follows (7-bites)*2, the last bite removes it", PlayTest::scenarioCake);
+        scenario("scaffolding: distance 0 on solid ground, inherits +1 down a chain, and collapses when its support is removed", PlayTest::scenarioScaffolding);
+        scenario("decorated pot: right-click stacks a matching item in, empty-hand never extracts, breaking drops the contents plus 4 bricks", PlayTest::scenarioDecoratedPot);
+        scenario("ender chest: inventory is shared across every ender chest the same player opens, and breaking one never spills its contents", PlayTest::scenarioEnderChest);
+        scenario("barrel: opens like a chest, persists across close/reopen, comparator reads fullness, hoppers can push into and pull from it", PlayTest::scenarioBarrel);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -753,6 +757,210 @@ public final class PlayTest {
         interact(pos); // 7th eat: removes the block instead of a 7th bite
         check("eating the last slice removes the cake block entirely", world.getBlock(pos).isAir());
 
+        resetPlayer();
+    }
+
+    /**
+     * ScaffoldingBlock.getDistance: 0 directly on solid ground, inherited +1 from a horizontal
+     * neighbor otherwise; removing all real support collapses an isolated chain (each block's
+     * only "support" is another equally-unsupported scaffolding block, so the interdependent
+     * cascade converges to distance 7 for all of them, at which point each is destroyed and
+     * drops as an item — real vanilla's per-block scheduled-tick propagation, done here as an
+     * explicit worklist cascade instead).
+     */
+    private static void scenarioScaffolding() {
+        clearEntitiesExceptPlayer();
+        // fy is deliberately well above Y: the flat test world fills solid stone from y=0
+        // through Y+1 (Bootstrap's flat generator), so at fy=Y the position below "b" would
+        // ALSO be natural solid ground — never actually testing horizontal inheritance at
+        // all. Building this above the flat surface means "below" is real air everywhere
+        // except the one explicit support block placed for "a".
+        int fx = 30, fy = Y + 10, fz = 30;
+        world.setBlock(fx, fy, fz, Block.STONE);
+        BlockVec a = new BlockVec(fx, fy + 1, fz);
+        BlockVec b = new BlockVec(fx + 1, fy + 1, fz);
+        placeScaffolding(a);
+        check("scaffolding placed directly on solid ground gets distance 0",
+                "0".equals(world.getBlock(a).getProperty("distance")));
+
+        placeScaffolding(b);
+        check("scaffolding placed beside distance-0 scaffolding inherits neighbor+1 (got "
+                        + world.getBlock(b).getProperty("distance") + ")",
+                "1".equals(world.getBlock(b).getProperty("distance")));
+        check("a scaffolding block with none below it is BOTTOM",
+                "true".equals(world.getBlock(b).getProperty("bottom")));
+
+        breakBlock(new BlockVec(fx, fy, fz));
+        boolean collapsed = waitFor(() -> world.getBlock(a).isAir() && world.getBlock(b).isAir(), 3000);
+        check("removing the only real support collapses the whole isolated chain", collapsed);
+        boolean dropped = waitFor(() -> countItems(new Pos(fx + 0.5, fy + 1, fz + 0.5), 3, Material.SCAFFOLDING) >= 1, 3000);
+        check("the collapsed scaffolding drops as an item", dropped);
+
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    private static void placeScaffolding(BlockVec pos) {
+        var placeEvent = new PlayerBlockPlaceEvent(player, world, Block.SCAFFOLDING, BlockFace.TOP,
+                pos, new Vec(0.5, 1.0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(placeEvent);
+        world.setBlock(pos, placeEvent.getBlock());
+        tick(1);
+    }
+
+    /**
+     * DecoratedPotBlock: right-clicking with an item inserts it (stacking if it already
+     * matches what's stored); an empty-hand right-click always plays the "insert fail"
+     * wobble and never extracts anything — real vanilla only empties a pot by breaking it,
+     * which drops its contents plus 4 bricks (the plain/undecorated pot's real sherds).
+     */
+    private static void scenarioDecoratedPot() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(0, Y, 0);
+        world.setBlock(pos, Block.DECORATED_POT);
+
+        useItemOnBlock(ItemStack.of(Material.WHEAT, 3), pos, BlockFace.TOP);
+        check("right-clicking with an item stores it in the pot",
+                dev.pointofpressure.minecom.blocks.DecoratedPot.comparatorOutput(pos) > 0);
+
+        // each right-click inserts exactly ONE item from the held stack (real vanilla
+        // behavior), so 4 more clicks with a fresh stack each time reaches 5 total.
+        for (int i = 0; i < 4; i++) useItemOnBlock(ItemStack.of(Material.WHEAT, 3), pos, BlockFace.TOP);
+        int afterStack = dev.pointofpressure.minecom.blocks.DecoratedPot.comparatorOutput(pos);
+        check("repeated right-clicks with a matching item stack further rather than replacing (comparator output rose to "
+                + afterStack + ")", afterStack > 1);
+
+        interact(pos); // empty-hand right-click: real vanilla never extracts via interaction
+        check("an empty-hand right-click doesn't empty the pot",
+                dev.pointofpressure.minecom.blocks.DecoratedPot.comparatorOutput(pos) == afterStack);
+
+        breakBlock(pos);
+        boolean wheatDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof ItemEntity ie
+                        && ie.getItemStack().material() == Material.WHEAT && ie.getItemStack().amount() == 5), 2000);
+        check("breaking the pot drops its full stored contents (5 wheat)", wheatDropped);
+        boolean bricksDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof ItemEntity ie
+                        && ie.getItemStack().material() == Material.BRICK && ie.getItemStack().amount() == 4), 2000);
+        check("breaking the pot also drops its 4 (plain/undecorated) sherds as bricks", bricksDropped);
+
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * EnderChestBlockEntity: one real inventory shared by every ender chest the SAME player
+     * opens anywhere in the world (keyed by player UUID, not by block position) — an item put
+     * in through one ender chest is visible through a completely different one, and breaking
+     * either block never spills its contents (the inventory belongs to the player, not the
+     * block instance).
+     */
+    private static void scenarioEnderChest() {
+        clearEntitiesExceptPlayer();
+        BlockVec posA = new BlockVec(0, Y, 0);
+        BlockVec posB = new BlockVec(5, Y, 0);
+        world.setBlock(posA, Block.ENDER_CHEST);
+        world.setBlock(posB, Block.ENDER_CHEST);
+
+        interact(posA);
+        boolean openedA = player.getOpenInventory() instanceof Inventory;
+        check("right-clicking an ender chest opens an inventory", openedA);
+        Inventory invA = (Inventory) player.getOpenInventory();
+        invA.setItemStack(0, ItemStack.of(Material.DIAMOND, 5));
+        player.closeInventory();
+
+        interact(posB);
+        boolean openedB = player.getOpenInventory() instanceof Inventory;
+        check("a second, different ender chest also opens", openedB);
+        Inventory invB = (Inventory) player.getOpenInventory();
+        check("the SAME player's ender chest inventory is shared across every ender chest block",
+                invB.getItemStack(0).material() == Material.DIAMOND && invB.getItemStack(0).amount() == 5);
+        player.closeInventory();
+
+        breakBlock(posA);
+        boolean nothingSpilled = !waitFor(() -> countItems(new Pos(posA.blockX() + 0.5, posA.blockY() + 1, posA.blockZ() + 0.5),
+                3, Material.DIAMOND) >= 1, 1500);
+        check("breaking an ender chest never spills its contents (they belong to the player)", nothingSpilled);
+        check("the inventory itself still has the diamonds after the block is gone",
+                dev.pointofpressure.minecom.blocks.EnderChest.INVENTORIES.get(player.getUuid().toString())
+                        .getItemStack(0).amount() == 5);
+
+        world.setBlock(posB, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * BarrelBlock: functionally a single (never-double) chest — same 27-slot inventory,
+     * same comparator fullness formula, same hopper push/pull paths — reusing
+     * Containers.CHESTS keyed by position rather than a separate map, so it's also covered
+     * by the existing chest persistence code with no extra wiring.
+     */
+    private static void scenarioBarrel() {
+        int z = 130;
+        world.setBlock(50, Y + 1, z, Block.BARREL);
+        interact(new BlockVec(50, Y + 1, z));
+        check("right-clicking a barrel opens an inventory", player.getOpenInventory() instanceof Inventory);
+        Inventory inv = (Inventory) player.getOpenInventory();
+        inv.setItemStack(0, ItemStack.of(Material.IRON_INGOT, 40));
+        player.closeInventory();
+
+        interact(new BlockVec(50, Y + 1, z));
+        Inventory reopened = (Inventory) player.getOpenInventory();
+        check("a barrel's contents persist across close/reopen",
+                reopened.getItemStack(0).material() == Material.IRON_INGOT && reopened.getItemStack(0).amount() == 40);
+        player.closeInventory();
+
+        rs(51, Y + 1, z, Block.COMPARATOR.withProperty("facing", "west"));
+        rs(52, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(51, Y + 1, z));
+        check("comparator reads barrel fullness and lights the lamp",
+                waitFor(() -> "true".equals(prop(52, Y + 1, z, "lit")), 3000));
+        rs(51, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+
+        // hopper push: a hopper facing down into a barrel below it deposits its items there
+        world.setBlock(55, Y + 1, z, Block.BARREL);
+        rs(55, Y + 2, z, Block.HOPPER.withProperty("facing", "down").withProperty("enabled", "true"));
+        dev.pointofpressure.minecom.redstone.Hoppers.inventory(new Vec(55, Y + 2, z))
+                .setItemStack(0, ItemStack.of(Material.GOLD_NUGGET, 5));
+        boolean pushed = waitFor(() -> {
+            Inventory barrelInv = dev.pointofpressure.minecom.blocks.Containers.CHESTS
+                    .get(dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(55, Y + 1, z)));
+            return barrelInv != null && barrelInv.getItemStack(0).material() == Material.GOLD_NUGGET;
+        }, 5000);
+        check("a hopper pushes items down into a barrel below it", pushed);
+
+        // hopper pull: an enabled hopper always pulls from a container directly above it
+        world.setBlock(60, Y + 2, z, Block.BARREL);
+        Inventory pullBarrel = new Inventory(net.minestom.server.inventory.InventoryType.CHEST_3_ROW,
+                net.kyori.adventure.text.Component.text("Barrel"));
+        pullBarrel.setItemStack(0, ItemStack.of(Material.EMERALD, 2));
+        dev.pointofpressure.minecom.blocks.Containers.CHESTS
+                .put(dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(60, Y + 2, z)), pullBarrel);
+        rs(60, Y + 1, z, Block.HOPPER.withProperty("facing", "down").withProperty("enabled", "true"));
+        var pullHopperInv = dev.pointofpressure.minecom.redstone.Hoppers.inventory(new Vec(60, Y + 1, z));
+        boolean pulled = waitFor(() -> {
+            for (int s = 0; s < pullHopperInv.getSize(); s++) {
+                if (pullHopperInv.getItemStack(s).material() == Material.EMERALD) return true;
+            }
+            return false;
+        }, 5000);
+        check("a hopper pulls items down from a barrel above it", pulled);
+
+        world.setBlock(50, Y + 1, z, Block.AIR);
+        world.setBlock(55, Y + 1, z, Block.AIR);
+        world.setBlock(55, Y + 2, z, Block.AIR);
+        world.setBlock(60, Y + 1, z, Block.AIR);
+        world.setBlock(60, Y + 2, z, Block.AIR);
+        dev.pointofpressure.minecom.blocks.Containers.CHESTS.remove(
+                dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(50, Y + 1, z)));
+        dev.pointofpressure.minecom.blocks.Containers.CHESTS.remove(
+                dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(55, Y + 1, z)));
+        dev.pointofpressure.minecom.blocks.Containers.CHESTS.remove(
+                dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(60, Y + 2, z)));
+        clearEntitiesExceptPlayer();
         resetPlayer();
     }
 

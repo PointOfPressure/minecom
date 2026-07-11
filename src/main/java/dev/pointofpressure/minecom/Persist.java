@@ -73,6 +73,13 @@ public final class Persist {
                     Containers.CHESTS.put(e.getKey(), inv);
                 }
             }
+            if (root.has("enderchests")) {
+                for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("enderchests").entrySet()) {
+                    Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Component.text("Ender Chest"));
+                    readItems(e.getValue().getAsJsonArray(), inv);
+                    dev.pointofpressure.minecom.blocks.EnderChest.INVENTORIES.put(e.getKey(), inv);
+                }
+            }
             if (root.has("furnaces")) {
                 for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("furnaces").entrySet()) {
                     JsonObject f = e.getValue().getAsJsonObject();
@@ -97,8 +104,9 @@ public final class Persist {
                     PLAYERS.put(e.getKey(), e.getValue().getAsJsonObject());
                 }
             }
-            LOGGER.info("Loaded state: {} chests, {} furnaces, {} crops, {} players",
-                    Containers.CHESTS.size(), Furnaces.FURNACES.size(), Farming.CROPS.size(), PLAYERS.size());
+            LOGGER.info("Loaded state: {} chests, {} ender chests, {} furnaces, {} crops, {} players",
+                    Containers.CHESTS.size(), dev.pointofpressure.minecom.blocks.EnderChest.INVENTORIES.size(),
+                    Furnaces.FURNACES.size(), Farming.CROPS.size(), PLAYERS.size());
         } catch (Exception e) {
             LOGGER.error("Failed loading {}", FILE, e);
         }
@@ -125,6 +133,10 @@ public final class Persist {
             JsonObject chests = new JsonObject();
             Containers.CHESTS.forEach((key, inv) -> chests.add(key, writeItems(inv)));
             root.add("chests", chests);
+
+            JsonObject enderchests = new JsonObject();
+            dev.pointofpressure.minecom.blocks.EnderChest.INVENTORIES.forEach((key, inv) -> enderchests.add(key, writeItems(inv)));
+            root.add("enderchests", enderchests);
 
             JsonObject furnaces = new JsonObject();
             Furnaces.FURNACES.forEach((key, s) -> {

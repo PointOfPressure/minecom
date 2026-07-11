@@ -62,6 +62,15 @@ public final class Containers {
                 player.openInventory(CHESTS.computeIfAbsent(posKey(pos),
                         p -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Chest"))));
             }
+            case "barrel" -> {
+                e.setBlockingItemUse(true);
+                player.openInventory(CHESTS.computeIfAbsent(posKey(pos),
+                        p -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Barrel"))));
+            }
+            case "ender_chest" -> {
+                e.setBlockingItemUse(true);
+                EnderChest.open(player, instance, pos);
+            }
             default -> {
                 if ((key.endsWith("_door") && !key.equals("iron_door"))) {
                     e.setBlockingItemUse(true);
@@ -93,7 +102,7 @@ public final class Containers {
     /** Called when a container block is broken: spill contents and forget state. */
     public static void onBlockRemoved(Instance instance, Point pos, Block block) {
         String key = block.key().value();
-        if (key.equals("chest")) {
+        if (key.equals("chest") || key.equals("barrel")) {
             Inventory inv = CHESTS.remove(posKey(pos));
             if (inv != null) spill(instance, pos, inv);
         } else if (key.equals("furnace")) {
@@ -107,6 +116,8 @@ public final class Containers {
             Brewing.onRemoved(instance, pos);
         } else if (key.equals("lectern")) {
             Lectern.onBlockRemoved(instance, pos);
+        } else if (key.equals("decorated_pot")) {
+            DecoratedPot.onBlockRemoved(instance, pos);
         }
     }
 
