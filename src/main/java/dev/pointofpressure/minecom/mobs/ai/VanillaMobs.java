@@ -656,6 +656,19 @@ public final class VanillaMobs {
         return mob;
     }
 
+    /**
+     * Giant: legacy/essentially-unused mob (decompile-verified createAttributes: MAX_HEALTH
+     * 100, MOVEMENT_SPEED 0.5, ATTACK_DAMAGE 50 — CAMERA_DISTANCE is a client-only render-
+     * culling attribute, not gameplay-relevant, so skipped). Real vanilla itself doesn't
+     * register any custom AI goals for it either (no natural spawn path exists — command/
+     * summon only), so the standard melee() AI already used for every other simple brute
+     * in this codebase is a reasonable match, not a simplification of anything real vanilla
+     * actually does differently.
+     */
+    public static EntityCreature giant(Instance i, Pos p) {
+        return melee(EntityType.GIANT, i, p, 0.5, 16, 50, 100, 0, true);
+    }
+
     /** Wither skeleton: fortress melee brute with a stone sword. */
     public static EntityCreature witherSkeleton(Instance i, Pos p) {
         EntityCreature mob = melee(EntityType.WITHER_SKELETON, i, p, 0.25, 20, 4, 20, 4, true);

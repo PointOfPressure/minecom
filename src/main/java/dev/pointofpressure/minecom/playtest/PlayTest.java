@@ -195,6 +195,7 @@ public final class PlayTest {
         scenario("illusioner: real stats + bow attack", PlayTest::scenarioIllusioner);
         scenario("piglin brute: always-hostile elite bastion guard, real stats", PlayTest::scenarioPiglinBrute);
         scenario("zoglin: hoglin's zombified form, real stats", PlayTest::scenarioZoglin);
+        scenario("giant: legacy mob, real stats", PlayTest::scenarioGiant);
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
         scenario("snow golem: fragile ranged defender, snowballs deal real damage only to blazes", PlayTest::scenarioSnowGolem);
         scenario("boat: floats up to the water surface", PlayTest::scenarioBoat);
@@ -1460,6 +1461,29 @@ public final class PlayTest {
         check("a zoglin attacks a nearby player unprompted", hit);
 
         if (zoglin != null) zoglin.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Giant: decompile-verified stats (100 HP, 50 attack damage) — a legacy/essentially-
+     * unused mob with no natural spawn path in real vanilla either (command/summon only).
+     */
+    private static void scenarioGiant() {
+        clearEntitiesExceptPlayer();
+        var giant = Mobs.spawn("giant", world, new Pos(2.5, Y + 1, 0.5));
+        double giantHp = giant.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH);
+        double giantAtk = giant.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE);
+        check("giant spawns with real vanilla stats (100 HP, 50 attack damage; got hp="
+                + giantHp + " atk=" + giantAtk + ")", giantHp == 100.0 && giantAtk == 50.0);
+
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        player.setHealth(20f);
+        float healthBefore = player.getHealth();
+        boolean hit = waitFor(() -> player.getHealth() < healthBefore, 15000);
+        check("a giant attacks a nearby player unprompted", hit);
+
+        if (giant != null) giant.remove();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
