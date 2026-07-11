@@ -139,7 +139,7 @@ public final class Bootstrap {
         Fluids.start(overworld);
         Farming.register(events);
         Farming.start(overworld);
-        Beds.register(events);
+        Beds.register(events, overworld);
         dev.pointofpressure.minecom.redstone.Hoppers.start(overworld);
         dev.pointofpressure.minecom.data.Enchants.register(events, overworld);
         dev.pointofpressure.minecom.mobs.EnderDragonFight.register(events);

@@ -2813,6 +2813,74 @@ public final class PlayTest {
         long time = world.getTime() % 24000;
         check("sleeping at night skips to morning (time " + time + ")", time < 13000);
         check("bed sets respawn point", player.getRespawnPoint().distance(new Pos(-4.5, Y + 1.6, -4.5)) < 1.5);
+        world.setBlock(foot, Block.AIR);
+        world.setBlock(foot.add(0, 0, -1), Block.AIR);
+
+        // BedBlock.useWithoutItem's real gate is night OR thundering, NOT plain rain. Checked
+        // via the ABSOLUTE time delta (not time%24000, which can't distinguish "still early in
+        // the same day" from "wrapped to the start of the next one" — both look small mod 24000).
+        world.setTime(1000); // broad daylight
+        world.setWeather(net.minestom.server.instance.Weather.RAIN);
+        BlockVec rainFoot = new BlockVec(-8, Y + 1, -5);
+        world.setBlock(rainFoot, Block.RED_BED.withProperty("part", "foot").withProperty("facing", "north"));
+        world.setBlock(rainFoot.add(0, 0, -1), Block.RED_BED.withProperty("part", "head").withProperty("facing", "north"));
+        long beforeRain = world.getTime();
+        interact(rainFoot);
+        check("plain daytime rain does NOT let you sleep (real vanilla requires thundering specifically)",
+                world.getTime() - beforeRain < 100);
+
+        world.setWeather(net.minestom.server.instance.Weather.THUNDER);
+        long beforeThunder = world.getTime();
+        interact(rainFoot);
+        check("a real thunderstorm DOES let you sleep during the day (advanced "
+                + (world.getTime() - beforeThunder) + " ticks)", world.getTime() - beforeThunder > 20000);
+        world.setWeather(net.minestom.server.instance.Weather.CLEAR);
+        world.setBlock(rainFoot, Block.AIR);
+        world.setBlock(rainFoot.add(0, 0, -1), Block.AIR);
+
+        // BedBlock.useWithoutItem: BED_RULE.explodes() outside the overworld — power 5.0F,
+        // and BOTH halves are removed, not just the one clicked.
+        var nether = dev.pointofpressure.minecom.Bootstrap.netherOf(world);
+        int nx = 220, ny = 60, nz = 220;
+        // Explosions.explode's blast radius reaches ~16 blocks out, which can cross into
+        // chunks nothing else has ever touched — force-load a wide enough area first, or
+        // Redstone.tick's queue throws NPE("Unloaded chunk") on a neighbor-changed position
+        // outside it and PERMANENTLY kills the shared redstone scheduler for every later
+        // scenario in the suite (real production servers never hit this: players naturally
+        // load chunks around themselves well before anything could explode nearby).
+        int baseChunkX = nx >> 4, baseChunkZ = nz >> 4;
+        for (int cx = baseChunkX - 2; cx <= baseChunkX + 2; cx++) {
+            for (int cz = baseChunkZ - 2; cz <= baseChunkZ + 2; cz++) {
+                nether.loadChunk(cx, cz).join();
+            }
+        }
+        nether.setBlock(nx, ny, nz, Block.NETHERRACK);
+        nether.setBlock(nx, ny + 1, nz, Block.AIR);
+        nether.setBlock(nx, ny + 2, nz, Block.AIR);
+        BlockVec netherFoot = new BlockVec(nx, ny + 1, nz);
+        BlockVec netherHead = new BlockVec(nx, ny + 1, nz - 1);
+        nether.setBlock(netherFoot, Block.RED_BED.withProperty("part", "foot").withProperty("facing", "north"));
+        nether.setBlock(netherHead, Block.RED_BED.withProperty("part", "head").withProperty("facing", "north"));
+        player.setInstance(nether, new Pos(nx + 0.5, ny + 1, nz + 0.5)).join();
+        tick(2);
+
+        EventDispatcher.call(new PlayerBlockInteractEvent(player, PlayerHand.MAIN, nether,
+                nether.getBlock(netherFoot), netherFoot, new Vec(0.5, 0.5, 0.5), BlockFace.TOP));
+        tick(2);
+        check("sleeping in the Nether explodes the FOOT half",
+                nether.getBlock(netherFoot).isAir());
+        check("sleeping in the Nether also explodes the paired HEAD half",
+                nether.getBlock(netherHead).isAir());
+
+        nether.setBlock(nx, ny, nz, Block.AIR);
+        player.setInstance(world, new Pos(0.5, Y + 1, 0.5)).join();
+        // this scenario's own sleep-skip pushed world time forward by close to a full day on
+        // top of whatever the previous scenario left it at; reset to a firm, unambiguous
+        // daytime value so later scenarios that don't set their own time (most do) aren't
+        // affected by this one's side effects.
+        world.setTime(1000);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
     }
 
     // ---------------------------------------------------------------- redstone
@@ -3623,6 +3691,41 @@ public final class PlayTest {
         check("anvil: durabilities add with bonus (damage " + damage + ")",
                 damage != null && damage < 200);
         check("anvil: equal enchants bump a level (efficiency " + efficiency + ")", efficiency == 4);
+
+        // AnvilMenu.createResult clamps to the enchantment's REAL max level, not a flat 5 —
+        // Unbreaking maxes at 3, so combining two Unbreaking III tools must NOT produce IV.
+        ItemStack unbreakingA = dev.pointofpressure.minecom.data.Enchants.with(
+                ItemStack.of(Material.IRON_PICKAXE), net.minestom.server.item.enchant.Enchantment.UNBREAKING, 3);
+        ItemStack unbreakingB = dev.pointofpressure.minecom.data.Enchants.with(
+                ItemStack.of(Material.IRON_PICKAXE), net.minestom.server.item.enchant.Enchantment.UNBREAKING, 3);
+        ItemStack unbreakingCombined = dev.pointofpressure.minecom.blocks.Anvils.combine(unbreakingA, unbreakingB);
+        int unbreakingLevel = dev.pointofpressure.minecom.data.Enchants.level(unbreakingCombined, "unbreaking");
+        check("anvil: enchant level is capped at its OWN real max, not a flat 5 (Unbreaking III+III got "
+                + unbreakingLevel + ", must stay 3)", unbreakingLevel == 3);
+
+        // AnvilMenu's "prior work penalty": REPAIR_COST starts at 0, and each combine sets the
+        // result's REPAIR_COST to max(inputs)*2+1 — a fresh pair costs 0 tax, but re-combining
+        // an already-once-combined item taxes the NEXT combine on top of its normal price.
+        ItemStack fresh1 = ItemStack.of(Material.IRON_PICKAXE);
+        ItemStack fresh2 = ItemStack.of(Material.IRON_PICKAXE);
+        check("anvil: a never-combined pair costs no repair-cost tax (cost "
+                        + dev.pointofpressure.minecom.blocks.Anvils.costOf(fresh1, fresh2) + ")",
+                dev.pointofpressure.minecom.blocks.Anvils.costOf(fresh1, fresh2) == 2);
+        ItemStack onceCombined = dev.pointofpressure.minecom.blocks.Anvils.combine(fresh1, fresh2);
+        Integer repairCostAfterOne = onceCombined.get(DataComponents.REPAIR_COST);
+        check("anvil: the result's REPAIR_COST becomes max(0,0)*2+1 = 1 after one combine",
+                repairCostAfterOne != null && repairCostAfterOne == 1);
+        ItemStack thirdFresh = ItemStack.of(Material.IRON_PICKAXE);
+        int taxedCost = dev.pointofpressure.minecom.blocks.Anvils.costOf(onceCombined, thirdFresh);
+        check("anvil: re-combining that item taxes the next combine's cost (base 2 + tax 1 = 3, got "
+                + taxedCost + ")", taxedCost == 3);
+
+        // AnvilMenu.createResult: cost >= 40 refuses entirely ("Too Expensive!") outside creative.
+        ItemStack veryUsed = ItemStack.of(Material.IRON_PICKAXE)
+                .with(b -> b.set(DataComponents.REPAIR_COST, 50));
+        int expensiveCost = dev.pointofpressure.minecom.blocks.Anvils.costOf(veryUsed, thirdFresh);
+        check("anvil: a heavily-repair-cost-taxed item pushes total cost past the 40 cap (got "
+                + expensiveCost + ")", expensiveCost >= 40);
     }
 
     private static void scenarioFishing() {

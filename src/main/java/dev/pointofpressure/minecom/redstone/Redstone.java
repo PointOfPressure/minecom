@@ -457,6 +457,14 @@ public final class Redstone {
     // ------------------------------------------------------------------ component evaluation
 
     private static void evaluate(Point pos, Set<Long> wiresDone, boolean soft) {
+        // neighborsChanged queues a position's neighbors unconditionally (its own chunk-loaded
+        // check only gates the observer-pulse look-ahead, not the dirty/dirtySoft add) — a
+        // position from another instance entirely (Explosions.explode and friends don't check
+        // which instance they're running in before calling this) or genuinely out past the
+        // loaded radius would otherwise NPE inside instance.getBlock and PERMANENTLY kill this
+        // repeating tick task, taking every redstone feature down for the rest of the server's
+        // life. Real vanilla simply doesn't simulate unloaded chunks; this is the same thing.
+        if (!instance.isChunkLoaded(pos.blockX() >> 4, pos.blockZ() >> 4)) return;
         Block block = instance.getBlock(pos);
         String key = block.key().value();
         // quasi-connectivity: QC components only react to direct neighbor updates
