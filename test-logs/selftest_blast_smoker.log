@@ -1,0 +1,194 @@
+indexed: 708 shaped, 322 shapeless, 156 smeltable inputs, 9 campfire-cookable inputs
+PASS stone + iron pickaxe -> cobblestone
+PASS grass_block -> dirt
+PASS oak_log -> oak_log
+PASS diamond_ore + iron pickaxe -> diamond
+PASS oak_leaves + shears -> oak_leaves
+PASS oak_leaves bare hand: sapling ~5% (got 12/400), never leaves (got 0)
+PASS gravel: flint ~10% (got 36/400)
+PASS craft: 1 oak_log -> 4 oak_planks
+PASS craft: 2 planks vertical -> 4 sticks
+PASS craft: 4 planks -> crafting_table
+PASS craft: wooden pickaxe (3 planks / stick / stick)
+PASS craft: 8 cobblestone ring -> furnace
+PASS craft: offset stick recipe matches in corner
+PASS craft: garbage grid -> AIR
+PASS smelt raw_iron -> iron_ingot in 200 ticks
+PASS smelt cobblestone -> stone
+PASS porkchop smeltable
+PASS dirt not smeltable
+PASS coal is fuel 1600
+PASS planks are fuel 300
+PASS dirt is not fuel
+PASS campfire-cook mutton -> cooked_mutton in 600 ticks
+PASS campfire-cook dirt not cookable
+PASS zombie drops rotten flesh avg ~1 (got 215/200)
+PASS sheep drops wool + mutton
+PASS tag: oak_planks in #planks
+PASS tag: stone mineable with pickaxe
+PASS tag: diamond_ore needs iron tool
+PASS young wheat never drops wheat
+PASS ripe wheat drops wheat
+PASS iron sword attack 6.0 from components (got 6.0)
+PASS diamond axe attack 9.0 from components (got 9.0)
+PASS diamond chestplate armor 8.0 from components (got 8.0)
+PASS fall damage bypasses armor (official tag)
+PASS mob attack does not bypass armor
+PASS xp curve: level 30 = 1395 total
+PASS mob xp: blaze=10, husk=5 (previously 0), wolf 1-3
+PASS snow: snowy_plains is cold enough + has precipitation
+PASS snow: desert has no precipitation (never snows)
+PASS enchant coverage: mending/thorns/infinity/feather_falling now resolve (was a 9-entry allow-list)
+PASS mob xp: baby zombie is 2.5x (5 -> 12)
+PASS ancient city placement grid (-43,-43)
+PASS trial chamber placement grid (-26,-19)
+PASS village placement grid (-18,5)
+PASS pillager outpost placement grid (-105,-9)
+PASS placement is exclusive within a grid cell (no false neighbor)
+PASS stronghold ring placement: 128 positions generated
+PASS stronghold ring placement: position 0 = (5,99) (bit-exact vs vanilla ChunkGeneratorStructureState)
+PASS ancient city real generation confirmed at (-105,-37): 1323 deepslate-city/sculk/soul/candle blocks placed
+PASS trial chamber real generation confirmed at (-26,-19): 54240 tuff_bricks/copper/vault blocks placed
+PASS village real generation confirmed at (-21,-33): 18 oak_fence/bell/job-site blocks placed
+PASS trail ruins real generation confirmed at (13,-25): 372 mud_bricks/packed_mud blocks placed
+PASS ruined portal (on_land_surface) generates at (-38,5): rotation=CLOCKWISE_90, 10x8x9, 640 blocks, y=71
+PASS ruined portal (on_land_surface) generates at (-19,-39): rotation=COUNTERCLOCKWISE_90, 8x9x9, 500 blocks, y=57 (mirrored)
+PASS ruined portal (underground) generates at (5,42): rotation=CLOCKWISE_180, 9x12x9, 750 blocks, y=20 (well below surface)
+PASS ruined portal (desert, partly_buried) generates at (-107,171): rotation=CLOCKWISE_180, 9x12x9, 750 blocks, y=57
+PASS ruined portal placement grid rejects a non-candidate chunk (0,0)
+PASS ruined portal (jungle, on_land_surface) generates at (-194,82): rotation=NONE, 10x8x9, 640 blocks, y=69
+PASS ruined portal (mountain, in_mountain) generates at (-68,-32): rotation=CLOCKWISE_90, 10x8x9, 640 blocks, y=128
+PASS ruined portal (mountain) generates at (23,-25): rotation=CLOCKWISE_180, 9x12x9, 750 blocks, y=38 (mirrored)
+PASS ruined portal (ocean, on_ocean_floor) generates at (-150,98): rotation=CLOCKWISE_180, 14x9x9, 1054 blocks, y=35
+PASS ruined portal (swamp, on_ocean_floor) generates at (-238,-395): rotation=CLOCKWISE_180, 5x7x7, 212 blocks, y=63
+PASS ruined portal (standard, land) decorated at (-38,5): 91 solid blocks, 2 gold, 4 magma, 1 crying obsidian
+PASS ruined portal (standard, underground) decorated at (5,42): 750 solid blocks, 2 gold, 9 magma, 4 mossy, 5 cracked, 2 crying obsidian
+PASS ruined portal (desert) decorated at (-107,171): 206 solid blocks, 2 gold, 14 magma, 1 mossy, 6 cracked, 1 crying obsidian
+PASS ruined portal (jungle) decorated at (-194,82): 640 solid blocks, 2 gold, 7 magma, 3 crying obsidian
+PASS ruined portal (mountain, in_mountain) decorated at (-68,-32): 91 solid blocks, 2 gold, 1 magma, 1 crying obsidian
+PASS ruined portal (ocean, on_ocean_floor) decorated at (-150,98): 218 solid blocks, 3 gold, 35 magma, 6 mossy, 3 crying obsidian
+PASS ruined portal (swamp, on_ocean_floor) decorated at (-238,-395): 65 solid blocks, 1 gold, 1 magma, 3 crying obsidian
+PASS ruined portal decoration hook returns null for an unknown flavor
+PASS ruined portal (standard, mirrored) decorated at (-19,-39): 198 solid blocks, 1 gold, 10 magma, 8 cracked, 1 crying obsidian
+PASS mineshaft (normal) at (-26,19): 73 pieces, room box [-414,20,306 -> -405,26,314]
+PASS mineshaft (normal) (-26,19) piece 1: corridor [-414,22,315 -> -412,24,334]
+PASS mineshaft (normal) (-26,19) piece 3: crossing [-411,23,345 -> -407,25,349]
+PASS mineshaft (mesa) at (-364,327): 124 pieces, room box [-5822,62,5234 -> -5812,69,5241]
+PASS mineshaft placement grid rejects a non-candidate chunk (0,0)
+PASS mineshaft (normal) (-200,-139) piece 2: two-floored crossing [-3199,-36,-2247 -> -3195,-30,-2243]
+PASS mineshaft (normal) (-200,-139) piece 6: single-floor crossing [-3185,-35,-2287 -> -3181,-33,-2283]
+PASS mineshaft (normal) (-200,-139) piece 13: stairs [-3145,-41,-2286 -> -3137,-34,-2284]
+PASS igloo (with basement) at (13,-125): 5 pieces, rot=1, top=[208,61,-2000]
+PASS igloo (no basement) at (45,-116): 1 piece, rot=1, top=[720,61,-1856]
+PASS igloo (with basement) at (140,-52): 12 pieces, rot=1, top=[2240,65,-832]
+PASS igloo placement grid rejects a non-candidate chunk (0,0)
+PASS swamp hut (NORTH) at (-233,-340): box=[-3728,65,-5440 -> -3722,71,-5432]
+PASS swamp hut (SOUTH) at (180,-62): box=[2880,62,-992 -> 2886,68,-984]
+PASS swamp hut (WEST) at (-254,-384): box=[-4064,62,-6144 -> -4056,68,-6138]
+PASS swamp hut (EAST) at (-246,174): box=[-3936,62,2784 -> -3928,68,2790]
+PASS swamp hut placement grid rejects a non-candidate chunk (0,0)
+PASS jungle temple (NORTH) at (-537,45): box=[-8592,73,720 -> -8581,82,734], 2302 blocks
+PASS jungle temple (SOUTH) at (-571,133): box=[-9136,72,2128 -> -9125,81,2142], 2302 blocks
+PASS jungle temple (WEST) at (-596,-541): box=[-9536,66,-8656 -> -9522,75,-8645], 2302 blocks
+PASS jungle temple (EAST) at (-562,116): box=[-8992,132,1856 -> -8978,141,1867], 2302 blocks
+PASS jungle temple placement grid rejects a non-candidate chunk (0,0)
+PASS desert pyramid (SOUTH) at (-148,151): box=[-2368,60,2416 -> -2348,74,2436], 6722 blocks
+PASS desert pyramid (WEST) at (246,294): box=[3936,60,4704 -> 3956,74,4724], 6722 blocks
+PASS desert pyramid (EAST) at (239,387): box=[3824,62,6192 -> 3844,76,6212], 6722 blocks
+PASS desert pyramid placement grid rejects a non-candidate chunk (0,0)
+PASS shipwreck (rot=NONE) at (-261,169): 9x9x16, 414 blocks, originY=56
+PASS shipwreck (rot=CLOCKWISE_90) at (64,176): 9x9x16, 385 blocks, originY=57
+PASS shipwreck (rot=CLOCKWISE_180) at (-295,186): 9x9x16, 385 blocks, originY=58
+PASS shipwreck (rot=COUNTERCLOCKWISE_90) at (51,9): 9x9x24, 321 blocks, originY=57
+PASS shipwreck placement grid rejects a non-candidate chunk (0,0)
+PASS ocean shipwreck (rot=NONE) at (-150,-127): 9x9x16, 385 blocks, originY=37
+PASS ocean shipwreck (rot=CLOCKWISE_90) at (-141,53): 9x21x28, 729 blocks, originY=39
+PASS ocean shipwreck (rot=CLOCKWISE_180) at (-144,-64): 9x9x16, 387 blocks, originY=45
+PASS ocean shipwreck (rot=COUNTERCLOCKWISE_90) at (-136,-110): 9x9x16, 414 blocks, originY=39
+PASS buried treasure at (48,-13): chest=[777,49,-199]
+PASS buried treasure placement grid rejects a non-candidate chunk (0,0)
+PASS nether fossil (rot=NONE) at (-60,2): 5x5x7, 175 blocks, pos=[-947,58,40]
+PASS nether fossil (rot=CLOCKWISE_90) at (-58,0): 7x5x5, 175 blocks, pos=[-913,115,11]
+PASS nether fossil (rot=COUNTERCLOCKWISE_90) at (-54,20): 7x5x5, 175 blocks, pos=[-855,53,321]
+PASS nether fossil placement grid rejects a non-candidate chunk (0,0)
+PASS ocean ruin (warm, small) at (-139,49): 1 piece, rot=COUNTERCLOCKWISE_90, 6x7x7, 294 blocks, pos=[-2224,36,784]
+PASS ocean ruin (warm, LARGE) at (-140,82): 1 piece, rot=CLOCKWISE_90, 16x16x16, 4096 blocks, pos=[-2240,34,1312]
+PASS ocean ruin placement grid rejects a non-candidate chunk (0,0)
+PASS ocean ruin (COLD, 3-stacked brick/cracked/mossy) at (-138,-119): 3 pieces, rot=COUNTERCLOCKWISE_90, 6x7x7, 294 blocks each, pos=[-2208,41,-1904]
+PASS ocean ruin (warm, LARGE+CLUSTER) at (-159,87): 8 pieces total (1 parent + 7 cluster), rot=CLOCKWISE_90, pos=[-2544,43,1392]
+PASS ocean ruin (COLD, LARGE+CLUSTER) at (-193,-179): 27 pieces total (3 parent + 8 cluster x3-stack), rot=CLOCKWISE_180, pos=[-3088,49,-2864]
+PASS bastion remnant at (-79,27): 100 pieces, center=[-1278,33,408]
+PASS bastion remnant at (-77,-64): 177 pieces, center=[-1250,33,-1005]
+PASS bastion remnant placement grid rejects a non-candidate chunk (0,0)
+PASS bastion remnant correctly excluded at a known fortress-footprint conflict chunk (-231,40)
+PASS ruined portal (nether) at (-75,-25): rot=COUNTERCLOCKWISE_90, 9x7x9, 510 blocks, y=15
+PASS ruined portal (nether, GIANT) at (-38,-79): rot=COUNTERCLOCKWISE_90, 11x17x16, 2400 blocks, y=15 (corner-scan bottomed out)
+PASS ruined portal (nether) placement grid rejects a non-candidate chunk (0,0)
+PASS ruined portal (nether) decorated at (-75,-25): 510 solid blocks, 2 gold, 13 magma, 2 crying obsidian, 5 blackstone-family
+PASS ruined portal (nether, GIANT) decorated at (-38,-79): 2400 solid blocks, 2 gold, 21 magma, 4 crying obsidian, 143 blackstone-family
+PASS zombie weapon roll: trigger rate ~1% (got 0.0098)
+PASS zombie weapon roll: shovel share ~4/6=0.667 (got 0.669)
+PASS baby zombie roll: trigger rate ~5% (got 0.0497)
+PASS spawn data: all overworld biomes loaded (>=50)
+PASS mob cap: MONSTER over 289 spawnable chunks = 70
+PASS mob cap: CREATURE over 578 chunks = 20
+PASS mob cap: MONSTER over 100 chunks = 24 (70*100/289)
+PASS roster covers ALL natural-spawn types (50/50)
+PASS category: zombie=MONSTER, cow=CREATURE
+PASS weighted pick: plains spider(w100) > zombie(w90), both ~15-20% (spider=0.192, zombie=0.173)
+PASS end island density: central island peak = 0.5625 (got 0.5625)
+PASS end island density: void gap between islands is negative (got -0.0234)
+PASS End terrain: central island is a solid mass (got 50 blocks tall)
+PASS End terrain: deep void far from center (got 38 solid blocks)
+PASS End biome: centre is the_end
+PASS End biome: far region is an outer End biome (got minecraft:end_midlands)
+PASS end gateway: ring position is deterministic and on the r=96 ring (got dist=96.0)
+PASS End spikes: 10 spikes, 2 iron-caged, all on the r=42 ring (caged=2)
+PASS end city at (-78,-55): 109 pieces (full recursive tree), base=[-1241,62,-873], rotation=NONE
+PASS end city at (-74,42): 10 pieces (full recursive tree), base=[-1177,62,679], rotation=CLOCKWISE_180
+PASS end city placement grid rejects a non-candidate chunk (0,0)
+PASS end city real generation confirmed at (-78,-55): 8286 purpur/end_stone_brick/magenta/end_rod/chest blocks placed
+PASS stronghold seed 20260710 (0,0): assembly is non-empty and contains exactly one portal room (417 pieces)
+PASS stronghold seed 20260710 (0,0): every piece stays above the LOWEST_Y_POSITION floor (isOkBox)
+PASS stronghold seed 20260710 (0,0): re-assembling the same (seed,chunk) reproduces an identical tree
+PASS stronghold seed 20260710 (0,0) real generation: exactly 12 end_portal_frame placed across the whole tree (12)
+PASS stronghold seed 20260710 (0,0) real generation: stone brick family blocks placed (4596)
+PASS stronghold seed 20260710 (0,0) real generation: the portal room's own 12 frames are all real end_portal_frame blocks
+PASS ocean monument seed 20260710 (0,0): room graph has 49 rooms (46 grid + roof/leftWing/rightWing)
+PASS ocean monument seed 20260710 (0,0): exactly one core room and one entry(source) room
+PASS ocean monument seed 20260710 (0,0): every non-special room is reachable from the source room
+PASS ocean monument seed 20260710 (0,0): re-generating the same (seed,chunk) reproduces an identical room graph
+PASS ocean monument shell real generation: 12 sea_lantern placed (2 per entrance-arch x4 + 4 on roof)
+PASS ocean monument shell real generation: 36 dark_prismarine placed (entrance wall black-brick trim)
+PASS ocean monument shell real generation: prismarine_bricks=36482, prismarine=4512, water=116408
+PASS ocean monument shell real generation: re-rendering the same chunk range is idempotent
+PASS ocean monument full real generation: gold_block=8 (CoreRoom's fixed 2x2x2 box, always exactly 8)
+PASS ocean monument full real generation: sea_lantern=154, prismarine_bricks=40620
+PASS ocean monument full real generation: re-rendering the same chunk range is idempotent
+PASS ocean monument full real generation: gold_block==8 holds across 5 different seeds
+PASS ocean monument seed 20260710: real placement grid finds a monument at chunk (-80,-22)
+PASS ocean monument seed 20260710 (-80,-22) real generation: gold_block=8 (CoreRoom's fixed 2x2x2 box)
+PASS ocean monument seed 20260710 (-80,-22) real generation confirmed: 10392 prismarine/sea_lantern blocks placed
+PASS woodland mansion seed 20260710 (0,0): base grid has a plausible house-cell count (58)
+PASS woodland mansion seed 20260710 (0,0): third floor is smaller than the base floor (23 < 58)
+PASS woodland mansion seed 20260710 (0,0): re-generating the same (seed,chunk) reproduces an identical grid
+PASS woodland mansion: zero crashes/degenerate grids across 125 seed/position combinations
+PASS woodland mansion seed 20260710 (0,0): assembles a real piece list (574 pieces)
+PASS woodland mansion seed 20260710 (0,0) real generation: 97974 total placed cells (97974 expected)
+PASS woodland mansion seed 20260710 (0,0) real generation: dark_oak_planks=15695, dark_oak_log=2510, cobblestone=2851
+PASS woodland mansion seed 20260710 (0,0) real generation: 32 chests placed (container block only, loot skipped per established precedent)
+PASS woodland mansion seed 20260710 (0,0) real generation: re-rendering the same chunk range is idempotent
+PASS woodland mansion seed 20260710 (0,0): re-generating the same (seed,chunk) reproduces an identical piece list
+PASS woodland mansion piece placement: zero crashes across 125 seed/position combinations
+PASS woodland mansion seed 1: real placement grid finds a mansion at chunk (118,15)
+PASS woodland mansion seed 1 (118,15) real generation: 33 chests placed
+PASS woodland mansion seed 1 (118,15) real generation confirmed: 14085 dark oak (planks+log) blocks placed
+PASS effective difficulty: fresh Normal world = 1.5 (got 1.5)
+PASS effective difficulty: maxed Hard region = 6.75 (got 6.75)
+PASS effective difficulty: maxed Easy region = 1.5 (local bonus halved; got 1.5)
+PASS effective difficulty: Peaceful is always 0
+PASS moon brightness: full moon night 1.0, new moon (day 4) 0.0
+PASS Easy mob damage to players: 10 -> 6, 1 -> 1 (min(x/2+1, x))
+PASS Hard mob damage to players: 10 -> 15 (x1.5)
+191 passed, 0 failed
+

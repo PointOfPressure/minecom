@@ -103,9 +103,9 @@ public final class Hoppers {
                 Inventory disp = Redstone.dispenserInventory(target);
                 if (!disp.addItemStack(moving)) return false;
             }
-            case "furnace" -> {
+            case "furnace", "blast_furnace", "smoker" -> {
                 Furnaces.State state = Furnaces.FURNACES.computeIfAbsent(Containers.posKey(target),
-                        k -> new Furnaces.State());
+                        k -> new Furnaces.State(key));
                 state.instance = instance;
                 state.pos = target;
                 int slot = facing.equals("down") ? 0 : 1; // top feeds input, sides feed fuel
@@ -148,7 +148,7 @@ public final class Hoppers {
             case "chest", "barrel" -> Containers.CHESTS.get(Containers.posKey(above));
             case "hopper" -> HOPPERS.get(Containers.posKey(above));
             case "dispenser", "dropper" -> Redstone.DISPENSERS.get(Containers.posKey(above));
-            case "furnace" -> {
+            case "furnace", "blast_furnace", "smoker" -> {
                 Furnaces.State s = Furnaces.FURNACES.get(Containers.posKey(above));
                 yield s == null ? null : s.inv;
             }
@@ -159,7 +159,7 @@ public final class Hoppers {
             if (cart == null) return false;
             source = dev.pointofpressure.minecom.blocks.Minecarts.cartInventory(cart);
         }
-        boolean furnace = key.equals("furnace");
+        boolean furnace = key.equals("furnace") || key.equals("blast_furnace") || key.equals("smoker");
         for (int slot = 0; slot < source.getSize(); slot++) {
             if (furnace && slot != 2) continue; // only the output slot of furnaces
             ItemStack stack = source.getItemStack(slot);

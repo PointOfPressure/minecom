@@ -83,16 +83,21 @@ public final class Persist {
             if (root.has("furnaces")) {
                 for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("furnaces").entrySet()) {
                     JsonObject f = e.getValue().getAsJsonObject();
-                    Furnaces.State state = new Furnaces.State();
+                    String[] parts = e.getKey().split(",");
+                    Vec pos = new Vec(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
+                            Integer.parseInt(parts[2]));
+                    // read the actual block back to know which of furnace/blast_furnace/
+                    // smoker this position is (their recipe maps differ) rather than
+                    // assuming plain "furnace" for all saved entries
+                    String kind = overworld.getBlock(pos).key().value();
+                    Furnaces.State state = new Furnaces.State(kind);
                     readItems(f.getAsJsonArray("items"), state.inv);
                     state.burnTicks = f.get("burn").getAsInt();
                     state.burnTotal = Math.max(1, f.get("burnTotal").getAsInt());
                     state.cookTicks = f.get("cook").getAsInt();
                     state.xpBank = f.get("xp").getAsFloat();
                     state.instance = overworld;
-                    String[] parts = e.getKey().split(",");
-                    state.pos = new Vec(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
-                            Integer.parseInt(parts[2]));
+                    state.pos = pos;
                     Furnaces.FURNACES.put(e.getKey(), state);
                 }
             }

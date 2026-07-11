@@ -36,6 +36,8 @@ public final class Recipes {
     private static final List<Shaped> SHAPED = new ArrayList<>();
     private static final List<Shapeless> SHAPELESS = new ArrayList<>();
     private static final Map<String, Smelt> SMELTING = new HashMap<>();
+    private static final Map<String, Smelt> BLASTING = new HashMap<>();
+    private static final Map<String, Smelt> SMOKING = new HashMap<>();
     private static final Map<String, Cook> CAMPFIRE = new HashMap<>();
     private static final Map<String, Integer> FUEL = new HashMap<>();
 
@@ -43,6 +45,8 @@ public final class Recipes {
         SHAPED.clear();
         SHAPELESS.clear();
         SMELTING.clear();
+        BLASTING.clear();
+        SMOKING.clear();
         CAMPFIRE.clear();
         for (Map.Entry<String, JsonElement> e : VanillaData.recipes.entrySet()) {
             JsonObject r = e.getValue().getAsJsonObject();
@@ -50,6 +54,8 @@ public final class Recipes {
                 case "crafting_shaped" -> indexShaped(r);
                 case "crafting_shapeless" -> indexShapeless(r);
                 case "smelting" -> indexSmelting(r);
+                case "blasting" -> indexBlasting(r);
+                case "smoking" -> indexSmoking(r);
                 case "campfire_cooking" -> indexCampfireCooking(r);
                 default -> { /* stonecutting, smithing, special: not supported */ }
             }
@@ -120,6 +126,32 @@ public final class Recipes {
         float xp = r.has("experience") ? r.get("experience").getAsFloat() : 0f;
         Ingredient in = ingredient(r.get("ingredient"));
         for (String id : in.allowed()) SMELTING.put(id, new Smelt(result, time, xp));
+    }
+
+    /**
+     * Blast furnace recipes: real Mojang data (data/minecraft/recipe/*.json's
+     * "blasting" type — ores/metal-related smelts only, roughly half of the "smelting"
+     * set) already bakes in the correct halved cookingtime per recipe, so no separate
+     * "2x speed" multiplier is needed anywhere — Furnaces.tick just reads whichever
+     * recipe map matches the block type, same as smelting already does.
+     */
+    private static void indexBlasting(JsonObject r) {
+        ItemStack result = result(r);
+        if (result.isAir()) return;
+        int time = r.has("cookingtime") ? r.get("cookingtime").getAsInt() : 100;
+        float xp = r.has("experience") ? r.get("experience").getAsFloat() : 0f;
+        Ingredient in = ingredient(r.get("ingredient"));
+        for (String id : in.allowed()) BLASTING.put(id, new Smelt(result, time, xp));
+    }
+
+    /** Smoker recipes: real Mojang "smoking" type — food only, same halved-time logic as blasting. */
+    private static void indexSmoking(JsonObject r) {
+        ItemStack result = result(r);
+        if (result.isAir()) return;
+        int time = r.has("cookingtime") ? r.get("cookingtime").getAsInt() : 100;
+        float xp = r.has("experience") ? r.get("experience").getAsFloat() : 0f;
+        Ingredient in = ingredient(r.get("ingredient"));
+        for (String id : in.allowed()) SMOKING.put(id, new Smelt(result, time, xp));
     }
 
     private static void indexCampfireCooking(JsonObject r) {
@@ -193,6 +225,14 @@ public final class Recipes {
 
     public static Smelt smelt(Material input) {
         return input == null ? null : SMELTING.get(input.key().asString());
+    }
+
+    public static Smelt blast(Material input) {
+        return input == null ? null : BLASTING.get(input.key().asString());
+    }
+
+    public static Smelt smoke(Material input) {
+        return input == null ? null : SMOKING.get(input.key().asString());
     }
 
     public static Cook campfireCook(Material input) {

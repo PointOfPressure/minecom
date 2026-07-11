@@ -673,7 +673,7 @@ public final class Redstone {
         String key = block.key().value();
         Inventory inv = null;
         if (key.equals("chest") || key.equals("barrel")) inv = Containers.CHESTS.get(Containers.posKey(pos));
-        else if (key.equals("furnace")) {
+        else if (key.equals("furnace") || key.equals("blast_furnace") || key.equals("smoker")) {
             var state = dev.pointofpressure.minecom.blocks.Furnaces.FURNACES.get(Containers.posKey(pos));
             if (state != null) inv = state.inv;
         } else if (key.equals("dispenser") || key.equals("dropper")) {

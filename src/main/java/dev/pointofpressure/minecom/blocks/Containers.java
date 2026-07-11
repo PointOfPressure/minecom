@@ -49,7 +49,7 @@ public final class Containers {
                 e.setBlockingItemUse(true);
                 Crafting.open(player);
             }
-            case "furnace" -> {
+            case "furnace", "blast_furnace", "smoker" -> {
                 e.setBlockingItemUse(true);
                 Furnaces.open(player, instance, pos, block);
             }
@@ -105,7 +105,7 @@ public final class Containers {
         if (key.equals("chest") || key.equals("barrel")) {
             Inventory inv = CHESTS.remove(posKey(pos));
             if (inv != null) spill(instance, pos, inv);
-        } else if (key.equals("furnace")) {
+        } else if (key.equals("furnace") || key.equals("blast_furnace") || key.equals("smoker")) {
             Furnaces.remove(instance, pos);
         } else if (key.equals("dispenser") || key.equals("dropper")) {
             var inv = dev.pointofpressure.minecom.redstone.Redstone.DISPENSERS.remove(posKey(pos));

@@ -81,6 +81,7 @@ public final class PlayTest {
         scenario("2x2 crafting via clicks", PlayTest::scenarioCraft2);
         scenario("crafting table via interact", PlayTest::scenarioCraftTable);
         scenario("furnace smelts + lit + xp", PlayTest::scenarioFurnace);
+        scenario("blast furnace and smoker: real halved cook times, actually functional", PlayTest::scenarioBlastFurnaceSmoker);
         scenario("eating", PlayTest::scenarioEating);
         scenario("fall damage", PlayTest::scenarioFall);
         scenario("armor reduction + durability", PlayTest::scenarioArmor);
@@ -2519,6 +2520,61 @@ public final class PlayTest {
         player.closeInventory();
         tick(1);
         world.setBlock(pos, Block.AIR);
+    }
+
+    /**
+     * Blast furnace / smoker (decompile-verified: data/minecraft/recipe/*.json's
+     * "blasting"/"smoking" recipe types already bake in the correct halved
+     * cookingtime per recipe, e.g. iron_ingot_from_blasting_raw_iron.json's
+     * cookingtime=100 vs plain smelting's 200 — so no separate speed multiplier is
+     * needed anywhere, just recognizing the block types and picking the right recipe
+     * map). Previously blast_furnace/smoker were completely non-functional: only the
+     * literal "furnace" block key was ever recognized anywhere in this codebase
+     * (interact routing, tick, hopper push/pull, comparator signal) — AUDIT.md's own
+     * framing ("blast furnace at 2x speed? verify constants") undersold the actual
+     * gap, which was total absence, not a wrong constant.
+     */
+    private static void scenarioBlastFurnaceSmoker() {
+        check("blasting recipe data has the real halved cookingtime baked in (raw_iron: got "
+                + dev.pointofpressure.minecom.data.Recipes.blast(Material.RAW_IRON).cookTicks() + ")",
+                dev.pointofpressure.minecom.data.Recipes.blast(Material.RAW_IRON).cookTicks() == 100);
+        check("smoking recipe data has the real halved cookingtime baked in (beef: got "
+                + dev.pointofpressure.minecom.data.Recipes.smoke(Material.BEEF).cookTicks() + ")",
+                dev.pointofpressure.minecom.data.Recipes.smoke(Material.BEEF).cookTicks() == 100);
+
+        BlockVec blastPos = new BlockVec(3, Y + 1, 9);
+        world.setBlock(blastPos, Block.BLAST_FURNACE);
+        interact(blastPos);
+        boolean blastOpened = player.getOpenInventory() instanceof Inventory bi
+                && bi.getInventoryType() == net.minestom.server.inventory.InventoryType.BLAST_FURNACE;
+        check("blast furnace opens its own window", blastOpened);
+        if (blastOpened) {
+            Inventory blast = (Inventory) player.getOpenInventory();
+            blast.setItemStack(0, ItemStack.of(Material.RAW_IRON, 1));
+            blast.setItemStack(1, ItemStack.of(Material.COAL));
+            check("blast furnace smelts raw iron to an ingot",
+                    waitFor(() -> blast.getItemStack(2).material() == Material.IRON_INGOT, 15000));
+            player.closeInventory();
+        }
+        tick(1);
+        world.setBlock(blastPos, Block.AIR);
+
+        BlockVec smokerPos = new BlockVec(3, Y + 1, 10);
+        world.setBlock(smokerPos, Block.SMOKER);
+        interact(smokerPos);
+        boolean smokerOpened = player.getOpenInventory() instanceof Inventory si
+                && si.getInventoryType() == net.minestom.server.inventory.InventoryType.SMOKER;
+        check("smoker opens its own window", smokerOpened);
+        if (smokerOpened) {
+            Inventory smoker = (Inventory) player.getOpenInventory();
+            smoker.setItemStack(0, ItemStack.of(Material.BEEF, 1));
+            smoker.setItemStack(1, ItemStack.of(Material.COAL));
+            check("smoker cooks raw beef",
+                    waitFor(() -> smoker.getItemStack(2).material() == Material.COOKED_BEEF, 15000));
+            player.closeInventory();
+        }
+        tick(1);
+        world.setBlock(smokerPos, Block.AIR);
     }
 
     private static void scenarioEating() {

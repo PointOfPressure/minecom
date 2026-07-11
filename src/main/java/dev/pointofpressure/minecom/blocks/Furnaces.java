@@ -19,15 +19,39 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Furnaces: real smelting recipes and fuel burn times, per-position state, lit
- * block states, and progress-bar window properties. Slots: 0 input, 1 fuel, 2 output.
+ * Furnaces (+ blast furnace + smoker): real smelting/blasting/smoking recipes and
+ * fuel burn times, per-position state, lit block states, and progress-bar window
+ * properties. Slots: 0 input, 1 fuel, 2 output. Blast furnace/smoker previously
+ * didn't exist as functional blocks at all in this codebase — only the literal
+ * "furnace" block key was ever recognized anywhere (interact routing, tick, hopper
+ * push/pull, comparator signal). Real vanilla's blasting/smoking recipe JSON already
+ * bakes in the correct halved cookingtime per recipe (confirmed via Recipes.java),
+ * so getting them working is just recognizing the block types and picking the right
+ * recipe map — no separate "2x speed" multiplier needed anywhere.
  */
 public final class Furnaces {
     private Furnaces() {}
 
+    /** "furnace" | "blast_furnace" | "smoker" — which recipe map/UI/block-state to use. */
+    private static InventoryType invTypeFor(String kind) {
+        return switch (kind) {
+            case "blast_furnace" -> InventoryType.BLAST_FURNACE;
+            case "smoker" -> InventoryType.SMOKER;
+            default -> InventoryType.FURNACE;
+        };
+    }
+
+    private static String titleFor(String kind) {
+        return switch (kind) {
+            case "blast_furnace" -> "Blast Furnace";
+            case "smoker" -> "Smoker";
+            default -> "Furnace";
+        };
+    }
+
     public static final class FurnaceInventory extends Inventory {
-        FurnaceInventory() {
-            super(InventoryType.FURNACE, Component.text("Furnace"));
+        FurnaceInventory(String kind) {
+            super(invTypeFor(kind), Component.text(titleFor(kind)));
         }
 
         void property(InventoryProperty property, int value) {
@@ -37,7 +61,8 @@ public final class Furnaces {
 
     /** Furnace state; fields public for persistence. */
     public static final class State {
-        public final FurnaceInventory inv = new FurnaceInventory();
+        public final String kind;
+        public final FurnaceInventory inv;
         public int burnTicks;
         public int burnTotal = 1;
         public int cookTicks;
@@ -45,6 +70,21 @@ public final class Furnaces {
         public Instance instance;
         public Point pos;
         boolean lit;
+
+        public State() { this("furnace"); }
+
+        public State(String kind) {
+            this.kind = kind;
+            this.inv = new FurnaceInventory(kind);
+        }
+
+        private Recipes.Smelt recipeFor(Material input) {
+            return switch (kind) {
+                case "blast_furnace" -> Recipes.blast(input);
+                case "smoker" -> Recipes.smoke(input);
+                default -> Recipes.smelt(input);
+            };
+        }
     }
 
     /** Keyed by "x,y,z"; exposed for persistence. */
@@ -72,7 +112,7 @@ public final class Furnaces {
     }
 
     static void open(Player player, Instance instance, Point pos, Block block) {
-        State state = FURNACES.computeIfAbsent(Containers.posKey(pos), k -> new State());
+        State state = FURNACES.computeIfAbsent(Containers.posKey(pos), k -> new State(block.key().value()));
         state.instance = instance;
         state.pos = pos;
         player.openInventory(state.inv);
@@ -93,7 +133,7 @@ public final class Furnaces {
         ItemStack input = s.inv.getItemStack(0);
         ItemStack fuel = s.inv.getItemStack(1);
         ItemStack output = s.inv.getItemStack(2);
-        Recipes.Smelt smelt = input.isAir() ? null : Recipes.smelt(input.material());
+        Recipes.Smelt smelt = input.isAir() ? null : s.recipeFor(input.material());
         boolean outputFits = smelt != null && (output.isAir()
                 || (output.material() == smelt.result().material()
                     && output.amount() + smelt.result().amount() <= output.material().maxStackSize()));
@@ -124,7 +164,7 @@ public final class Furnaces {
         if (lit != s.lit && s.instance != null) {
             s.lit = lit;
             Block current = s.instance.getBlock(s.pos);
-            if (current.key().value().equals("furnace")) {
+            if (current.key().value().equals(s.kind)) {
                 s.instance.setBlock(s.pos, current.withProperty("lit", lit ? "true" : "false"));
             }
         }
