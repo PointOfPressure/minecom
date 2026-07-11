@@ -702,6 +702,9 @@ public final class Redstone {
             return dev.pointofpressure.minecom.blocks.DecoratedPot.comparatorOutput(pos);
         } else if (key.equals("chiseled_bookshelf")) {
             return dev.pointofpressure.minecom.blocks.ChiseledBookshelf.comparatorOutput(pos);
+        } else if (key.equals("end_portal_frame")) {
+            // EndPortalFrameBlock.getAnalogOutputSignal: HAS_EYE ? 15 : 0, nothing fancier.
+            return "true".equals(block.getProperty("eye")) ? 15 : 0;
         } else {
             return -1;
         }

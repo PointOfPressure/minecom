@@ -124,6 +124,7 @@ public final class PlayTest {
         scenario("enchant: fire aspect ignites the target for damage over time", PlayTest::scenarioFireAspect);
         scenario("breeding: two fed cows make a calf", PlayTest::scenarioBreeding);
         scenario("combat: falling crit 1.5x", PlayTest::scenarioCrit);
+        scenario("saturation fast regen: full food + saturation heals every 10 ticks, not just the 80-tick path", PlayTest::scenarioSaturationFastRegen);
         scenario("leaf decay after logging", PlayTest::scenarioLeafDecay);
         scenario("potions: drink + effects + combat modifiers", PlayTest::scenarioPotions);
         scenario("brewing: wart -> awkward -> swiftness", PlayTest::scenarioBrewing);
@@ -149,6 +150,7 @@ public final class PlayTest {
         scenario("village: food economy gates breeding — tossed bread is picked up, eaten, and digested by breeding; farmers harvest and share", PlayTest::scenarioVillagerFood);
         scenario("raid: three escalating waves, clearing each advances, clearing all wins", PlayTest::scenarioRaid);
         scenario("stronghold: portal room builds, 12 eyes light the end_portal", PlayTest::scenarioStronghold);
+        scenario("end portal frame comparator: signal 15 once it has its eye, 0 otherwise", PlayTest::scenarioEndPortalFrameComparator);
         scenario("end: chorus plant grows a branching stem on end_stone", PlayTest::scenarioChorus);
         scenario("end: gateway builds on the ring and teleports a standing player", PlayTest::scenarioEndGateway);
         scenario("minecart: powered rail launches a cart down the track", PlayTest::scenarioMinecart);
@@ -1500,6 +1502,27 @@ public final class PlayTest {
         for (int[] c : core) if (!world.getBlock(c[0], c[1], c[2]).compare(Block.END_PORTAL)) allLit = false;
         check("stronghold: portal activates once all 12 eyes are placed", allLit);
         clearEntitiesExceptPlayer();
+    }
+
+    /** EndPortalFrameBlock.getAnalogOutputSignal: HAS_EYE ? 15 : 0, tested in isolation from the stronghold. */
+    private static void scenarioEndPortalFrameComparator() {
+        int z = 145;
+        world.setBlock(50, Y + 1, z, Block.END_PORTAL_FRAME);
+        rs(51, Y + 1, z, Block.COMPARATOR.withProperty("facing", "west"));
+        rs(52, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(51, Y + 1, z));
+        check("an eyeless end portal frame gives no signal (lamp stays dark)",
+                !"true".equals(prop(52, Y + 1, z, "lit")));
+
+        world.setBlock(50, Y + 1, z, world.getBlock(50, Y + 1, z).withProperty("eye", "true"));
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(50, Y + 1, z));
+        check("an end portal frame with its eye lights the lamp (signal 15)",
+                waitFor(() -> "true".equals(prop(52, Y + 1, z, "lit")), 2000));
+
+        rs(51, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+        world.setBlock(50, Y + 1, z, Block.AIR);
     }
 
     /** Chorus plant: base stem on end_stone, recursive branches grow above it. */
@@ -3508,6 +3531,35 @@ public final class PlayTest {
         check("falling fist crit deals 1.5 (got " + dealt + ")", Math.abs(dealt - 1.5f) < 0.01);
         zombie.remove();
         clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * FoodData.tick: two mutually-exclusive natural-regen paths. At full food (20) with
+     * spare saturation, healing fires every 10 ticks (spending up to 6 saturation via
+     * exhaustion for up to 1 HP) — much faster than the general food>=18 path, which only
+     * fires every 80 ticks for a flat 1 HP. A short window should show the fast path
+     * healing while the slow-path-only case (food=18, no saturation) stays untouched.
+     */
+    private static void scenarioSaturationFastRegen() {
+        resetPlayer();
+        player.setHealth(10f);
+        player.setFood(20);
+        player.setFoodSaturation(5f);
+        tick(20);
+        float healthWithSaturation = player.getHealth();
+        check("full food + spare saturation heals via the fast 10-tick path within 20 ticks (health "
+                + healthWithSaturation + ")", healthWithSaturation > 10f);
+
+        resetPlayer();
+        player.setHealth(10f);
+        player.setFood(18);
+        player.setFoodSaturation(0f);
+        tick(20);
+        float healthWithoutSaturation = player.getHealth();
+        check("food>=18 with no saturation does NOT heal yet in the same short window (slow path needs 80 ticks, health "
+                + healthWithoutSaturation + ")", healthWithoutSaturation == 10f);
+
+        resetPlayer();
     }
 
     private static void scenarioLeafDecay() {

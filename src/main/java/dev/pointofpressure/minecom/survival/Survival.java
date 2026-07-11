@@ -108,7 +108,23 @@ public final class Survival {
                 p.setFood(p.getFood() + 1);
             }
         }
-        if (p.getFood() >= 18 && p.getHealth() < maxHealth) {
+        // FoodData.tick: two mutually-exclusive natural-regen paths sharing one counter —
+        // at full food (20) with spare saturation, healing is MUCH faster (every 10 ticks,
+        // spending up to 6 saturation for up to 1 HP) than the general food>=18 path (every
+        // 80 ticks, flat 1 HP for 6 exhaustion). Previously only the slow path existed, so
+        // eating well never sped up healing the way it does in real vanilla.
+        if (p.getFoodSaturation() > 0 && p.getFood() >= 20 && p.getHealth() < maxHealth) {
+            if (++s.regenTicks >= 10) {
+                s.regenTicks = 0;
+                // FoodData.tick's fast path never subtracts saturation directly — it only
+                // adds exhaustion, which the block above (fired on a LATER tick once
+                // exhaustion clears 4.0) converts into the actual saturation loss. Spending
+                // up to 6.0 here naturally drains across several of those later ticks.
+                float saturationSpent = Math.min(p.getFoodSaturation(), 6f);
+                p.setHealth(Math.min(maxHealth, p.getHealth() + saturationSpent / 6f));
+                s.exhaustion += saturationSpent;
+            }
+        } else if (p.getFood() >= 18 && p.getHealth() < maxHealth) {
             if (++s.regenTicks >= 80) {
                 s.regenTicks = 0;
                 p.setHealth(Math.min(maxHealth, p.getHealth() + 1));
