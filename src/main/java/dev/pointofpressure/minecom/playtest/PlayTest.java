@@ -182,6 +182,7 @@ public final class PlayTest {
         scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
         scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
+        scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -591,6 +592,39 @@ public final class PlayTest {
         check("attacking an already-empty frame breaks it and drops the item_frame item",
                 frameItemDropped && !world.getEntities().contains(frame));
 
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * ItemFrame.getAnalogOutput: a comparator can read an item frame ENTITY sitting in its
+     * input cell the same way it reads a block container — 0 empty, otherwise rotation%8+1.
+     */
+    private static void scenarioItemFrameComparator() {
+        clearEntitiesExceptPlayer();
+        BlockVec support = new BlockVec(70, Y + 1, 70);
+        world.setBlock(support, Block.STONE);
+        useItemOnBlock(ItemStack.of(Material.ITEM_FRAME), support, BlockFace.NORTH);
+        tick(2);
+        net.minestom.server.entity.Entity frame = world.getEntities().stream()
+                .filter(en -> en.getEntityType() == EntityType.ITEM_FRAME).findFirst().orElse(null);
+        var meta = (net.minestom.server.entity.metadata.other.ItemFrameMeta) frame.getEntityMeta();
+
+        rs(70, Y + 1, 68, Block.COMPARATOR.withProperty("facing", "south"));
+        rs(70, Y + 1, 67, Block.REDSTONE_LAMP);
+        tick(2);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(70, Y + 1, 68));
+        check("a comparator reading an empty item frame stays dark",
+                !"true".equals(prop(70, Y + 1, 67, "lit")));
+
+        meta.setItem(ItemStack.of(Material.DIAMOND));
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(70, Y + 1, 69));
+        check("a comparator reading a filled item frame lights the lamp",
+                waitFor(() -> "true".equals(prop(70, Y + 1, 67, "lit")), 3000));
+
+        rs(70, Y + 1, 68, Block.AIR);
+        rs(70, Y + 1, 67, Block.AIR);
+        world.setBlock(support, Block.AIR);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

@@ -664,8 +664,11 @@ public final class Redstone {
         Point rearPos = pos.add(facing);
         Block rear = instance.getBlock(rearPos);
         int rearSignal = containerSignal(rearPos, rear);
-        if (rearSignal < 0) rearSignal = Math.max(emitted(rear, rearPos, facing.mul(-1)),
-                isSolid(rear) && blockPowered(rearPos) ? 15 : 0);
+        if (rearSignal < 0) {
+            Integer frameSignal = itemFrameSignal(rearPos);
+            rearSignal = frameSignal != null ? frameSignal : Math.max(emitted(rear, rearPos, facing.mul(-1)),
+                    isSolid(rear) && blockPowered(rearPos) ? 15 : 0);
+        }
 
         int side = 0;
         for (int[] h : HORIZ) {
@@ -681,6 +684,24 @@ public final class Redstone {
         }
         boolean subtract = "subtract".equals(comparator.getProperty("mode"));
         return subtract ? Math.max(0, rearSignal - side) : (rearSignal >= side ? rearSignal : 0);
+    }
+
+    /**
+     * ItemFrame.getAnalogOutput (decompile-verified): a comparator can read an item frame
+     * entity sitting in its input cell the same way it reads a container — 0 empty, otherwise
+     * rotation%8+1 — even though the frame isn't a block at all. Returns null if no item frame
+     * occupies that exact cell, so the caller can fall through to normal block-based reading.
+     */
+    private static Integer itemFrameSignal(Point pos) {
+        for (Entity e : instance.getEntities()) {
+            EntityType t = e.getEntityType();
+            if (t != EntityType.ITEM_FRAME && t != EntityType.GLOW_ITEM_FRAME) continue;
+            Point p = e.getPosition();
+            if (p.blockX() != pos.blockX() || p.blockY() != pos.blockY() || p.blockZ() != pos.blockZ()) continue;
+            var meta = (net.minestom.server.entity.metadata.other.ItemFrameMeta) e.getEntityMeta();
+            return meta.getItem().isAir() ? 0 : meta.getRotation().ordinal() % 8 + 1;
+        }
+        return null;
     }
 
     /** Vanilla container fullness signal, or -1 if the block isn't a tracked container. */
