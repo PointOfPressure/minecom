@@ -191,6 +191,7 @@ public final class PlayTest {
         scenario("shulker: stationary, fires a bullet that damages and levitates the target", PlayTest::scenarioShulker);
         scenario("wither: 300 HP flying boss fires wither skulls that damage the target", PlayTest::scenarioWither);
         scenario("cave spider: 12 HP (not 16), same AI as a regular spider, bite poisons on Normal/Hard", PlayTest::scenarioCaveSpider);
+        scenario("endermite: plain melee AI, real stats", PlayTest::scenarioEndermite);
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
         scenario("snow golem: fragile ranged defender, snowballs deal real damage only to blazes", PlayTest::scenarioSnowGolem);
         scenario("boat: floats up to the water surface", PlayTest::scenarioBoat);
@@ -1345,6 +1346,32 @@ public final class PlayTest {
                             net.minestom.server.potion.PotionEffect.POISON) > 0, 2000));
         }
         if (spider != null) spider.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Endermite: decompile-verified as real vanilla's plain Monster shape — no daylight/leap
+     * quirks, just melee/stroll/look goals and hurt-by/nearest-player targeting. Not tested
+     * here: the real 2400-tick (120s) despawn timer — a single already-proven scheduled-task
+     * one-liner (identical to the existing wandering trader's own despawn), not worth a real
+     * 2-minute wait in this suite just to re-prove a pattern already trusted elsewhere.
+     */
+    private static void scenarioEndermite() {
+        clearEntitiesExceptPlayer();
+        var mite = Mobs.spawn("endermite", world, new Pos(2.5, Y + 1, 0.5));
+        check("endermite spawns with real vanilla stats (8 HP, 2 attack damage)",
+                mite instanceof net.minestom.server.entity.LivingEntity le
+                        && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 8.0
+                        && mite.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 2.0);
+
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        player.setHealth(20f);
+        float healthBefore = player.getHealth();
+        boolean hit = waitFor(() -> player.getHealth() < healthBefore, 15000);
+        check("an endermite attacks a nearby player unprompted (plain melee AI, day or night)", hit);
+
+        if (mite != null) mite.remove();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

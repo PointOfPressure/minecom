@@ -139,6 +139,7 @@ public final class Mobs {
             case "zombie" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.zombie(instance, pos);
             case "spider" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.spider(instance, pos);
             case "cave_spider" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.caveSpider(instance, pos);
+            case "endermite" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.endermite(instance, pos);
             case "skeleton" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.skeleton(instance, pos);
             case "creeper" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.creeper(instance, pos);
             case "husk" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.husk(instance, pos);

@@ -223,6 +223,30 @@ public final class VanillaMobs {
         return mob;
     }
 
+    /**
+     * Endermite: registerGoals is real vanilla's plain Monster shape (melee 2, water-avoiding
+     * stroll 3, look-at-player 7, random-look 8; targets hurt-by(alert others) 1, nearest-player
+     * 2 — decompile-verified, no daylight/leap quirks like the spiders above). The one real
+     * mechanic beyond stock melee AI is MAX_LIFE=2400 ticks (120s): real vanilla only exempts
+     * this despawn if isPersistenceRequired() (a name tag), which this project doesn't model
+     * (see AUDIT.md's "no name tags" note) — so it's unconditional here, matching the
+     * wandering trader's own unconditional despawn-timer (further down this file).
+     */
+    public static EntityCreature endermite(Instance instance, Pos pos) {
+        EntityCreature mob = new EntityCreature(EntityType.ENDERMITE);
+        VBrain brain = brain(mob, 0.25, 35, 2, 8, 0);
+        brain.addGoal(2, new Goals.MeleeAttack(brain, 1.0, false));
+        brain.addGoal(3, new Goals.WaterAvoidingRandomStroll(brain, 1.0));
+        brain.addGoal(7, new Goals.LookAtPlayer(brain, 8));
+        brain.addGoal(8, new Goals.RandomLookAround(brain));
+        brain.addTargetGoal(1, new Goals.HurtByTarget(brain, true));
+        brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true));
+        mob.setInstance(instance, pos);
+        mob.scheduler().buildTask(() -> { if (!mob.isRemoved()) mob.remove(); })
+                .delay(TaskSchedule.tick(2400)).schedule();
+        return mob;
+    }
+
     /** Creeper: swell 2, melee-approach 4, stroll 5; swell counter explodes at 30 (radius 3). */
     public static EntityCreature creeper(Instance instance, Pos pos) {
         EntityCreature mob = new EntityCreature(EntityType.CREEPER);

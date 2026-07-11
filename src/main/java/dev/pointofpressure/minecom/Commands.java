@@ -161,7 +161,7 @@ public final class Commands {
     public static final class Summon extends Command {
         public Summon(Instance instance) {
             super("summon");
-            var kind = ArgumentType.Word("mob").from("zombie", "spider", "cave_spider", "skeleton", "creeper",
+            var kind = ArgumentType.Word("mob").from("zombie", "spider", "cave_spider", "endermite", "skeleton", "creeper",
                     "cow", "pig", "sheep", "chicken", "zombified_piglin", "magma_cube", "blaze");
             addSyntax((sender, context) -> {
                 if (sender instanceof Player player) {
