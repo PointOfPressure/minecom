@@ -162,7 +162,7 @@ public final class Commands {
         public Summon(Instance instance) {
             super("summon");
             var kind = ArgumentType.Word("mob").from("zombie", "spider", "cave_spider", "endermite", "skeleton", "creeper",
-                    "cow", "pig", "sheep", "chicken", "zombified_piglin", "magma_cube", "blaze");
+                    "cow", "pig", "sheep", "chicken", "zombified_piglin", "magma_cube", "blaze", "illusioner", "piglin_brute");
             addSyntax((sender, context) -> {
                 if (sender instanceof Player player) {
                     dev.pointofpressure.minecom.mobs.Mobs.spawn(context.get(kind), instance,

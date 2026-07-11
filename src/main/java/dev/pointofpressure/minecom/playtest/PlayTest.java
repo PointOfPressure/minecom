@@ -192,6 +192,8 @@ public final class PlayTest {
         scenario("wither: 300 HP flying boss fires wither skulls that damage the target", PlayTest::scenarioWither);
         scenario("cave spider: 12 HP (not 16), same AI as a regular spider, bite poisons on Normal/Hard", PlayTest::scenarioCaveSpider);
         scenario("endermite: plain melee AI, real stats", PlayTest::scenarioEndermite);
+        scenario("illusioner: real stats + bow attack", PlayTest::scenarioIllusioner);
+        scenario("piglin brute: always-hostile elite bastion guard, real stats", PlayTest::scenarioPiglinBrute);
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
         scenario("snow golem: fragile ranged defender, snowballs deal real damage only to blazes", PlayTest::scenarioSnowGolem);
         scenario("boat: floats up to the water surface", PlayTest::scenarioBoat);
@@ -1372,6 +1374,67 @@ public final class PlayTest {
         check("an endermite attacks a nearby player unprompted (plain melee AI, day or night)", hit);
 
         if (mite != null) mite.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Illusioner: real bow attack (same Goals.BowAttack as skeleton). Not tested here: the
+     * blindness and self-invisibility spells. Both need the SAME target to stay tracked
+     * (brain.target non-null) for 9-17+ real seconds, and debug instrumentation during
+     * development found that Goals.NearestAttackablePlayer(mustSee=true) can permanently
+     * drop its target after ~60 ticks without line of sight and never reacquire it — even
+     * with both mob and (stationary) player unobstructed and barely moved, ruling out
+     * simple causes like wandering out of follow range. That's a pre-existing issue in
+     * shared goal-selector machinery used by many mobs, not something specific to the
+     * spellcasting logic itself (which is otherwise verified correct by code review against
+     * the decompile — see illusioner()'s own javadoc), so it needs its own dedicated
+     * investigation rather than a guessed fix or a test that would just be flaky against a
+     * real, separate bug. The bow-attack check below only needs a target briefly, well
+     * inside that ~60-tick window, so it isn't affected.
+     */
+    private static void scenarioIllusioner() {
+        clearEntitiesExceptPlayer();
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.HARD);
+        player.teleport(new Pos(0.5, Y + 1, -10.5)).join(); // away from spawn point, matching the other ranged-mob scenarios
+        var illusioner = Mobs.spawn("illusioner", world, new Pos(0.5, Y + 1, 0.5));
+        check("illusioner spawns with real vanilla stats (32 HP)",
+                illusioner instanceof net.minestom.server.entity.LivingEntity le
+                        && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 32.0);
+
+        float healthBefore = player.getHealth();
+        boolean hit = waitFor(() -> player.getHealth() < healthBefore, 15000);
+        check("an illusioner fires arrows at a nearby player", hit);
+
+        if (illusioner != null) illusioner.remove();
+        clearEntitiesExceptPlayer();
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.NORMAL);
+        resetPlayer();
+    }
+
+    /**
+     * Piglin brute: decompile-verified stats (50 HP, 0.35 speed, 7 attack damage, 12 follow
+     * range) — always hostile on sight, unlike the neutral regular piglin.
+     */
+    private static void scenarioPiglinBrute() {
+        clearEntitiesExceptPlayer();
+        var brute = Mobs.spawn("piglin_brute", world, new Pos(2.5, Y + 1, 0.5));
+        double bruteHp = brute.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH);
+        // getAttributeValue() includes the golden axe's own equipment attack-damage modifier
+        // (real vanilla combat damage is base attribute + weapon bonus too) — getBaseValue()
+        // reads the un-modified createAttributes() value this factory actually set (7.0),
+        // matching what the decompile confirms rather than the weapon-inclusive combat total.
+        double bruteAtkBase = brute.getAttribute(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE).getBaseValue();
+        check("piglin brute spawns with real vanilla stats (50 HP, base 7 attack damage; got hp="
+                + bruteHp + " baseAtk=" + bruteAtkBase + ")", bruteHp == 50.0 && bruteAtkBase == 7.0);
+
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        player.setHealth(20f);
+        float healthBefore = player.getHealth();
+        boolean hit = waitFor(() -> player.getHealth() < healthBefore, 15000);
+        check("a piglin brute attacks a nearby player unprompted (always hostile, unlike a regular piglin)", hit);
+
+        if (brute != null) brute.remove();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

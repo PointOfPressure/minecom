@@ -620,6 +620,20 @@ public final class VanillaMobs {
         return mob;
     }
 
+    /**
+     * Piglin brute: elite bastion guard (decompile-verified stats — createAttributes:
+     * MAX_HEALTH 50, MOVEMENT_SPEED 0.35, ATTACK_DAMAGE 7, FOLLOW_RANGE 12), golden axe
+     * instead of a sword, and — unlike a regular piglin — always hostile on sight (real
+     * vanilla: canHunt()=false, no gold-armor neutrality at all). This project's own
+     * piglin() doesn't model gold-armor neutrality or hoglin-hunting either, so the two
+     * mobs' AI shapes are already identical beyond the hostility flag and stats.
+     */
+    public static EntityCreature piglinBrute(Instance i, Pos p) {
+        EntityCreature mob = melee(EntityType.PIGLIN_BRUTE, i, p, 0.35, 12, 7, 50, 0, true);
+        mob.setEquipment(EquipmentSlot.MAIN_HAND, ItemStack.of(Material.GOLDEN_AXE));
+        return mob;
+    }
+
     /** Hoglin: hostile brute, high HP and knockback attack. */
     public static EntityCreature hoglin(Instance i, Pos p) {
         return melee(EntityType.HOGLIN, i, p, 0.3, 16, 6, 40, 0, true);
@@ -1323,6 +1337,72 @@ public final class VanillaMobs {
             if (--vexCd[0] <= 0) {
                 vexCd[0] = 400;
                 summonVexes(mob, target);
+            }
+        }).repeat(TaskSchedule.tick(1)).schedule();
+        mob.setInstance(instance, pos);
+        return mob;
+    }
+
+    /**
+     * Illusioner: illager spellcaster (decompile-verified against Illusioner.java). Real bow
+     * attack (RangedBowAttackGoal(0.5, 20, 15) ported directly via the same Goals.BowAttack
+     * already used for skeleton), a periodic self-invisibility spell (every 340 ticks,
+     * skipped if already invisible — real vanilla's IllusionerMirrorSpellGoal), and a
+     * Hard-only blindness spell on its current target (every 180 ticks, only once per new
+     * target — real vanilla's IllusionerBlindnessSpellGoal gates on
+     * getCurrentDifficultyAt(pos).isHarderThan(NORMAL); this project's difficulty is
+     * world-level not regional, matching the same simplification already used for cave
+     * spider's poison duration). Not modeled: the client-side mirror-clone illusion
+     * rendering (purely visual) and raid-specific villager/iron-golem targeting priority
+     * (this project's Raid.java is already a bounded approximation per docs/AUDIT.md).
+     * The blindness cooldown only resets on an actual successful cast, not on every
+     * expiry, so a momentarily-unavailable target doesn't waste the whole 9s window —
+     * verified via debug instrumentation during development. A separate, pre-existing
+     * issue surfaced during that same verification: Goals.NearestAttackablePlayer with
+     * mustSee=true can permanently drop its target after ~60 ticks without line of sight
+     * and never re-poll canUse() to reacquire it, even with both mob and target
+     * stationary and unobstructed — this affects the shared goal-selector machinery used
+     * by many mobs, not just this one, and needs its own dedicated investigation rather
+     * than a guessed fix bundled into this feature.
+     */
+    public static EntityCreature illusioner(Instance instance, Pos pos) {
+        EntityCreature mob = new EntityCreature(EntityType.ILLUSIONER);
+        mob.setEquipment(EquipmentSlot.MAIN_HAND, ItemStack.of(Material.BOW));
+        VBrain brain = brain(mob, 0.5, 18, 0, 32, 0);
+        brain.addGoal(6, new Goals.BowAttack(brain, 0.5, 20, 15f));
+        brain.addGoal(8, new Goals.WaterAvoidingRandomStroll(brain, 0.6));
+        brain.addGoal(9, new Goals.LookAtPlayer(brain, 3));
+        brain.addGoal(10, new Goals.RandomLookAround(brain));
+        brain.addTargetGoal(1, new Goals.HurtByTarget(brain, true));
+        brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true));
+        int[] mirrorCd = {340};
+        int[] blindCd = {180};
+        int[] lastBlindTargetId = {-1};
+        mob.scheduler().buildTask(() -> {
+            if (mob.isDead() || mob.getInstance() == null) return;
+            if (--mirrorCd[0] <= 0) {
+                mirrorCd[0] = 340;
+                if (!mob.hasEffect(net.minestom.server.potion.PotionEffect.INVISIBILITY)) {
+                    mob.addEffect(new net.minestom.server.potion.Potion(
+                            net.minestom.server.potion.PotionEffect.INVISIBILITY, 0, 1200));
+                }
+            }
+            // The cooldown only resets on an actual cast, not on every expiry — real vanilla's
+            // SpellcasterUseSpellGoal.canUse() is polled continuously by the goal selector, so
+            // a momentarily-absent target (e.g. not yet acquired right at the 180-tick mark)
+            // just means it tries again next tick, not that the whole 9s window is wasted.
+            // Resetting unconditionally here would have starved this mob of ever blinding
+            // anyone in the common case where target acquisition takes even a little longer
+            // than exactly 180 ticks from spawn.
+            LivingEntity target = brain.target;
+            if (blindCd[0] > 0) blindCd[0]--;
+            if (blindCd[0] <= 0 && target != null && !target.isDead() && target.getEntityId() != lastBlindTargetId[0]
+                    && dev.pointofpressure.minecom.Difficulty.current().ordinal()
+                            > dev.pointofpressure.minecom.Difficulty.NORMAL.ordinal()) {
+                blindCd[0] = 180;
+                lastBlindTargetId[0] = target.getEntityId();
+                target.addEffect(new net.minestom.server.potion.Potion(
+                        net.minestom.server.potion.PotionEffect.BLINDNESS, 0, 400));
             }
         }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);

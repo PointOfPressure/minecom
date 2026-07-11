@@ -150,6 +150,7 @@ public final class Mobs {
             case "slime" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.slime(instance, pos);
             case "enderman" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.enderman(instance, pos);
             case "piglin" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.piglin(instance, pos);
+            case "piglin_brute" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.piglinBrute(instance, pos);
             case "hoglin" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.hoglin(instance, pos);
             case "strider" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.strider(instance, pos);
             case "breeze" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.breeze(instance, pos);
@@ -169,6 +170,7 @@ public final class Mobs {
             case "pillager" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.pillager(instance, pos);
             case "vindicator" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.vindicator(instance, pos);
             case "evoker" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.evoker(instance, pos);
+            case "illusioner" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.illusioner(instance, pos);
             case "ravager" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.ravager(instance, pos);
             case "cow", "pig", "sheep", "chicken", "mooshroom", "rabbit", "goat", "horse",
                  "donkey", "llama", "turtle", "panda", "polar_bear", "armadillo", "camel", "fox", "frog",
