@@ -1248,7 +1248,9 @@ public final class VanillaMobs {
             if (h < lastHealth[0]) endermanTeleport(mob);
             lastHealth[0] = mob.getHealth();
             Instance in = mob.getInstance();
-            boolean wet = in.getBlock(mob.getPosition()).compare(Block.WATER)
+            Pos selfPos = mob.getPosition();
+            if (!in.isChunkLoaded(selfPos.blockX() >> 4, selfPos.blockZ() >> 4)) return;
+            boolean wet = in.getBlock(selfPos).compare(Block.WATER)
                     || dev.pointofpressure.minecom.survival.WeatherCycle.isRaining(in);
             if (waterDamageCooldown[0] > 0) waterDamageCooldown[0]--;
             if (wet && waterDamageCooldown[0] <= 0) {
@@ -1258,28 +1260,32 @@ public final class VanillaMobs {
             var rng = java.util.concurrent.ThreadLocalRandom.current();
             var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) mob.getEntityMeta();
             Block carried = meta.getCarriedBlock();
-            Pos p = mob.getPosition();
+            Pos p = selfPos;
             if (carried == null || carried.isAir()) {
                 if (rng.nextInt(20) == 0) {
                     int tx = (int) Math.floor(p.x() - 2 + rng.nextDouble() * 4);
                     int ty = (int) Math.floor(p.y() + rng.nextDouble() * 3);
                     int tz = (int) Math.floor(p.z() - 2 + rng.nextDouble() * 4);
-                    Block b = in.getBlock(tx, ty, tz);
-                    if (!b.isAir() && dev.pointofpressure.minecom.data.VanillaData
-                            .blockTag("enderman_holdable").contains(b.key().asString())) {
-                        in.setBlock(tx, ty, tz, Block.AIR);
-                        meta.setCarriedBlock(b);
+                    if (in.isChunkLoaded(tx >> 4, tz >> 4)) {
+                        Block b = in.getBlock(tx, ty, tz);
+                        if (!b.isAir() && dev.pointofpressure.minecom.data.VanillaData
+                                .blockTag("enderman_holdable").contains(b.key().asString())) {
+                            in.setBlock(tx, ty, tz, Block.AIR);
+                            meta.setCarriedBlock(b);
+                        }
                     }
                 }
             } else if (rng.nextInt(2000) == 0) {
                 int tx = (int) Math.floor(p.x() - 1 + rng.nextDouble() * 2);
                 int ty = (int) Math.floor(p.y() + rng.nextDouble() * 2);
                 int tz = (int) Math.floor(p.z() - 1 + rng.nextDouble() * 2);
-                Block target = in.getBlock(tx, ty, tz);
-                Block below = in.getBlock(tx, ty - 1, tz);
-                if (target.isAir() && !below.isAir() && below.isSolid() && !below.key().value().equals("bedrock")) {
-                    in.setBlock(tx, ty, tz, carried);
-                    meta.setCarriedBlock(Block.AIR);
+                if (in.isChunkLoaded(tx >> 4, tz >> 4)) {
+                    Block target = in.getBlock(tx, ty, tz);
+                    Block below = in.getBlock(tx, ty - 1, tz);
+                    if (target.isAir() && !below.isAir() && below.isSolid() && !below.key().value().equals("bedrock")) {
+                        in.setBlock(tx, ty, tz, carried);
+                        meta.setCarriedBlock(Block.AIR);
+                    }
                 }
             }
         }).repeat(TaskSchedule.tick(1)).schedule();
@@ -1303,6 +1309,10 @@ public final class VanillaMobs {
         for (int i = 0; i < 16; i++) {
             int tx = base.blockX() + ThreadLocalRandom.current().nextInt(65) - 32;
             int tz = base.blockZ() + ThreadLocalRandom.current().nextInt(65) - 32;
+            // a ±32 candidate can land past the loaded-chunk radius around a far-wandered
+            // enderman; Instance.getBlock throws on an unloaded chunk instead of returning
+            // air, so this must be checked up front rather than caught mid-scan.
+            if (!in.isChunkLoaded(tx >> 4, tz >> 4)) continue;
             for (int y = Math.min(base.blockY() + 16, 318); y > Math.max(base.blockY() - 24, -63); y--) {
                 if (!in.getBlock(tx, y, tz).isSolid()) continue;
                 if (in.getBlock(tx, y, tz).isLiquid()) break;

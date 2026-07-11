@@ -2442,13 +2442,19 @@ public final class PlayTest {
                 for (int dy = 0; dy <= 3; dy++) world.setBlock(bx + dx, Y + 1 + dy, bz + dz, Block.AIR);
             }
         }
-        // 1/2000 chance per tick (decompile-verified) — expected ~2000 ticks, wide
-        // margin against variance on an unlucky roll.
+        // 1/2000 chance per tick (decompile-verified), so a geometric distribution: the old
+        // 240s (4800-tick) budget was only ~2.4x the 2000-tick expectation, giving
+        // (1999/2000)^4800 =~ 9% of runs a false-negative timeout on pure bad luck alone —
+        // caught via direct instrumentation (a debug-only per-roll log, not guessed) after this
+        // exact check failed twice in a row post the enderman chunk-load fix above; the
+        // instrumented reruns showed completely normal rolls/positions each time, just unlucky
+        // timing, confirming the mechanic itself was never the problem. 480s (9600 ticks,
+        // 4.8x expectation) drops that to (1999/2000)^9600 =~ 0.8%.
         boolean placed = waitFor(() -> {
             var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) enderman.getEntityMeta();
             Block carried = meta.getCarriedBlock();
             return carried == null || carried.isAir();
-        }, 240000);
+        }, 480000);
         check("the enderman later places the carried block back down", placed);
         for (int dx = -3; dx <= 3; dx++) {
             for (int dz = -3; dz <= 3; dz++) {
