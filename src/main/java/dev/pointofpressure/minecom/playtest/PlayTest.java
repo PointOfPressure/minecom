@@ -169,6 +169,7 @@ public final class PlayTest {
         scenario("difficulty: peaceful nullifies mobs and hunger, easy/hard scale damage, hard calls zombie reinforcements", PlayTest::scenarioDifficulty);
         scenario("trial chambers: the spawner runs a full wave trial and ejects rewards, the vault unlocks once per player with a trial key, wind charges burst", PlayTest::scenarioTrialChamber);
         scenario("boat: sneak dismounts the rider, attacking breaks it and drops the item", PlayTest::scenarioBoatBreakAndDismount);
+        scenario("chest boat: sneak-click opens its 27-slot inventory instead of riding, breaking spills contents", PlayTest::scenarioChestBoat);
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
         scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
@@ -3437,6 +3438,54 @@ public final class PlayTest {
         boolean dropped = world.getEntities().stream().anyMatch(e -> e instanceof ItemEntity item
                 && item.getItemStack().material() == Material.OAK_BOAT);
         check("boat: attacking it breaks the boat and drops an oak_boat item", boat.isRemoved() && dropped);
+
+        world.setBlock(wx, Y, wz, Block.AIR);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Chest boats (AbstractChestBoat.interact, decompile-verified): a real 27-slot
+     * Container. Right-clicking empty-handed and not sneaking rides it (same as a
+     * plain boat); sneaking (or when it already has a rider) opens the inventory
+     * instead. Breaking it spills the stored contents. Previously chest boats didn't
+     * exist as a distinct item/entity at all — a chest boat item would fall through
+     * to no-op (not even matched by the plain BOATS map).
+     */
+    private static void scenarioChestBoat() {
+        clearEntitiesExceptPlayer();
+        int wx = 32, wz = 30;
+        world.setBlock(wx, Y, wz, Block.WATER);
+        var boat = dev.pointofpressure.minecom.blocks.Boats.spawn(
+                world, EntityType.OAK_CHEST_BOAT, new Pos(wx + 0.5, Y + 0.9, wz + 0.5));
+        tick(2);
+
+        player.setSneaking(true);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, boat, net.minestom.server.entity.PlayerHand.MAIN, boat.getPosition()));
+        tick(1);
+        boolean openedInv = player.getOpenInventory() instanceof Inventory ci
+                && ci.getInventoryType() == net.minestom.server.inventory.InventoryType.CHEST_3_ROW;
+        check("sneak-clicking a chest boat opens its 27-slot inventory, not a ride", openedInv);
+        if (openedInv) {
+            ((Inventory) player.getOpenInventory()).setItemStack(0, ItemStack.of(Material.DIAMOND, 3));
+        }
+        player.closeInventory();
+        player.setSneaking(false);
+        check("chest boat riding is untouched while sneak-interacting", !boat.getPassengers().contains(player));
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, boat, net.minestom.server.entity.PlayerHand.MAIN, boat.getPosition()));
+        tick(1);
+        check("a non-sneaking click on an empty chest boat seats the player instead",
+                boat.getPassengers().contains(player));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerStartSneakingEvent(player));
+        tick(1);
+
+        EventDispatcher.call(new EntityAttackEvent(player, boat));
+        tick(2);
+        boolean spilled = world.getEntities().stream().anyMatch(e -> e instanceof ItemEntity item
+                && item.getItemStack().material() == Material.DIAMOND);
+        check("breaking a chest boat spills its stored contents", boat.isRemoved() && spilled);
 
         world.setBlock(wx, Y, wz, Block.AIR);
         clearEntitiesExceptPlayer();

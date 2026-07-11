@@ -41,17 +41,38 @@ public final class Boats {
             Map.entry(Material.CHERRY_BOAT, EntityType.CHERRY_BOAT),
             Map.entry(Material.BAMBOO_RAFT, EntityType.BAMBOO_RAFT));
 
-    private static final Set<EntityType> BOAT_TYPES = Set.copyOf(BOATS.values());
+    /** Chest boats: same 9 wood variants, each with a real 27-slot Container
+     *  (AbstractChestBoat implements ContainerEntity, decompile-verified). */
+    private static final Map<Material, EntityType> CHEST_BOATS = Map.ofEntries(
+            Map.entry(Material.OAK_CHEST_BOAT, EntityType.OAK_CHEST_BOAT),
+            Map.entry(Material.BIRCH_CHEST_BOAT, EntityType.BIRCH_CHEST_BOAT),
+            Map.entry(Material.SPRUCE_CHEST_BOAT, EntityType.SPRUCE_CHEST_BOAT),
+            Map.entry(Material.JUNGLE_CHEST_BOAT, EntityType.JUNGLE_CHEST_BOAT),
+            Map.entry(Material.ACACIA_CHEST_BOAT, EntityType.ACACIA_CHEST_BOAT),
+            Map.entry(Material.DARK_OAK_CHEST_BOAT, EntityType.DARK_OAK_CHEST_BOAT),
+            Map.entry(Material.MANGROVE_CHEST_BOAT, EntityType.MANGROVE_CHEST_BOAT),
+            Map.entry(Material.CHERRY_CHEST_BOAT, EntityType.CHERRY_CHEST_BOAT),
+            Map.entry(Material.BAMBOO_CHEST_RAFT, EntityType.BAMBOO_CHEST_RAFT));
+    private static final Set<EntityType> CHEST_BOAT_TYPES = Set.copyOf(CHEST_BOATS.values());
+
+    private static final Set<EntityType> BOAT_TYPES;
     private static final Map<EntityType, Material> BOAT_ITEMS = new HashMap<>();
+    private static final Map<java.util.UUID, net.minestom.server.inventory.Inventory> CHEST_BOAT_INV = new HashMap<>();
     static {
+        java.util.Set<EntityType> all = new java.util.HashSet<>(BOATS.values());
+        all.addAll(CHEST_BOATS.values());
+        BOAT_TYPES = Set.copyOf(all);
         for (var e : BOATS.entrySet()) BOAT_ITEMS.put(e.getValue(), e.getKey());
+        for (var e : CHEST_BOATS.entrySet()) BOAT_ITEMS.put(e.getValue(), e.getKey());
     }
 
     private Boats() {}
 
     public static void register(GlobalEventHandler events) {
         events.addListener(PlayerUseItemEvent.class, event -> {
-            EntityType type = BOATS.get(event.getItemStack().material());
+            Material mat = event.getItemStack().material();
+            EntityType type = BOATS.get(mat);
+            if (type == null) type = CHEST_BOATS.get(mat);
             if (type == null) return;
             Pos where = placement(event.getPlayer().getInstance(),
                     event.getPlayer().getPosition().add(0, event.getPlayer().getEyeHeight(), 0));
@@ -59,17 +80,31 @@ public final class Boats {
         });
 
         events.addListener(PlayerEntityInteractEvent.class, event -> {
-            if (!BOAT_TYPES.contains(event.getTarget().getEntityType())) return;
+            EntityType type = event.getTarget().getEntityType();
+            if (!BOAT_TYPES.contains(type)) return;
+            // AbstractChestBoat.interact (decompile-verified): riding wins UNLESS the
+            // player is sneaking or the boat already has a rider, in which case it opens
+            // the 27-slot container instead — the same "empty-handed mount, sneak to open
+            // the storage" pattern real vanilla uses for horses-with-chests/chest minecarts.
+            if (CHEST_BOAT_TYPES.contains(type)
+                    && (event.getPlayer().isSneaking() || event.getTarget().hasPassenger())) {
+                event.getPlayer().openInventory(chestInventory(event.getTarget()));
+                return;
+            }
             if (!event.getTarget().hasPassenger()) event.getTarget().addPassenger(event.getPlayer());
         });
 
-        // attacking a boat breaks it and drops the matching boat item
+        // attacking a boat breaks it and drops the matching boat item (+ spills a chest boat's contents)
         events.addListener(EntityAttackEvent.class, event -> {
             EntityType type = event.getTarget().getEntityType();
             if (!BOAT_TYPES.contains(type)) return;
             Pos at = event.getTarget().getPosition();
             Instance instance = event.getTarget().getInstance();
             for (Entity passenger : event.getTarget().getPassengers()) event.getTarget().removePassenger(passenger);
+            if (CHEST_BOAT_TYPES.contains(type) && instance != null) {
+                var inv = CHEST_BOAT_INV.remove(event.getTarget().getUuid());
+                if (inv != null) Containers.spill(instance, at, inv);
+            }
             event.getTarget().remove();
             Material item = BOAT_ITEMS.get(type);
             if (item != null && instance != null) {
@@ -87,6 +122,12 @@ public final class Boats {
         Entity boat = new Entity(type);
         boat.setInstance(instance, pos);
         return boat;
+    }
+
+    /** A chest boat's lazily-created 27-slot Container inventory. */
+    private static net.minestom.server.inventory.Inventory chestInventory(Entity boat) {
+        return CHEST_BOAT_INV.computeIfAbsent(boat.getUuid(), id -> new net.minestom.server.inventory.Inventory(
+                net.minestom.server.inventory.InventoryType.CHEST_3_ROW, net.kyori.adventure.text.Component.text("Chest Boat")));
     }
 
     /** Short raycast from the eye: land the boat on the first water (or solid) hit. */
