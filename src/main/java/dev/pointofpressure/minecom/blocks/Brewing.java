@@ -103,11 +103,7 @@ public final class Brewing {
                 stand.fuel--;
                 for (int slot = 0; slot < 3; slot++) {
                     ItemStack bottle = stand.inv.getItemStack(slot);
-                    PotionType result = brewResult(typeOf(bottle), ingredient.material());
-                    if (result != null) {
-                        stand.inv.setItemStack(slot, ItemStack.of(Material.POTION).with(b ->
-                                b.set(DataComponents.POTION_CONTENTS, new PotionContents(result))));
-                    }
+                    stand.inv.setItemStack(slot, brewSlot(bottle, ingredient.material()));
                 }
                 stand.inv.setItemStack(3, ingredient.consume(1));
             }
@@ -124,15 +120,49 @@ public final class Brewing {
 
     private static boolean anyBottleAccepts(Stand stand, Material ingredient) {
         for (int slot = 0; slot < 3; slot++) {
-            if (brewResult(typeOf(stand.inv.getItemStack(slot)), ingredient) != null) return true;
+            ItemStack bottle = stand.inv.getItemStack(slot);
+            if (containerMixResult(bottle.material(), ingredient) != null) return true;
+            if (brewResult(typeOf(bottle), ingredient) != null) return true;
         }
         return false;
     }
 
+    /** A bottle can be a regular/splash/lingering potion — all three carry PotionContents. */
     private static PotionType typeOf(ItemStack bottle) {
-        if (bottle.isAir() || bottle.material() != Material.POTION) return null;
+        if (bottle.isAir()) return null;
+        Material mat = bottle.material();
+        if (mat != Material.POTION && mat != Material.SPLASH_POTION && mat != Material.LINGERING_POTION) return null;
         PotionContents contents = bottle.get(DataComponents.POTION_CONTENTS);
         return contents == null ? null : contents.potion();
+    }
+
+    /**
+     * PotionBrewing's separate "container mix" table (decompile-verified —
+     * PotionBrewing.bootStrap: addContainerRecipe(POTION, GUNPOWDER, SPLASH_POTION),
+     * addContainerRecipe(SPLASH_POTION, DRAGON_BREATH, LINGERING_POTION)): gunpowder/
+     * dragon_breath change the bottle's MATERIAL, keeping whatever PotionType it
+     * already has — a separate mechanism from the type-mix graph (nether_wart,
+     * redstone, ...) above, which never touches the container material at all.
+     */
+    private static Material containerMixResult(Material bottleMat, Material ingredient) {
+        String ing = ingredient.key().value();
+        if (bottleMat == Material.POTION && ing.equals("gunpowder")) return Material.SPLASH_POTION;
+        if (bottleMat == Material.SPLASH_POTION && ing.equals("dragon_breath")) return Material.LINGERING_POTION;
+        return null;
+    }
+
+    /** Apply one brew cycle to a single bottle slot: container mix first, else type mix. */
+    private static ItemStack brewSlot(ItemStack bottle, Material ingredient) {
+        PotionType current = typeOf(bottle);
+        if (current == null) return bottle;
+        Material newContainer = containerMixResult(bottle.material(), ingredient);
+        if (newContainer != null) {
+            return ItemStack.of(newContainer).with(b -> b.set(DataComponents.POTION_CONTENTS, new PotionContents(current)));
+        }
+        PotionType result = brewResult(current, ingredient);
+        if (result == null) return bottle;
+        // preserve the bottle's own material (regular/splash/lingering) through a type mix
+        return ItemStack.of(bottle.material()).with(b -> b.set(DataComponents.POTION_CONTENTS, new PotionContents(result)));
     }
 
     /** The vanilla brewing graph. Returns null when the ingredient does nothing. */

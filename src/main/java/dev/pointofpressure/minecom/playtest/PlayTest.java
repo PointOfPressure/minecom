@@ -4285,6 +4285,28 @@ public final class PlayTest {
                     && contents.potion().key().value().equals("swiftness");
         }, 30000);
         check("sugar brews awkward into swiftness", swiftness);
+
+        // PotionBrewing's separate container-mix table (decompile-verified): gunpowder
+        // POTION->SPLASH_POTION, dragon_breath SPLASH_POTION->LINGERING_POTION, both
+        // preserving whatever potion type the bottle already has (still swiftness here).
+        stand.inv.setItemStack(3, ItemStack.of(Material.GUNPOWDER));
+        boolean splash = waitFor(() -> {
+            ItemStack bottle = stand.inv.getItemStack(0);
+            var contents = bottle.get(DataComponents.POTION_CONTENTS);
+            return bottle.material() == Material.SPLASH_POTION && contents != null
+                    && contents.potion() != null && contents.potion().key().value().equals("swiftness");
+        }, 30000);
+        check("gunpowder converts a potion into a splash potion, keeping its effect", splash);
+
+        stand.inv.setItemStack(3, ItemStack.of(Material.DRAGON_BREATH));
+        boolean lingering = waitFor(() -> {
+            ItemStack bottle = stand.inv.getItemStack(0);
+            var contents = bottle.get(DataComponents.POTION_CONTENTS);
+            return bottle.material() == Material.LINGERING_POTION && contents != null
+                    && contents.potion() != null && contents.potion().key().value().equals("swiftness");
+        }, 30000);
+        check("dragon breath converts a splash potion into a lingering potion, keeping its effect", lingering);
+
         dev.pointofpressure.minecom.blocks.Brewing.STANDS.remove("brewtest");
     }
 
