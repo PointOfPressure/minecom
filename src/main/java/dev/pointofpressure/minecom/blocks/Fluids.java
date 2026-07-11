@@ -248,7 +248,14 @@ public final class Fluids {
 
     // ------------------------------------------------------------------ buckets
 
+    private static final Set<String> CAULDRONS = Set.of("cauldron", "water_cauldron", "lava_cauldron", "powder_snow_cauldron");
+
     private static void bucket(PlayerUseItemOnBlockEvent e) {
+        // AbstractCauldronBlock.useItemOn takes priority over BucketItem's own generic
+        // place-a-source-block fallback (real vanilla: the clicked BLOCK's own interaction
+        // always runs before an item's fallback use) — Cauldrons.java owns this entirely.
+        if (CAULDRONS.contains(e.getInstance().getBlock(e.getPosition()).key().value())) return;
+
         Material held = e.getItemStack().material();
         Player player = e.getPlayer();
         Point clicked = e.getPosition();

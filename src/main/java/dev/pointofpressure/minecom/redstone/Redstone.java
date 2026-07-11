@@ -697,6 +697,11 @@ public final class Redstone {
             if (stand != null) inv = stand.inv;
         } else if (key.equals("composter")) {
             return Integer.parseInt(block.getProperty("level"));
+        } else if (key.equals("water_cauldron") || key.equals("powder_snow_cauldron")) {
+            // LayeredCauldronBlock.getAnalogOutputSignal: the raw 1-3 level, unscaled.
+            return Integer.parseInt(block.getProperty("level"));
+        } else if (key.equals("lava_cauldron")) {
+            return 3; // LavaCauldronBlock.getAnalogOutputSignal: always "full"
         } else if (key.equals("jukebox")) {
             return dev.pointofpressure.minecom.blocks.Jukebox.comparatorOutput(pos, block);
         } else if (key.equals("lectern")) {

@@ -110,6 +110,7 @@ public final class PlayTest {
         scenario("redstone: lever-wire-lamp + decay", PlayTest::scenarioRedstoneBasic);
         scenario("trapped chest: opening/closing directly powers redstone, still comparator-readable for fullness", PlayTest::scenarioTrappedChest);
         scenario("double chest: placing a matching chest alongside merges into one shared 54-slot inventory", PlayTest::scenarioDoubleChest);
+        scenario("cauldron: bucket/bottle fills and empties across water/lava/powder_snow states, lava fizzles under water", PlayTest::scenarioCauldron);
         scenario("redstone: 16th block signal dies", PlayTest::scenarioRedstoneDecay);
         scenario("redstone: torch inversion", PlayTest::scenarioTorch);
         scenario("redstone: repeater delay", PlayTest::scenarioRepeater);
@@ -4025,6 +4026,94 @@ public final class PlayTest {
 
         world.setBlock(posA, Block.AIR);
         world.setBlock(posB, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * CauldronInteractions (decompile-verified): bucket/bottle fills and empties across the four
+     * cauldron block states, a comparator reading the raw water/powder_snow level (1-3, always 3
+     * for lava), and lava/powder-snow pours fizzling under water directly above the cauldron.
+     */
+    private static void scenarioCauldron() {
+        int z = 145;
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(50, Y + 1, z);
+        world.setBlock(pos, Block.CAULDRON);
+
+        useItemOnBlock(ItemStack.of(Material.WATER_BUCKET), pos, BlockFace.TOP);
+        check("water bucket on an empty cauldron fills it to level 3",
+                world.getBlock(pos).key().value().equals("water_cauldron")
+                        && "3".equals(world.getBlock(pos).getProperty("level")));
+        check("the water bucket returns as an empty bucket", player.getItemInMainHand().material() == Material.BUCKET);
+
+        rs(51, Y + 1, z, Block.COMPARATOR.withProperty("facing", "west"));
+        rs(52, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(51, Y + 1, z));
+        check("comparator reads a full water cauldron's raw level (3, not scaled)",
+                waitFor(() -> "true".equals(prop(52, Y + 1, z, "lit")), 3000));
+
+        useItemOnBlock(ItemStack.of(Material.GLASS_BOTTLE), pos, BlockFace.TOP);
+        check("a glass bottle collects a water potion and drops the level to 2",
+                player.getItemInMainHand().material() == Material.POTION
+                        && "2".equals(world.getBlock(pos).getProperty("level")));
+
+        useItemOnBlock(ItemStack.of(Material.BUCKET), pos, BlockFace.TOP);
+        check("an empty bucket refuses a non-full (level 2) water cauldron",
+                player.getItemInMainHand().material() == Material.BUCKET
+                        && world.getBlock(pos).key().value().equals("water_cauldron"));
+
+        useItemOnBlock(potionOf(net.minestom.server.potion.PotionType.WATER), pos, BlockFace.TOP);
+        check("emptying a water bottle back in bumps the level up to 3",
+                "3".equals(world.getBlock(pos).getProperty("level"))
+                        && player.getItemInMainHand().material() == Material.GLASS_BOTTLE);
+
+        useItemOnBlock(ItemStack.of(Material.BUCKET), pos, BlockFace.TOP);
+        check("an empty bucket collects a full (level 3) water cauldron back to plain empty",
+                world.getBlock(pos).key().value().equals("cauldron")
+                        && player.getItemInMainHand().material() == Material.WATER_BUCKET);
+
+        rs(51, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+        world.setBlock(pos, Block.CAULDRON);
+        player.setItemInMainHand(ItemStack.AIR);
+
+        world.setBlock(pos.add(0, 1, 0), Block.WATER);
+        useItemOnBlock(ItemStack.of(Material.LAVA_BUCKET), pos, BlockFace.TOP);
+        check("pouring lava fizzles with water directly above the cauldron",
+                world.getBlock(pos).key().value().equals("cauldron")
+                        && player.getItemInMainHand().material() == Material.LAVA_BUCKET);
+        world.setBlock(pos.add(0, 1, 0), Block.AIR);
+
+        useItemOnBlock(ItemStack.of(Material.LAVA_BUCKET), pos, BlockFace.TOP);
+        check("lava bucket on an empty cauldron (nothing above) fills it with lava",
+                world.getBlock(pos).key().value().equals("lava_cauldron"));
+
+        rs(51, Y + 1, z, Block.COMPARATOR.withProperty("facing", "west"));
+        rs(52, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(51, Y + 1, z));
+        check("a lava cauldron always reads a comparator signal of 3 (no level property)",
+                waitFor(() -> "true".equals(prop(52, Y + 1, z, "lit")), 3000));
+
+        useItemOnBlock(ItemStack.of(Material.BUCKET), pos, BlockFace.TOP);
+        check("an empty bucket collects a lava cauldron regardless of level (it has none)",
+                world.getBlock(pos).key().value().equals("cauldron")
+                        && player.getItemInMainHand().material() == Material.LAVA_BUCKET);
+
+        useItemOnBlock(ItemStack.of(Material.POWDER_SNOW_BUCKET), pos, BlockFace.TOP);
+        check("powder snow bucket fills an empty cauldron to level 3",
+                world.getBlock(pos).key().value().equals("powder_snow_cauldron")
+                        && "3".equals(world.getBlock(pos).getProperty("level")));
+        useItemOnBlock(ItemStack.of(Material.BUCKET), pos, BlockFace.TOP);
+        check("empty bucket collects the full powder snow cauldron",
+                world.getBlock(pos).key().value().equals("cauldron")
+                        && player.getItemInMainHand().material() == Material.POWDER_SNOW_BUCKET);
+
+        rs(51, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+        world.setBlock(pos, Block.AIR);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
