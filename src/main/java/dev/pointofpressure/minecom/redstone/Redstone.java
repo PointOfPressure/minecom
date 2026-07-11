@@ -567,6 +567,14 @@ public final class Redstone {
                     instance.setBlock(pos, block.withProperty("powered", String.valueOf(signal)));
                 }
             }
+            case "bell" -> {
+                // BellBlock.neighborChanged: rings only on the rising edge of an incoming signal.
+                boolean signal = activated(pos);
+                if (signal != "true".equals(block.getProperty("powered"))) {
+                    if (signal) dev.pointofpressure.minecom.blocks.Bells.ring(instance, pos);
+                    instance.setBlock(pos, block.withProperty("powered", String.valueOf(signal)));
+                }
+            }
             case "piston", "sticky_piston" -> Pistons.evaluate(instance, pos, block);
             case "dispenser", "dropper" -> {
                 boolean powered = activated(pos) || activated(pos.add(0, 1, 0)); // quasi-connectivity

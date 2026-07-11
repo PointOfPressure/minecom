@@ -111,6 +111,7 @@ public final class PlayTest {
         scenario("trapped chest: opening/closing directly powers redstone, still comparator-readable for fullness", PlayTest::scenarioTrappedChest);
         scenario("double chest: placing a matching chest alongside merges into one shared 54-slot inventory", PlayTest::scenarioDoubleChest);
         scenario("cauldron: bucket/bottle fills and empties across water/lava/powder_snow states, lava fizzles under water", PlayTest::scenarioCauldron);
+        scenario("bell: right-click, a redstone rising edge, and an arrow hit all ring it", PlayTest::scenarioBell);
         scenario("redstone: 16th block signal dies", PlayTest::scenarioRedstoneDecay);
         scenario("redstone: torch inversion", PlayTest::scenarioTorch);
         scenario("redstone: repeater delay", PlayTest::scenarioRepeater);
@@ -4113,6 +4114,48 @@ public final class PlayTest {
 
         rs(51, Y + 1, z, Block.AIR);
         rs(52, Y + 1, z, Block.AIR);
+        world.setBlock(pos, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * BellBlock.onHit/attemptToRing (decompile-verified): right-click, a redstone signal's
+     * rising edge (not held-and-repeated), and a projectile hit all ring the bell.
+     */
+    private static void scenarioBell() {
+        int z = 150;
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(50, Y + 1, z);
+        world.setBlock(pos, Block.BELL.withProperty("attachment", "floor").withProperty("facing", "north"));
+
+        int before = dev.pointofpressure.minecom.blocks.Bells.ringCount(pos);
+        interact(pos);
+        check("right-clicking a bell rings it", dev.pointofpressure.minecom.blocks.Bells.ringCount(pos) == before + 1);
+
+        rs(51, Y + 1, z, Block.LEVER.withProperty("face", "floor").withProperty("facing", "north").withProperty("powered", "false"));
+        tick(2);
+        int beforeEdge = dev.pointofpressure.minecom.blocks.Bells.ringCount(pos);
+        rs(51, Y + 1, z, Block.LEVER.withProperty("face", "floor").withProperty("facing", "north").withProperty("powered", "true"));
+        tick(3);
+        check("a lever powering the bell rings it once on the rising edge",
+                dev.pointofpressure.minecom.blocks.Bells.ringCount(pos) == beforeEdge + 1);
+
+        int afterEdge = dev.pointofpressure.minecom.blocks.Bells.ringCount(pos);
+        tick(5);
+        check("holding the redstone signal doesn't ring it again",
+                dev.pointofpressure.minecom.blocks.Bells.ringCount(pos) == afterEdge);
+
+        rs(51, Y + 1, z, Block.AIR);
+        tick(2);
+
+        int beforeArrow = dev.pointofpressure.minecom.blocks.Bells.ringCount(pos);
+        var arrow = new net.minestom.server.entity.EntityProjectile(player, EntityType.ARROW);
+        arrow.setInstance(world, new Pos(45.5, Y + 1.5, z + 0.5));
+        arrow.setVelocity(new Vec(1, 0, 0).mul(20));
+        check("shooting an arrow at a bell rings it",
+                waitFor(() -> dev.pointofpressure.minecom.blocks.Bells.ringCount(pos) > beforeArrow, 3000));
+
         world.setBlock(pos, Block.AIR);
         clearEntitiesExceptPlayer();
         resetPlayer();
