@@ -741,6 +741,14 @@ public final class VanillaMobs {
             if (++charge[0] < 60) return;
             charge[0] = -40; // fired: cooldown
             var fireball = new net.minestom.server.entity.EntityProjectile(mob, EntityType.FIREBALL);
+            // AbstractHurtingProjectile (decompile-verified): fireballs are gravity-immune,
+            // flying in a dead-straight line — unlike arrows/tridents. Without this the
+            // fireball sinks under Minestom's default projectile gravity and can hit the
+            // ground well short of its target instead of reaching it (found via debug
+            // instrumentation while testing the fireball's own collision handling: a
+            // fireball fired 10 blocks away was consumed by ground collision only 2 blocks
+            // into its flight).
+            fireball.setNoGravity(true);
             Pos from = mob.getPosition().add(0, mob.getEyeHeight(), 0);
             fireball.setInstance(mob.getInstance(), from);
             Vec dir = target.getPosition().add(0, target.getEyeHeight() / 2, 0).sub(from).asVec().normalize();

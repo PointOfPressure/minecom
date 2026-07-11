@@ -20,6 +20,7 @@ import net.minestom.server.entity.EquipmentSlot;
 import net.minestom.server.event.entity.EntityAttackEvent;
 import net.minestom.server.event.entity.EntityDamageEvent;
 import net.minestom.server.event.entity.EntityDeathEvent;
+import net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent;
 import net.minestom.server.event.entity.projectile.ProjectileCollideWithEntityEvent;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.item.ItemStack;
@@ -28,6 +29,7 @@ import net.minestom.server.timer.TaskSchedule;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * Melee/projectile combat with vanilla weapon damage values, knockback,
@@ -38,14 +40,25 @@ public final class Combat {
 
     private static final Random RANDOM = new Random();
 
+    /** EntityTypeTags.REDIRECTABLE_PROJECTILE (decompile-verified): the only entities
+     *  Player.deflectProjectile() will redirect instead of taking a normal melee hit. */
+    private static final Set<EntityType> REDIRECTABLE_PROJECTILES = Set.of(
+            EntityType.FIREBALL, EntityType.WIND_CHARGE, EntityType.BREEZE_WIND_CHARGE);
+
     public static void register(GlobalEventHandler events) {
         events.addListener(EntityAttackEvent.class, Combat::attack);
         events.addListener(EntityDeathEvent.class, Combat::death);
         events.addListener(ProjectileCollideWithEntityEvent.class, Combat::projectileHit);
+        events.addListener(ProjectileCollideWithBlockEvent.class, Combat::projectileHitBlock);
         events.addListener(EntityDamageEvent.class, Combat::damaged);
     }
 
     private static void attack(EntityAttackEvent e) {
+        if (e.getEntity() instanceof Player player && !player.isDead()
+                && REDIRECTABLE_PROJECTILES.contains(e.getTarget().getEntityType())) {
+            deflect(player, e.getTarget());
+            return;
+        }
         if (!(e.getTarget() instanceof LivingEntity target) || target.isDead()) return;
 
         if (e.getEntity() instanceof Player player) {
@@ -131,9 +144,62 @@ public final class Combat {
         }
     }
 
+    /** Set on a fireball once a player deflects it, so it's allowed to hit its own
+     *  original shooter afterward (see projectileHit's FIREBALL self-hit exclusion). */
+    private static final net.minestom.server.tag.Tag<Boolean> DEFLECTED =
+            net.minestom.server.tag.Tag.Boolean("minecom:deflected");
+
+    /**
+     * Player.deflectProjectile (decompile-verified): attacking a redirectable
+     * projectile instead deflects it — ProjectileDeflection.AIM_DEFLECT sets its
+     * velocity to the player's exact look direction. Real vanilla additionally
+     * reassigns the projectile's owner to the deflecting player (so a returning
+     * ghast fireball can then hit the ghast that fired it, and death messages
+     * credit the player); this codebase has no player-vs-mob kill-attribution/
+     * death-message system at all to make that reassignment meaningful, and
+     * EntityProjectile's shooter is set once at construction with no setter, so
+     * full ownership reassignment isn't modeled — only the DEFLECTED tag, just
+     * enough to let a deflected fireball hit the ghast that fired it (the
+     * player-facing point of deflecting one in the first place), same as the
+     * self-hit exclusion below would otherwise still block that hit.
+     */
+    private static void deflect(Player player, Entity projectile) {
+        Vec dir = player.getPosition().direction();
+        double speed = projectile.getVelocity().length();
+        projectile.setVelocity(dir.mul(speed > 0.01 ? speed : 12));
+        projectile.setTag(DEFLECTED, true);
+        player.playSound(net.kyori.adventure.sound.Sound.sound(
+                net.minestom.server.sound.SoundEvent.ENTITY_PLAYER_ATTACK_NODAMAGE,
+                net.kyori.adventure.sound.Sound.Source.PLAYER, 1f, 1f));
+    }
+
     private static void projectileHit(ProjectileCollideWithEntityEvent e) {
         if (!(e.getTarget() instanceof LivingEntity target) || target.isDead()) return;
         Entity projectile = e.getEntity();
+        if (projectile.getEntityType() == EntityType.FIREBALL) {
+            // Projectile.canHitEntity excludes the shooter from its own projectile in
+            // real vanilla (found via debug instrumentation: without this, a fireball
+            // spawned overlapping its own ghast's hitbox immediately self-hit and
+            // exploded on the ghast at launch, before ever reaching a target — Minestom
+            // doesn't provide this exclusion automatically for a manually-constructed
+            // EntityProjectile, unlike this project's arrow/trident code paths which
+            // apparently don't hit this because bow arrows spawn already clear of the
+            // shooter's own hitbox). A deflected fireball is the one exception — real
+            // vanilla lets it hit its original shooter once the player has redirected
+            // it, which is the entire point of deflecting one back at a ghast.
+            boolean selfHit = projectile instanceof net.minestom.server.entity.EntityProjectile fireballEp
+                    && fireballEp.getShooter() == target
+                    && !Boolean.TRUE.equals(projectile.getTag(DEFLECTED));
+            if (!selfHit) {
+                // LargeFireball (decompile-verified): onHitEntity deals a flat 6 direct
+                // damage; the shared onHit() separately ALSO triggers a real power-1
+                // explosion at the impact point (Level.explode(..., MOB)) — both happen
+                // together for an entity hit, reusing this project's own explosion engine.
+                target.damage(Damage.fromProjectile(projectile, projectile, 6f));
+                explodeFireball(projectile);
+            }
+            return;
+        }
         if (projectile.getEntityType() == EntityType.SMALL_FIREBALL) {
             target.damage(Damage.fromProjectile(projectile, projectile, 5f));
             knockback(target, projectile.getPosition());
@@ -237,6 +303,22 @@ public final class Combat {
         }
         PIERCE_HIT_ENTITIES.remove(projectile.getEntityId());
         projectile.remove();
+    }
+
+    /** LargeFireball hitting a block instead of an entity: still explodes, just no direct hit. */
+    private static void projectileHitBlock(ProjectileCollideWithBlockEvent e) {
+        if (e.getEntity().getEntityType() != EntityType.FIREBALL) return;
+        explodeFireball(e.getEntity());
+    }
+
+    private static void explodeFireball(Entity fireball) {
+        Instance instance = fireball.getInstance();
+        if (instance != null) {
+            Entity shooter = fireball instanceof net.minestom.server.entity.EntityProjectile ep ? ep.getShooter() : null;
+            dev.pointofpressure.minecom.blocks.Explosions.explode(
+                    instance, fireball.getPosition(), 1f, 1.0, shooter);
+        }
+        fireball.remove();
     }
 
     private static final java.util.Map<Integer, java.util.Set<Integer>> PIERCE_HIT_ENTITIES =

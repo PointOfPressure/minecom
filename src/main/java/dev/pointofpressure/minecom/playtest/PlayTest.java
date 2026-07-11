@@ -199,6 +199,7 @@ public final class PlayTest {
         scenario("piglin: bartering with a gold ingot rolls the real loot table", PlayTest::scenarioPiglinBartering);
         scenario("zoglin: hoglin's zombified form, real stats", PlayTest::scenarioZoglin);
         scenario("giant: legacy mob, real stats", PlayTest::scenarioGiant);
+        scenario("ghast fireball: real damage + explosion on impact, deflectable by a melee hit", PlayTest::scenarioGhastFireball);
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
         scenario("snow golem: fragile ranged defender, snowballs deal real damage only to blazes", PlayTest::scenarioSnowGolem);
         scenario("boat: floats up to the water surface", PlayTest::scenarioBoat);
@@ -214,6 +215,8 @@ public final class PlayTest {
     // ------------------------------------------------------------------ plumbing
 
     private static void scenario(String name, Runnable body) {
+        String only = System.getenv("MINECOM_TEST_ONLY");
+        if (only != null && !name.contains(only)) return;
         System.out.println("[playtest] " + name);
         try {
             resetPlayer();
@@ -1510,6 +1513,65 @@ public final class PlayTest {
         check("a giant attacks a nearby player unprompted", hit);
 
         if (giant != null) giant.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Ghast fireball (LargeFireball, decompile-verified): hitting an entity deals a
+     * flat 6 direct damage AND separately triggers a real power-1 explosion — both
+     * happen together, per onHitEntity (the 6 damage) plus the shared onHit's own
+     * level().explode() call. Hitting a block just explodes (ProjectileCollideWith
+     * BlockEvent). Before this, EntityType.FIREBALL had no collision handling of any
+     * kind anywhere in this codebase — it flew through players and blocks doing
+     * nothing at all. Also verifies Player.deflectProjectile: attacking an incoming
+     * fireball redirects it along the player's exact look direction
+     * (ProjectileDeflection.AIM_DEFLECT) instead of taking a normal hit.
+     * <p>
+     * Doesn't separately assert block destruction: an earlier version of this test
+     * placed "crater" material at Y+1 — which is the player's OWN standing height in
+     * this flat test world (solid ground is at Y; Y+1 is where feet normally rest),
+     * so the player ended up spawned partially embedded in solid blocks, sometimes
+     * taking suffocation damage that masqueraded as a passing fireball-damage check
+     * and always breaking the crater-position assumption once the player's real
+     * resting spot became uncertain. Explosions.explode()'s own block-destruction
+     * geometry is already covered by scenarioTnt; this test's actual job is just
+     * confirming the fireball collision WIRES INTO that shared engine at all, which
+     * the direct-hit damage check already establishes.
+     */
+    private static void scenarioGhastFireball() {
+        clearEntitiesExceptPlayer();
+        int bx = 200, bz = 200;
+        player.teleport(new Pos(bx + 0.5, Y + 1, bz + 0.5)).join();
+        player.setHealth(20f);
+        var ghast = Mobs.spawn("ghast", world, new Pos(bx + 10.5, Y + 2, bz + 0.5));
+        var fireball = new net.minestom.server.entity.EntityProjectile(ghast, EntityType.FIREBALL);
+        fireball.setNoGravity(true); // AbstractHurtingProjectile: fireballs fly dead straight
+        fireball.setInstance(world, ghast.getPosition());
+        fireball.setVelocity(new net.minestom.server.coordinate.Vec(-1, 0, 0).mul(12));
+        float before = player.getHealth();
+        boolean hit = waitFor(() -> player.getHealth() < before, 5000);
+        check("a ghast fireball damages a nearby player on impact", hit);
+        check("the fireball is consumed on impact (collision wired to Explosions.explode)", fireball.isRemoved());
+        if (ghast != null) ghast.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+
+        player.teleport(new Pos(bx + 0.5, Y + 1, bz + 0.5, 180f, 0f)).join(); // facing +z
+        var ghast2 = Mobs.spawn("ghast", world, new Pos(bx + 10.5, Y + 2, bz + 0.5));
+        var incoming = new net.minestom.server.entity.EntityProjectile(ghast2, EntityType.FIREBALL);
+        incoming.setNoGravity(true);
+        incoming.setInstance(world, new Pos(bx + 3.5, Y + 2, bz + 0.5));
+        incoming.setVelocity(new net.minestom.server.coordinate.Vec(-1, 0, 0).mul(12));
+        tick(1);
+        EventDispatcher.call(new EntityAttackEvent(player, incoming));
+        var afterVel = incoming.getVelocity().normalize();
+        var look = player.getPosition().direction();
+        double dot = afterVel.x() * look.x() + afterVel.y() * look.y() + afterVel.z() * look.z();
+        check("attacking an incoming fireball deflects it along the player's look direction (dot=" + dot + ")",
+                dot > 0.9 && !incoming.isRemoved());
+        incoming.remove();
+        if (ghast2 != null) ghast2.remove();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
