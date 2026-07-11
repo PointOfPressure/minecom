@@ -1970,7 +1970,45 @@ public final class PlayTest {
         dropped.setInstance(world, new Pos(20.7, y + 0.1, 20.5));
         tick(3);
         check("hopper minecart: vacuums a nearby dropped item", dropped.isRemoved());
+
+        // MinecartHopper implements Hopper: it also sucks from a container directly
+        // above its own rail position, not just loose item entities.
+        world.setBlock(20, y + 1, 20, Block.CHEST);
+        var chestAbove = dev.pointofpressure.minecom.blocks.Containers.CHESTS.computeIfAbsent(
+                dev.pointofpressure.minecom.blocks.Containers.posKey(new Pos(20, y + 1, 20)),
+                k -> new net.minestom.server.inventory.Inventory(
+                        net.minestom.server.inventory.InventoryType.CHEST_3_ROW, net.kyori.adventure.text.Component.text("Chest")));
+        chestAbove.setItemStack(0, ItemStack.of(Material.EMERALD, 1));
+        boolean pulled = waitFor(() -> {
+            var inv = dev.pointofpressure.minecom.blocks.Minecarts.cartInventory(hopperCart);
+            for (int slot = 0; slot < inv.getSize(); slot++) {
+                if (inv.getItemStack(slot).material() == Material.EMERALD) return true;
+            }
+            return false;
+        }, 2000);
+        check("hopper minecart pulls from a container directly above it", pulled);
+        world.setBlock(20, y + 1, 20, Block.AIR);
         hopperCart.remove();
+
+        // The reverse direction: a stationary hopper pushes down into a chest minecart
+        // sitting on a rail below it — previously hopper<->minecart interop was
+        // one-way (only the cart's own vacuum picked up loose items).
+        world.setBlock(21, y + 1, 20, Block.HOPPER.withProperty("facing", "down").withProperty("enabled", "true"));
+        var hopperAboveCart = dev.pointofpressure.minecom.redstone.Hoppers.inventory(new Pos(21, y + 1, 20));
+        hopperAboveCart.setItemStack(0, ItemStack.of(Material.GOLD_INGOT, 1));
+        var chestCartBelow = dev.pointofpressure.minecom.blocks.Minecarts.spawn(
+                world, new Pos(21.5, y + 0.1, 20.5), EntityType.CHEST_MINECART);
+        boolean pushed = waitFor(() -> {
+            var inv = dev.pointofpressure.minecom.blocks.Minecarts.cartInventory(chestCartBelow);
+            for (int slot = 0; slot < inv.getSize(); slot++) {
+                if (inv.getItemStack(slot).material() == Material.GOLD_INGOT) return true;
+            }
+            return false;
+        }, 2000);
+        check("a stationary hopper pushes down into a chest minecart below it", pushed);
+        world.setBlock(21, y + 1, 20, Block.AIR);
+        dev.pointofpressure.minecom.redstone.Hoppers.remove(world, new Pos(21, y + 1, 20));
+        chestCartBelow.remove();
 
         world.setBlock(24, y, 20, Block.ACTIVATOR_RAIL.withProperties(java.util.Map.of("shape", "east_west", "powered", "true")));
         var tntCart = dev.pointofpressure.minecom.blocks.Minecarts.spawn(

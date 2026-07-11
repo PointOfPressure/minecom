@@ -116,16 +116,35 @@ public final class Hoppers {
                     state.inv.setItemStack(slot, existing.withAmount(existing.amount() + 1));
                 } else return false;
             }
-            default -> { return false; }
+            default -> {
+                // AbstractMinecartContainer implements Container the same as a block
+                // entity, so a hopper faces/pushes into a chest/hopper minecart sitting
+                // on a rail at the target position exactly like any other container —
+                // previously this codebase's hopper<->minecart interop was one-way
+                // (only the minecart's own vacuum() picked up loose item entities; a
+                // stationary hopper never noticed a cart's inventory at all).
+                var cart = dev.pointofpressure.minecom.blocks.Minecarts.containerCartAt(instance, target);
+                if (cart == null) return false;
+                Inventory cartInv = dev.pointofpressure.minecom.blocks.Minecarts.cartInventory(cart);
+                if (!cartInv.addItemStack(moving)) return false;
+            }
         }
         inv.setItemStack(sourceSlot, inv.getItemStack(sourceSlot).consume(1));
         return true;
     }
 
-    private static boolean pull(Point pos, Inventory inv) {
+    /**
+     * Pulls one item into inv from whatever's directly above pos: a block container,
+     * or (public — also called by Minecarts.java so a moving hopper minecart can pull
+     * from a chest/hopper/dispenser/furnace it passes under, the other decompile-
+     * flagged half of hopper<->minecart interop) a chest/hopper minecart entity
+     * sitting there.
+     */
+    public static boolean pull(Point pos, Inventory inv) {
         Point above = pos.add(0, 1, 0);
         Block block = instance.getBlock(above);
-        Inventory source = switch (block.key().value()) {
+        String key = block.key().value();
+        Inventory source = switch (key) {
             case "chest", "barrel" -> Containers.CHESTS.get(Containers.posKey(above));
             case "hopper" -> HOPPERS.get(Containers.posKey(above));
             case "dispenser", "dropper" -> Redstone.DISPENSERS.get(Containers.posKey(above));
@@ -135,8 +154,12 @@ public final class Hoppers {
             }
             default -> null;
         };
-        if (source == null) return false;
-        boolean furnace = block.key().value().equals("furnace");
+        if (source == null) {
+            var cart = dev.pointofpressure.minecom.blocks.Minecarts.containerCartAt(instance, above);
+            if (cart == null) return false;
+            source = dev.pointofpressure.minecom.blocks.Minecarts.cartInventory(cart);
+        }
+        boolean furnace = key.equals("furnace");
         for (int slot = 0; slot < source.getSize(); slot++) {
             if (furnace && slot != 2) continue; // only the output slot of furnaces
             ItemStack stack = source.getItemStack(slot);

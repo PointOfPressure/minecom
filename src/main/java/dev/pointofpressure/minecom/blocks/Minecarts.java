@@ -93,6 +93,31 @@ public final class Minecarts {
         player.openInventory(inv);
     }
 
+    /**
+     * A chest/hopper minecart's own Container inventory (real vanilla:
+     * AbstractMinecartContainer implements Container the same as a block entity) —
+     * public so Hoppers.java can push into / pull from one sitting on a rail next to
+     * a stationary hopper, the same as any other container.
+     */
+    public static Inventory cartInventory(Entity cart) {
+        InventoryType invType = cart.getEntityType() == EntityType.CHEST_MINECART
+                ? InventoryType.CHEST_3_ROW : InventoryType.HOPPER;
+        String title = cart.getEntityType() == EntityType.CHEST_MINECART
+                ? "Minecart with Chest" : "Minecart with Hopper";
+        return CART_INV.computeIfAbsent(cart.getUuid(), id -> new Inventory(invType, Component.text(title)));
+    }
+
+    /** A chest/hopper minecart entity currently occupying the given block, if any. */
+    public static Entity containerCartAt(Instance instance, Point pos) {
+        for (Entity e : instance.getEntities()) {
+            EntityType t = e.getEntityType();
+            if (t != EntityType.CHEST_MINECART && t != EntityType.HOPPER_MINECART) continue;
+            Point p = e.getPosition();
+            if (p.blockX() == pos.blockX() && p.blockY() == pos.blockY() && p.blockZ() == pos.blockZ()) return e;
+        }
+        return null;
+    }
+
     public static Entity spawn(Instance instance, Pos pos) {
         return spawn(instance, pos, EntityType.MINECART);
     }
@@ -158,6 +183,11 @@ public final class Minecarts {
             }
         } else if (cart.getEntityType() == EntityType.HOPPER_MINECART) {
             vacuum(instance, cart, p);
+            // MinecartHopper implements the Hopper interface the same as a stationary
+            // hopper block — it also sucks from a container directly above its own
+            // position, not just loose item entities (vacuum() above). Previously this
+            // codebase only modelled the loose-item-vacuum half.
+            dev.pointofpressure.minecom.redstone.Hoppers.pull(p, cartInventory(cart));
         }
 
         if (isPowered(rail)) {
@@ -208,8 +238,7 @@ public final class Minecarts {
 
     /** Hopper minecart: vacuum nearby dropped items into its 5-slot inventory. */
     private static void vacuum(Instance instance, Entity cart, Pos p) {
-        Inventory inv = CART_INV.computeIfAbsent(cart.getUuid(),
-                id -> new Inventory(InventoryType.HOPPER, Component.text("Minecart with Hopper")));
+        Inventory inv = cartInventory(cart);
         for (Entity e : instance.getEntities()) {
             if (!(e instanceof ItemEntity item) || item.isRemoved()) continue;
             if (item.getPosition().distanceSquared(p) > 1.5 * 1.5) continue;
