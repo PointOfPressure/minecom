@@ -229,6 +229,13 @@ public final class Redstone {
                 if (!"true".equals(source.getProperty("powered"))) return 0;
                 return sameDir(opp(facingVec(source.getProperty("facing"))), toTarget) ? 15 : 0;
             }
+            case "trapped_chest" -> {
+                // TrappedChestBlock.isSignalSource/getSignal: unlike a plain chest (not a
+                // signal source at all), a trapped chest powers redstone in every direction
+                // equal to its current player-viewer count, clamped 0-15 — no comparator needed.
+                Inventory inv = Containers.CHESTS.get(Containers.posKey(sourcePos));
+                return inv == null ? 0 : Math.min(15, inv.getViewers().size());
+            }
             case "redstone_wire" -> {
                 int power = Integer.parseInt(source.getProperty("power"));
                 if (power == 0) return 0;
@@ -672,7 +679,9 @@ public final class Redstone {
     private static int containerSignal(Point pos, Block block) {
         String key = block.key().value();
         Inventory inv = null;
-        if (key.equals("chest") || key.equals("barrel")) inv = Containers.CHESTS.get(Containers.posKey(pos));
+        if (key.equals("chest") || key.equals("barrel") || key.equals("trapped_chest")) {
+            inv = Containers.CHESTS.get(Containers.posKey(pos));
+        }
         else if (key.equals("furnace") || key.equals("blast_furnace") || key.equals("smoker")) {
             var state = dev.pointofpressure.minecom.blocks.Furnaces.FURNACES.get(Containers.posKey(pos));
             if (state != null) inv = state.inv;

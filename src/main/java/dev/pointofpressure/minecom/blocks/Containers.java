@@ -5,6 +5,7 @@ import net.kyori.adventure.text.Component;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.GlobalEventHandler;
+import net.minestom.server.event.inventory.InventoryCloseEvent;
 import net.minestom.server.event.player.PlayerBlockInteractEvent;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
@@ -26,12 +27,21 @@ public final class Containers {
     /** Chest inventories keyed by "x,y,z"; exposed for persistence. */
     public static final Map<String, Inventory> CHESTS = new ConcurrentHashMap<>();
 
+    /** Trapped-chest inventories, reverse-keyed by Inventory so a close event can find its
+     *  block position — TrappedChestBlock.isSignalSource needs the live viewer count, which
+     *  only changes on open/close, not on any block update Redstone.java would otherwise see. */
+    private static final Map<Inventory, Point> TRAPPED_CHEST_POS = new ConcurrentHashMap<>();
+
     public static String posKey(Point p) {
         return p.blockX() + "," + p.blockY() + "," + p.blockZ();
     }
 
     public static void register(GlobalEventHandler events) {
         events.addListener(PlayerBlockInteractEvent.class, Containers::interact);
+        events.addListener(InventoryCloseEvent.class, e -> {
+            Point pos = TRAPPED_CHEST_POS.get(e.getInventory());
+            if (pos != null) dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(pos);
+        });
         Crafting.register(events);
         Furnaces.register(events);
     }
@@ -66,6 +76,14 @@ public final class Containers {
                 e.setBlockingItemUse(true);
                 player.openInventory(CHESTS.computeIfAbsent(posKey(pos),
                         p -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Barrel"))));
+            }
+            case "trapped_chest" -> {
+                e.setBlockingItemUse(true);
+                Inventory inv = CHESTS.computeIfAbsent(posKey(pos),
+                        p -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Trapped Chest")));
+                TRAPPED_CHEST_POS.put(inv, pos);
+                player.openInventory(inv);
+                dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(pos);
             }
             case "ender_chest" -> {
                 e.setBlockingItemUse(true);
@@ -102,9 +120,12 @@ public final class Containers {
     /** Called when a container block is broken: spill contents and forget state. */
     public static void onBlockRemoved(Instance instance, Point pos, Block block) {
         String key = block.key().value();
-        if (key.equals("chest") || key.equals("barrel")) {
+        if (key.equals("chest") || key.equals("barrel") || key.equals("trapped_chest")) {
             Inventory inv = CHESTS.remove(posKey(pos));
-            if (inv != null) spill(instance, pos, inv);
+            if (inv != null) {
+                TRAPPED_CHEST_POS.remove(inv);
+                spill(instance, pos, inv);
+            }
         } else if (key.equals("furnace") || key.equals("blast_furnace") || key.equals("smoker")) {
             Furnaces.remove(instance, pos);
         } else if (key.equals("dispenser") || key.equals("dropper")) {

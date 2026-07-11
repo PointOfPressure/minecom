@@ -108,6 +108,7 @@ public final class PlayTest {
         scenario("death drops + respawn", PlayTest::scenarioDeath);
         scenario("combat: killed mobs sometimes drop their worn equipment", PlayTest::scenarioEquipmentDropChance);
         scenario("redstone: lever-wire-lamp + decay", PlayTest::scenarioRedstoneBasic);
+        scenario("trapped chest: opening/closing directly powers redstone, still comparator-readable for fullness", PlayTest::scenarioTrappedChest);
         scenario("redstone: 16th block signal dies", PlayTest::scenarioRedstoneDecay);
         scenario("redstone: torch inversion", PlayTest::scenarioTorch);
         scenario("redstone: repeater delay", PlayTest::scenarioRepeater);
@@ -3923,6 +3924,53 @@ public final class PlayTest {
                         && "13".equals(prop(53, Y + 1, z, "power")));
         rs(50, Y + 1, z, Block.LEVER.withProperty("face", "floor").withProperty("powered", "false"));
         check("lever off darkens lamp", waitFor(() -> "false".equals(prop(54, Y + 1, z, "lit")), 3000));
+    }
+
+    /**
+     * TrappedChestBlock.isSignalSource/getSignal (decompile-verified): unlike a plain chest
+     * (never a redstone signal source), a trapped chest powers redstone directly, in every
+     * direction, equal to its live player-viewer count clamped 0-15 — no comparator required.
+     * It's still readable by a comparator for item fullness exactly like a plain chest, since
+     * that's a separate container-comparator mechanic TrappedChestBlockEntity also implements.
+     */
+    private static void scenarioTrappedChest() {
+        int z = 140;
+        clearEntitiesExceptPlayer();
+        world.setBlock(50, Y + 1, z, Block.TRAPPED_CHEST);
+        rs(51, Y + 1, z, Block.REDSTONE_WIRE);
+        rs(52, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(4);
+        check("trapped chest: unpowered while nobody has it open", !"true".equals(prop(52, Y + 1, z, "lit")));
+
+        interact(new BlockVec(50, Y + 1, z));
+        check("trapped chest: right-clicking opens a 27-slot inventory",
+                player.getOpenInventory() instanceof Inventory ci
+                        && ci.getInventoryType() == net.minestom.server.inventory.InventoryType.CHEST_3_ROW);
+        check("trapped chest: opening it powers the wire and lights the lamp with no comparator",
+                waitFor(() -> "true".equals(prop(52, Y + 1, z, "lit")), 3000));
+
+        player.closeInventory();
+        check("trapped chest: closing it de-powers the wire again",
+                waitFor(() -> !"true".equals(prop(52, Y + 1, z, "lit")), 3000));
+
+        rs(51, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+
+        dev.pointofpressure.minecom.blocks.Containers.CHESTS
+                .get(dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(50, Y + 1, z)))
+                .setItemStack(0, ItemStack.of(Material.DIAMOND, 5));
+        rs(51, Y + 1, z, Block.COMPARATOR.withProperty("facing", "west"));
+        rs(52, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(51, Y + 1, z));
+        check("trapped chest: still comparator-readable for item fullness like a plain chest",
+                waitFor(() -> "true".equals(prop(52, Y + 1, z, "lit")), 3000));
+
+        rs(51, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+        world.setBlock(50, Y + 1, z, Block.AIR);
+        dev.pointofpressure.minecom.blocks.Containers.onBlockRemoved(world, new Vec(50, Y + 1, z), Block.TRAPPED_CHEST);
+        resetPlayer();
     }
 
     private static void scenarioRedstoneDecay() {
