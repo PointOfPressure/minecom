@@ -1249,8 +1249,16 @@ public final class VanillaMobs {
         return mob;
     }
 
-    /** Random blink within 32 blocks to a valid stand-up spot (EndermanBlockPlacePos analogue). */
-    private static void endermanTeleport(EntityCreature mob) {
+    /**
+     * Random blink within 32 blocks to a valid stand-up spot (EndermanBlockPlacePos
+     * analogue). Public: also called by Combat.projectileHit for EnderMan.hurtServer's
+     * projectile-dodge branch (decompile-verified: an IS_PROJECTILE-tagged damage
+     * source against an enderman skips normal damage entirely and just rerolls this
+     * teleport, up to 64 tries in real vanilla — attempting once here is a bounded
+     * simplification of the retry count, not the outcome, since a single call already
+     * has a 16-candidate-position internal retry of its own).
+     */
+    public static void endermanTeleport(EntityCreature mob) {
         Instance in = mob.getInstance();
         if (in == null) return;
         Pos base = mob.getPosition();

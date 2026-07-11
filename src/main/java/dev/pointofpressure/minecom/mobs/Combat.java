@@ -176,6 +176,16 @@ public final class Combat {
     private static void projectileHit(ProjectileCollideWithEntityEvent e) {
         if (!(e.getTarget() instanceof LivingEntity target) || target.isDead()) return;
         Entity projectile = e.getEntity();
+        // EnderMan.hurtServer (decompile-verified): any IS_PROJECTILE-tagged damage
+        // source against an enderman skips normal damage/effects entirely and instead
+        // rerolls its teleport-dodge — arrows (and every other projectile type this
+        // method handles) simply never hit an enderman at all, dodge or no dodge.
+        // Previously endermen took ordinary arrow/projectile damage like anything else.
+        if (target instanceof EntityCreature endermanTarget && target.getEntityType() == EntityType.ENDERMAN) {
+            dev.pointofpressure.minecom.mobs.ai.VanillaMobs.endermanTeleport(endermanTarget);
+            projectile.remove();
+            return;
+        }
         if (projectile.getEntityType() == EntityType.FIREBALL) {
             // Projectile.canHitEntity excludes the shooter from its own projectile in
             // real vanilla (found via debug instrumentation: without this, a fireball

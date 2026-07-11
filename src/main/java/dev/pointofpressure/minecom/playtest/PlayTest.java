@@ -150,6 +150,7 @@ public final class PlayTest {
         scenario("lightning charges a creeper; its explosion drops the victim's head", PlayTest::scenarioChargedCreeper);
         scenario("vanilla-ai: enderman angers only when stared at", PlayTest::scenarioEnderman);
         scenario("enderman: takes real drown-type damage while in water or rain", PlayTest::scenarioEndermanWater);
+        scenario("enderman: dodges/is immune to projectile damage", PlayTest::scenarioEndermanProjectileDodge);
         scenario("end: dragon spawns, dies, forms the exit portal", PlayTest::scenarioEnderDragon);
         scenario("end: portal travel there and back", PlayTest::scenarioEndPortal);
         scenario("village: villager entity spawns and wanders", PlayTest::scenarioVillager);
@@ -2277,6 +2278,25 @@ public final class PlayTest {
         boolean hurtByWater = waitFor(() -> enderman.getHealth() < before, 3000);
         check("an enderman standing in water takes damage", hurtByWater);
         world.setBlock(30, Y + 1, 30, Block.AIR);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * EnderMan.hurtServer (decompile-verified — see Combat.projectileHit's own
+     * comment): an IS_PROJECTILE-tagged hit never damages an enderman at all, dodge
+     * or no dodge. Previously endermen took ordinary arrow damage like any other mob.
+     */
+    private static void scenarioEndermanProjectileDodge() {
+        clearEntitiesExceptPlayer();
+        EntityCreature enderman = Mobs.spawn("enderman", world, new Pos(35.5, Y + 1, 30.5));
+        float before = enderman.getHealth();
+        var arrow = new net.minestom.server.entity.EntityProjectile(player, EntityType.ARROW);
+        arrow.setInstance(world, new Pos(30.5, Y + 1.5, 30.5));
+        arrow.setVelocity(new net.minestom.server.coordinate.Vec(1, 0, 0).mul(20));
+        boolean consumed = waitFor(arrow::isRemoved, 3000);
+        check("an arrow fired at an enderman is consumed on contact", consumed);
+        check("the arrow deals no damage to the enderman (hp stays " + enderman.getHealth() + ")",
+                enderman.getHealth() == before);
         clearEntitiesExceptPlayer();
     }
 
