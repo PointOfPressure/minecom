@@ -118,6 +118,8 @@ public final class Containers {
             Lectern.onBlockRemoved(instance, pos);
         } else if (key.equals("decorated_pot")) {
             DecoratedPot.onBlockRemoved(instance, pos);
+        } else if (key.equals("chiseled_bookshelf")) {
+            ChiseledBookshelf.onBlockRemoved(instance, pos);
         }
     }
 

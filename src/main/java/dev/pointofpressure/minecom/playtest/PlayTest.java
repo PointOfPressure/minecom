@@ -127,6 +127,8 @@ public final class PlayTest {
         scenario("leaf decay after logging", PlayTest::scenarioLeafDecay);
         scenario("potions: drink + effects + combat modifiers", PlayTest::scenarioPotions);
         scenario("brewing: wart -> awkward -> swiftness", PlayTest::scenarioBrewing);
+        scenario("brewing stand comparator: reads slot fullness the same way a chest does", PlayTest::scenarioBrewingStandComparator);
+        scenario("chiseled bookshelf: face+position selects one of 6 slots, comparator tracks the last-touched slot (not a book count)", PlayTest::scenarioChiseledBookshelf);
         scenario("shield blocks frontal attack", PlayTest::scenarioShield);
         scenario("lava hurts, fire resistance saves", PlayTest::scenarioLava);
         scenario("piston pushes entities", PlayTest::scenarioPistonPush);
@@ -960,6 +962,76 @@ public final class PlayTest {
                 dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(55, Y + 1, z)));
         dev.pointofpressure.minecom.blocks.Containers.CHESTS.remove(
                 dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(60, Y + 2, z)));
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * ChiseledBookShelfBlock: 6 slots (2 rows x 3 cols) selected by exactly which face was
+     * clicked (must equal FACING) and where on that face — real vanilla's comparator signal
+     * is NOT a book count, it's lastInteractedSlot+1 (whichever slot was most recently
+     * touched, even if it's since been emptied again).
+     */
+    private static void scenarioChiseledBookshelf() {
+        int z = 140;
+        BlockVec pos = new BlockVec(50, Y + 1, z);
+        world.setBlock(pos, Block.CHISELED_BOOKSHELF.withProperty("facing", "south"));
+        Vec slot0 = new Vec(0.15, 0.75, 1.0); // top-left on the south face
+        Vec slot5 = new Vec(0.85, 0.25, 1.0); // bottom-right on the south face
+
+        player.setItemInMainHand(ItemStack.of(Material.BOOK));
+        EventDispatcher.call(new PlayerUseItemOnBlockEvent(player, PlayerHand.MAIN,
+                ItemStack.of(Material.BOOK), pos, slot0, BlockFace.SOUTH));
+        tick(1);
+        check("right-clicking the facing side inserts a book into the targeted slot",
+                "true".equals(world.getBlock(pos).getProperty("slot_0_occupied")));
+        check("comparator reads lastInteractedSlot+1 = 1 after touching slot 0",
+                dev.pointofpressure.minecom.blocks.ChiseledBookshelf.comparatorOutput(pos) == 1);
+        check("the book was consumed from the player's hand",
+                player.getItemInMainHand().isAir());
+
+        player.setItemInMainHand(ItemStack.of(Material.WRITTEN_BOOK));
+        EventDispatcher.call(new PlayerUseItemOnBlockEvent(player, PlayerHand.MAIN,
+                ItemStack.of(Material.WRITTEN_BOOK), pos, slot0, BlockFace.NORTH));
+        tick(1);
+        check("clicking a face other than FACING never selects a slot (nothing consumed)",
+                !player.getItemInMainHand().isAir());
+
+        player.setItemInMainHand(ItemStack.of(Material.ENCHANTED_BOOK));
+        EventDispatcher.call(new PlayerUseItemOnBlockEvent(player, PlayerHand.MAIN,
+                ItemStack.of(Material.ENCHANTED_BOOK), pos, slot5, BlockFace.SOUTH));
+        tick(1);
+        check("a different slot on the same face inserts independently",
+                "true".equals(world.getBlock(pos).getProperty("slot_5_occupied")));
+        check("comparator reads lastInteractedSlot+1 = 6 after touching slot 5",
+                dev.pointofpressure.minecom.blocks.ChiseledBookshelf.comparatorOutput(pos) == 6);
+
+        player.setItemInMainHand(ItemStack.of(Material.BOOK));
+        EventDispatcher.call(new PlayerUseItemOnBlockEvent(player, PlayerHand.MAIN,
+                ItemStack.of(Material.BOOK), pos, slot0, BlockFace.SOUTH));
+        tick(1);
+        check("inserting on an already-occupied slot is a no-op (book not consumed)",
+                !player.getItemInMainHand().isAir());
+
+        player.getInventory().clear();
+        EventDispatcher.call(new PlayerBlockInteractEvent(player, PlayerHand.MAIN, world,
+                world.getBlock(pos), pos, slot5, BlockFace.SOUTH));
+        tick(1);
+        check("empty-hand right-click on an occupied slot removes its book",
+                "false".equals(world.getBlock(pos).getProperty("slot_5_occupied")));
+        boolean gotBookBack = false;
+        for (int i = 0; i < player.getInventory().getSize(); i++) {
+            if (player.getInventory().getItemStack(i).material() == Material.ENCHANTED_BOOK) { gotBookBack = true; break; }
+        }
+        check("the removed enchanted book is given back to the player", gotBookBack);
+        check("comparator STILL reads 6 after removing slot 5 (it tracks the last-touched slot, not a book count)",
+                dev.pointofpressure.minecom.blocks.ChiseledBookshelf.comparatorOutput(pos) == 6);
+
+        breakBlock(pos);
+        boolean bookDropped = waitFor(() -> countItems(new Pos(pos.blockX() + 0.5, pos.blockY() + 1, pos.blockZ() + 0.5),
+                3, Material.BOOK) >= 1, 2000);
+        check("breaking the bookshelf drops its one remaining stored book", bookDropped);
+
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
@@ -3446,6 +3518,35 @@ public final class PlayTest {
         }, 30000);
         check("sugar brews awkward into swiftness", swiftness);
         dev.pointofpressure.minecom.blocks.Brewing.STANDS.remove("brewtest");
+    }
+
+    /**
+     * BrewingStandBlock.getAnalogOutputSignal delegates straight to
+     * AbstractContainerMenu.getRedstoneSignalFromBlockEntity — the same generic
+     * slot-fill-fraction formula as chest, not a brew-progress-based signal.
+     */
+    private static void scenarioBrewingStandComparator() {
+        int z = 135;
+        world.setBlock(50, Y + 1, z, Block.BREWING_STAND);
+        var stand = new dev.pointofpressure.minecom.blocks.Brewing.Stand();
+        dev.pointofpressure.minecom.blocks.Brewing.STANDS.put(
+                dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(50, Y + 1, z)), stand);
+        stand.inv.setItemStack(0, potionOf(net.minestom.server.potion.PotionType.WATER));
+        stand.inv.setItemStack(1, potionOf(net.minestom.server.potion.PotionType.WATER));
+        stand.inv.setItemStack(2, potionOf(net.minestom.server.potion.PotionType.WATER));
+
+        rs(51, Y + 1, z, Block.COMPARATOR.withProperty("facing", "west"));
+        rs(52, Y + 1, z, Block.REDSTONE_LAMP);
+        tick(2);
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(51, Y + 1, z));
+        check("comparator reads brewing stand fullness and lights the lamp",
+                waitFor(() -> "true".equals(prop(52, Y + 1, z, "lit")), 3000));
+
+        rs(51, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+        world.setBlock(50, Y + 1, z, Block.AIR);
+        dev.pointofpressure.minecom.blocks.Brewing.STANDS.remove(
+                dev.pointofpressure.minecom.blocks.Containers.posKey(new Vec(50, Y + 1, z)));
     }
 
     private static void scenarioShield() {

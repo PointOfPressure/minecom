@@ -672,6 +672,12 @@ public final class Redstone {
             inv = DISPENSERS.get(Containers.posKey(pos));
         } else if (key.equals("hopper")) {
             inv = Hoppers.HOPPERS.get(Containers.posKey(pos));
+        } else if (key.equals("brewing_stand")) {
+            // BrewingStandBlock.getAnalogOutputSignal: delegates straight to
+            // AbstractContainerMenu.getRedstoneSignalFromBlockEntity — the exact same
+            // generic slot-fill-fraction formula as chest, not something brew-progress-based.
+            var stand = dev.pointofpressure.minecom.blocks.Brewing.STANDS.get(Containers.posKey(pos));
+            if (stand != null) inv = stand.inv;
         } else if (key.equals("composter")) {
             return Integer.parseInt(block.getProperty("level"));
         } else if (key.equals("jukebox")) {
@@ -686,6 +692,8 @@ public final class Redstone {
             return dev.pointofpressure.minecom.blocks.Cake.comparatorOutput(block);
         } else if (key.equals("decorated_pot")) {
             return dev.pointofpressure.minecom.blocks.DecoratedPot.comparatorOutput(pos);
+        } else if (key.equals("chiseled_bookshelf")) {
+            return dev.pointofpressure.minecom.blocks.ChiseledBookshelf.comparatorOutput(pos);
         } else {
             return -1;
         }

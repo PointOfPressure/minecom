@@ -172,6 +172,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.Scaffolding.register(events);
         dev.pointofpressure.minecom.blocks.DecoratedPot.register(events);
         dev.pointofpressure.minecom.blocks.EnderChest.register(events);
+        dev.pointofpressure.minecom.blocks.ChiseledBookshelf.register(events);
         dev.pointofpressure.minecom.survival.Potions.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Brewing.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Anvils.register(events);
