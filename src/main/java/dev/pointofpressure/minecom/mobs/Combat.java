@@ -116,6 +116,18 @@ public final class Combat {
                 target.addEffect(new net.minestom.server.potion.Potion(
                         net.minestom.server.potion.PotionEffect.WITHER, 0, 200));
             }
+            // CaveSpider.doHurtTarget: poison 7s on Normal, 15s on Hard, none on Easy
+            if (mob.getEntityType() == EntityType.CAVE_SPIDER) {
+                int poisonSeconds = switch (dev.pointofpressure.minecom.Difficulty.current()) {
+                    case NORMAL -> 7;
+                    case HARD -> 15;
+                    default -> 0;
+                };
+                if (poisonSeconds > 0) {
+                    target.addEffect(new net.minestom.server.potion.Potion(
+                            net.minestom.server.potion.PotionEffect.POISON, 0, poisonSeconds * 20));
+                }
+            }
         }
     }
 
@@ -141,6 +153,17 @@ public final class Combat {
             target.damage(Damage.fromProjectile(projectile, projectile, 4f));
             target.addEffect(new net.minestom.server.potion.Potion(
                     net.minestom.server.potion.PotionEffect.LEVITATION, 0, 200));
+            projectile.remove();
+            return;
+        }
+        if (projectile.getEntityType() == EntityType.BREEZE_WIND_CHARGE) {
+            // AbstractWindCharge.onHitEntity + BreezeWindCharge.explode: 1 direct damage,
+            // then a radius-3 knockback-only wind burst at the impact point
+            var shooter = projectile instanceof net.minestom.server.entity.EntityProjectile ep
+                    && ep.getShooter() instanceof EntityCreature breeze ? breeze : null;
+            if (shooter == target) return; // never bursts on its own breeze
+            dev.pointofpressure.minecom.mobs.ai.VanillaMobs.windBurst(
+                    target.getInstance(), projectile.getPosition(), shooter, target);
             projectile.remove();
             return;
         }
@@ -275,6 +298,22 @@ public final class Combat {
         }
         if (!(e.getEntity() instanceof Player player)) return;
         String typeId = e.getDamage().getType().key().asString();
+
+        // Player.hurtServer: sources with scaling=when_caused_by_living_non_player
+        // (mob melee/projectiles) or always (explosions) scale with world difficulty;
+        // on Peaceful they cancel outright
+        Entity damager = e.getDamage().getAttacker();
+        boolean mobCaused = damager instanceof LivingEntity la && !(la instanceof Player)
+                || damager instanceof net.minestom.server.entity.EntityProjectile ep
+                        && ep.getShooter() instanceof LivingEntity shooter && !(shooter instanceof Player);
+        if (mobCaused || VanillaData.damageTypeHasTag(typeId, "is_explosion")) {
+            float scaled = dev.pointofpressure.minecom.Difficulty.scalePlayerDamage(e.getDamage().getAmount());
+            if (scaled <= 0) {
+                e.setCancelled(true);
+                return;
+            }
+            e.getDamage().setAmount(scaled);
+        }
 
         // shield: blocking with a raised shield negates frontal entity damage
         if (player.isUsingItem() && e.getDamage().getAttacker() != null) {

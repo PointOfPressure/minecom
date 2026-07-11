@@ -62,6 +62,9 @@ public final class Persist {
             JsonObject root = GSON.fromJson(Files.readString(FILE, StandardCharsets.UTF_8), JsonObject.class);
             if (root.has("time")) overworld.setTime(root.get("time").getAsLong());
             if (root.has("raining")) WeatherCycle.setRaining(overworld, root.get("raining").getAsBoolean());
+            if (root.has("difficulty")) {
+                Difficulty.set(Difficulty.valueOf(root.get("difficulty").getAsString()));
+            }
 
             if (root.has("chests")) {
                 for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("chests").entrySet()) {
@@ -117,6 +120,7 @@ public final class Persist {
             JsonObject root = new JsonObject();
             root.addProperty("time", instance.getTime());
             root.addProperty("raining", WeatherCycle.isRaining(instance));
+            root.addProperty("difficulty", Difficulty.current().name());
 
             JsonObject chests = new JsonObject();
             Containers.CHESTS.forEach((key, inv) -> chests.add(key, writeItems(inv)));

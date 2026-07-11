@@ -26,6 +26,8 @@ public final class VanillaData {
     static JsonObject lootBlocks;
     static JsonObject lootEntities;
     static JsonObject lootGameplay;
+    static JsonObject lootTrial;
+    static JsonObject trialSpawnerConfigs;
     private static JsonObject tagsItem;
     private static JsonObject tagsBlock;
     private static JsonObject tagsDamage;
@@ -41,6 +43,8 @@ public final class VanillaData {
         lootBlocks = read("/vanilla/loot_blocks.json");
         lootEntities = read("/vanilla/loot_entities.json");
         lootGameplay = read("/vanilla/loot_gameplay.json");
+        lootTrial = read("/vanilla/loot_trial.json");
+        trialSpawnerConfigs = read("/vanilla/trial_spawner.json");
         tagsItem = read("/vanilla/tags_item.json");
         tagsBlock = read("/vanilla/tags_block.json");
         tagsDamage = read("/vanilla/tags_damage_type.json");
@@ -58,7 +62,7 @@ public final class VanillaData {
     }
 
     /** Strip "minecraft:" / "#" prefixes down to the bare path. */
-    static String path(String id) {
+    public static String path(String id) {
         if (id.startsWith("#")) id = id.substring(1);
         int colon = id.indexOf(':');
         return colon >= 0 ? id.substring(colon + 1) : id;
@@ -101,5 +105,11 @@ public final class VanillaData {
     /** Damage-type tag membership by damage type id, e.g. damageTypeHasTag("minecraft:fall", "bypasses_armor"). */
     public static boolean damageTypeHasTag(String damageTypeId, String tag) {
         return resolveTag(tagsDamage, tag, DAMAGE_TAG_CACHE).contains(damageTypeId);
+    }
+
+    /** Trial spawner config registry entry by id path, e.g. "trial_chamber/melee/zombie/normal". */
+    public static JsonObject trialSpawnerConfig(String idPath) {
+        JsonElement config = trialSpawnerConfigs.get(path(idPath));
+        return config == null ? null : config.getAsJsonObject();
     }
 }

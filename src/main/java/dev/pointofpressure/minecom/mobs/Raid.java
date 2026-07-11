@@ -39,6 +39,7 @@ public final class Raid {
 
     /** Begin a raid centred on {@code center} if none is already running in this instance. */
     public static boolean start(Instance instance, Pos center) {
+        if (dev.pointofpressure.minecom.Difficulty.isPeaceful()) return false; // no raids on Peaceful
         if (!ACTIVE.add(instance)) return false;
 
         BossBar bar = BossBar.bossBar(Component.text("Raid - Wave 1/" + WAVES.size()),

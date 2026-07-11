@@ -1216,6 +1216,37 @@ public final class SelfTest {
                     mansDarkOak == 14085);
         }
 
+        // ---- difficulty (DifficultyInstance.calculateDifficulty, decompile-verified) ----
+        {
+            float freshNormal = dev.pointofpressure.minecom.Difficulty.effective(
+                    dev.pointofpressure.minecom.Difficulty.NORMAL, 0, 0, 1.0f);
+            check("effective difficulty: fresh Normal world = 1.5 (got " + freshNormal + ")",
+                    Math.abs(freshNormal - 1.5f) < 1e-4);
+            float maxHard = dev.pointofpressure.minecom.Difficulty.effective(
+                    dev.pointofpressure.minecom.Difficulty.HARD, 1_512_000L, 3_600_000L, 1.0f);
+            check("effective difficulty: maxed Hard region = 6.75 (got " + maxHard + ")",
+                    Math.abs(maxHard - 6.75f) < 1e-4);
+            float maxEasy = dev.pointofpressure.minecom.Difficulty.effective(
+                    dev.pointofpressure.minecom.Difficulty.EASY, 1_512_000L, 3_600_000L, 1.0f);
+            check("effective difficulty: maxed Easy region = 1.5 (local bonus halved; got " + maxEasy + ")",
+                    Math.abs(maxEasy - 1.5f) < 1e-4);
+            check("effective difficulty: Peaceful is always 0",
+                    dev.pointofpressure.minecom.Difficulty.effective(
+                            dev.pointofpressure.minecom.Difficulty.PEACEFUL, 1_512_000L, 3_600_000L, 1.0f) == 0.0f);
+            check("moon brightness: full moon night 1.0, new moon (day 4) 0.0",
+                    dev.pointofpressure.minecom.Difficulty.moonBrightness(0) == 1.0f
+                            && dev.pointofpressure.minecom.Difficulty.moonBrightness(4 * 24000L) == 0.0f);
+            var saved = dev.pointofpressure.minecom.Difficulty.current();
+            dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.EASY);
+            check("Easy mob damage to players: 10 -> 6, 1 -> 1 (min(x/2+1, x))",
+                    dev.pointofpressure.minecom.Difficulty.scalePlayerDamage(10f) == 6f
+                            && dev.pointofpressure.minecom.Difficulty.scalePlayerDamage(1f) == 1f);
+            dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.HARD);
+            check("Hard mob damage to players: 10 -> 15 (x1.5)",
+                    dev.pointofpressure.minecom.Difficulty.scalePlayerDamage(10f) == 15f);
+            dev.pointofpressure.minecom.Difficulty.set(saved);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }

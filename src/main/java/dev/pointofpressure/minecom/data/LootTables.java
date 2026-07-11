@@ -51,6 +51,13 @@ public final class LootTables {
         return evaluate(table.getAsJsonObject(), new Ctx(tool == null ? ItemStack.AIR : tool, null));
     }
 
+    /** Trial-chamber tables by id path, e.g. "spawners/trial_chamber/consumables". */
+    public static List<ItemStack> trial(String idPath) {
+        JsonElement table = VanillaData.lootTrial.get(VanillaData.path(idPath));
+        if (table == null) return List.of();
+        return evaluate(table.getAsJsonObject(), new Ctx(ItemStack.AIR, null));
+    }
+
     private static List<ItemStack> evaluate(JsonObject table, Ctx ctx) {
         List<ItemStack> out = new ArrayList<>(2);
         JsonArray pools = table.getAsJsonArray("pools");
@@ -118,11 +125,12 @@ public final class LootTables {
                     }
                 }
             }
-            case "loot_table" -> { // nested table reference (fishing/fish etc.)
+            case "loot_table" -> { // nested table reference (fishing/fish, trial reward tiers)
                 JsonElement value = entry.get("value");
                 if (value != null && value.isJsonPrimitive()) {
                     String ref = VanillaData.path(value.getAsString()).replace("gameplay/", "");
                     JsonElement sub = VanillaData.lootGameplay.get(ref);
+                    if (sub == null) sub = VanillaData.lootTrial.get(VanillaData.path(value.getAsString()));
                     if (sub != null) out.addAll(evaluate(sub.getAsJsonObject(), ctx));
                 }
             }

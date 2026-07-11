@@ -71,8 +71,8 @@ public final class Lightning {
      * DATA_IS_POWERED — real vanilla's charged-creeper source, see
      * {@link dev.pointofpressure.minecom.blocks.Explosions#explode}), and converts any
      * villager struck directly to a witch (Villager.thunderHit: unconditional on any
-     * non-peaceful difficulty, no probability roll — replaces the damage/fire entirely,
-     * matched here since this project has no difficulty setting below normal). Bounded: no
+     * non-Peaceful difficulty, no probability roll — replaces the damage/fire
+     * entirely). Bounded: no
      * fire-starting, no lightning-rod redirection (ServerLevel.findLightningRod: a 128-block
      * POI-manager search, real vanilla's FIRST target-redirect check, tried before the
      * entity-redirect below — this project has no spatial index of placed rods and a brute-
@@ -88,7 +88,9 @@ public final class Lightning {
         bolt.setInstance(instance, pos);
         for (Entity e : instance.getNearbyEntities(pos, 3.0)) {
             if (!(e instanceof LivingEntity le) || le.isDead()) continue;
-            if (e.getEntityType() == EntityType.VILLAGER) {
+            if (e.getEntityType() == EntityType.VILLAGER
+                    && !dev.pointofpressure.minecom.Difficulty.isPeaceful()) {
+                // Villager.thunderHit: witch conversion on any non-Peaceful difficulty
                 Pos at = le.getPosition();
                 Instance in = le.getInstance();
                 le.remove();

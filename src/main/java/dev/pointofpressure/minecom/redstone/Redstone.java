@@ -53,6 +53,7 @@ public final class Redstone {
     private static final Map<Long, List<Runnable>> scheduled = new ConcurrentHashMap<>();
     private static final Set<Long> platePositions = ConcurrentHashMap.newKeySet();
     private static final Set<Long> detectorPositions = ConcurrentHashMap.newKeySet();
+    private static final Set<Long> daylightDetectors = ConcurrentHashMap.newKeySet();
     private static final Set<Long> tripwireHooks = ConcurrentHashMap.newKeySet();
     private static final int TRIPWIRE_MAX_LENGTH = 41; // TripWireHookBlock: i in 1..41
     private static final Map<Long, java.util.ArrayDeque<Long>> torchFlips = new ConcurrentHashMap<>();
@@ -75,6 +76,9 @@ public final class Redstone {
             }
             if (e.getBlock().key().value().equals("tripwire_hook")) {
                 tripwireHooks.add(pack(e.getBlockPosition()));
+            }
+            if (e.getBlock().key().value().equals("daylight_detector")) {
+                daylightDetectors.add(pack(e.getBlockPosition()));
             }
             neighborsChanged(e.getBlockPosition());
         });
@@ -163,6 +167,7 @@ public final class Redstone {
         }
 
         if (tickCount % 5 == 0) { tickPlates(); tickDetectorRails(); tickTripwires(); }
+        if (tickCount % 20 == 0) tickDaylightDetectors();
     }
 
     private static void schedule(int delayTicks, Runnable action) {
@@ -193,6 +198,14 @@ public final class Redstone {
             case "repeater" -> {
                 if (!"true".equals(source.getProperty("powered"))) return 0;
                 return sameDir(opp(facingVec(source.getProperty("facing"))), toTarget) ? 15 : 0;
+            }
+            case "target" -> {
+                // TargetBlock.getSignal: the accuracy-based "power" value, all directions
+                return Integer.parseInt(source.getProperty("power"));
+            }
+            case "daylight_detector" -> {
+                // DaylightDetectorBlock.getSignal: the POWER state, all directions
+                return Integer.parseInt(source.getProperty("power"));
             }
             case "comparator" -> {
                 if (!"true".equals(source.getProperty("powered"))) return 0;
@@ -433,7 +446,7 @@ public final class Redstone {
         if (key.equals("redstone_torch") || key.equals("redstone_wall_torch")
                 || key.equals("lever") || key.equals("redstone_block")
                 || key.endsWith("_button") || key.endsWith("_pressure_plate")
-                || key.equals("target")) return true;
+                || key.equals("target") || key.equals("daylight_detector")) return true;
         if (key.equals("repeater") || key.equals("comparator")) {
             Vec facing = facingVec(block.getProperty("facing"));
             return sameDir(facing, dir) || sameDir(opp(facing), dir);
@@ -669,6 +682,8 @@ public final class Redstone {
             // RespawnAnchorBlock.getScaledChargeLevel(state, 15): floor(charges/4 * 15)
             int charges = Integer.parseInt(block.getProperty("charges"));
             return (int) Math.floor(charges / 4.0 * 15);
+        } else if (key.equals("cake")) {
+            return dev.pointofpressure.minecom.blocks.Cake.comparatorOutput(block);
         } else {
             return -1;
         }
@@ -764,6 +779,14 @@ public final class Redstone {
                 e.setBlockingItemUse(true);
                 e.getPlayer().openInventory(dispenserInventory(pos));
             }
+            case "daylight_detector" -> {
+                // DaylightDetectorBlock.useWithoutItem: cycle INVERTED + immediate re-read
+                e.setBlockingItemUse(true);
+                boolean inverted = !"true".equals(block.getProperty("inverted"));
+                instance.setBlock(pos, block.withProperty("inverted", String.valueOf(inverted)));
+                daylightDetectors.add(pack(pos));
+                DaylightDetectors.recompute(instance, pos);
+            }
             default -> {
                 if (key.endsWith("_button")) {
                     e.setBlockingItemUse(true);
@@ -854,6 +877,21 @@ public final class Redstone {
     /** Track detector rails loaded from a saved world when someone approaches them. */
     public static void trackDetector(Point pos) {
         detectorPositions.add(pack(pos));
+    }
+
+    // ------------------------------------------------------------------ daylight detectors
+
+    /** Track daylight detectors loaded from a saved world (or placed by tests). */
+    public static void trackDaylightDetector(Point pos) {
+        daylightDetectors.add(pack(pos));
+    }
+
+    private static void tickDaylightDetectors() {
+        for (long key : daylightDetectors) {
+            Point pos = unpackVec(key);
+            if (!instance.isChunkLoaded(pos.blockX() >> 4, pos.blockZ() >> 4)) continue;
+            if (!DaylightDetectors.recompute(instance, pos)) daylightDetectors.remove(key);
+        }
     }
 
     // ------------------------------------------------------------------ tripwire

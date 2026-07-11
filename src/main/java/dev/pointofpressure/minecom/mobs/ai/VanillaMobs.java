@@ -41,6 +41,73 @@ public final class VanillaMobs {
     public static void notifyHurt(EntityCreature mob, LivingEntity attacker) {
         VBrain brain = brainOf(mob);
         if (brain != null) brain.hurtBy(attacker);
+        maybeCallReinforcements(mob);
+    }
+
+    /** Zombie.SPAWN_REINFORCEMENTS_CHANCE: rolled per zombie at spawn, spent as it calls. */
+    public static final net.minestom.server.tag.Tag<Double> REINFORCEMENT_CHANCE =
+            net.minestom.server.tag.Tag.Double("minecom:zombie_reinforcement_chance");
+
+    /**
+     * Zombie.handleAttributes: per-spawn knockback-resistance jitter, a follow-range
+     * bonus above special-multiplier threshold, and the 5%-of-special-multiplier
+     * "leader zombie" roll (2-5x health, +0.5-0.75 reinforcement chance).
+     */
+    static void zombieSpawnAttributes(EntityCreature mob, Instance instance, Pos pos) {
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        double chance = rng.nextDouble() * 0.1;
+        float specialMultiplier = dev.pointofpressure.minecom.Difficulty.specialMultiplierAt(instance, pos);
+        var kb = mob.getAttribute(Attribute.KNOCKBACK_RESISTANCE);
+        kb.setBaseValue(kb.getBaseValue() + rng.nextDouble() * 0.05);
+        double followBonus = rng.nextDouble() * 1.5 * specialMultiplier;
+        if (followBonus > 1.0) {
+            var follow = mob.getAttribute(Attribute.FOLLOW_RANGE);
+            follow.setBaseValue(follow.getBaseValue() * (1 + followBonus));
+        }
+        if (rng.nextFloat() < specialMultiplier * 0.05f) {
+            chance += rng.nextDouble() * 0.25 + 0.5;
+            var hp = mob.getAttribute(Attribute.MAX_HEALTH);
+            hp.setBaseValue(hp.getBaseValue() * (2 + rng.nextDouble() * 3.0));
+            mob.setHealth((float) mob.getAttributeValue(Attribute.MAX_HEALTH));
+        }
+        mob.setTag(REINFORCEMENT_CHANCE, chance);
+    }
+
+    /**
+     * Zombie.hurtServer: on Hard, a hurt zombie rolls its reinforcement chance to call
+     * another of its kind at a 7-40 block offset (50 placement attempts, no player
+     * within 7 blocks); each successful call drains 5% from caller and callee alike.
+     */
+    private static void maybeCallReinforcements(EntityCreature mob) {
+        if (dev.pointofpressure.minecom.Difficulty.current() != dev.pointofpressure.minecom.Difficulty.HARD) return;
+        Double chance = mob.getTag(REINFORCEMENT_CHANCE);
+        if (chance == null) return;
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        if (rng.nextFloat() >= chance) return;
+        Instance instance = mob.getInstance();
+        if (instance == null) return;
+        Pos base = mob.getPosition();
+        for (int attempt = 0; attempt < 50; attempt++) {
+            int x = base.blockX() + (rng.nextInt(34) + 7) * (rng.nextInt(3) - 1);
+            int y = base.blockY() + (rng.nextInt(34) + 7) * (rng.nextInt(3) - 1);
+            int z = base.blockZ() + (rng.nextInt(34) + 7) * (rng.nextInt(3) - 1);
+            if (!instance.isChunkLoaded(x >> 4, z >> 4)) continue;
+            if (!instance.getBlock(x, y - 1, z).isSolid()) continue;
+            if (instance.getBlock(x, y, z).isSolid() || instance.getBlock(x, y + 1, z).isSolid()) continue;
+            Pos spawnPos = new Pos(x + 0.5, y, z + 0.5);
+            boolean playerNear = instance.getPlayers().stream().anyMatch(p ->
+                    p.getPosition().distanceSquared(spawnPos) < 49);
+            if (playerNear) continue;
+            EntityCreature reinforcement = dev.pointofpressure.minecom.mobs.Mobs.spawn(
+                    mob.getEntityType().key().value(), instance, spawnPos);
+            if (reinforcement == null) return;
+            mob.setTag(REINFORCEMENT_CHANCE, Math.max(0, chance - 0.05));
+            Double calleeChance = reinforcement.getTag(REINFORCEMENT_CHANCE);
+            if (calleeChance != null) {
+                reinforcement.setTag(REINFORCEMENT_CHANCE, Math.max(0, calleeChance - 0.05));
+            }
+            return;
+        }
     }
 
     private static VBrain brain(EntityCreature mob, double speed, double followRange,
@@ -72,9 +139,10 @@ public final class VanillaMobs {
         brain.addTargetGoal(1, new Goals.HurtByTarget(brain, true));
         brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true));
         sunburn(mob, instance);
-        maybeEquipArmor(mob);
+        maybeEquipArmor(mob, instance, pos);
         maybeEquipZombieWeapon(mob);
         maybeBabyZombie(mob);
+        zombieSpawnAttributes(mob, instance, pos);
         mob.setInstance(instance, pos);
         return mob;
     }
@@ -91,7 +159,7 @@ public final class VanillaMobs {
         brain.addTargetGoal(1, new Goals.HurtByTarget(brain, false));
         brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true));
         sunburn(mob, instance);
-        maybeEquipArmor(mob);
+        maybeEquipArmor(mob, instance, pos);
         mob.setInstance(instance, pos);
         return mob;
     }
@@ -214,6 +282,112 @@ public final class VanillaMobs {
         return mob;
     }
 
+    /**
+     * Breeze: an agile wind mob (30 HP, speed 0.63, follow 24 — Breeze.createAttributes)
+     * that hops around its target and shoots wind charges: a projectile whose burst
+     * deals 1 direct-hit damage and launches everything within 3 blocks upward
+     * (BreezeWindCharge.explode radius 3, knockback-only), also flipping wooden
+     * buttons/doors/trapdoors/fence gates it bursts against. The shoot rhythm follows
+     * Shoot (15-tick windup + cooldown); the ballistic hop mirrors LongJump's spirit
+     * without the full brain choreography.
+     */
+    public static EntityCreature breeze(Instance instance, Pos pos) {
+        EntityCreature mob = new EntityCreature(EntityType.BREEZE);
+        VBrain brain = brain(mob, 0.63, 24, 3, 30, 0);
+        brain.addGoal(7, new Goals.WaterAvoidingRandomStroll(brain, 1.0));
+        brain.addGoal(8, new Goals.LookAtPlayer(brain, 8));
+        brain.addGoal(8, new Goals.RandomLookAround(brain));
+        brain.addTargetGoal(1, new Goals.HurtByTarget(brain, false));
+        brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, false));
+        int[] shootCooldown = {30};
+        int[] jumpCooldown = {40};
+        mob.scheduler().buildTask(() -> {
+            if (mob.isDead() || mob.getInstance() == null) return;
+            LivingEntity target = brain.target;
+            if (target == null || target.isDead()) return;
+            brain.lookAt(target);
+            double distSq = mob.getPosition().distanceSquared(target.getPosition());
+            if (--jumpCooldown[0] <= 0 && mob.isOnGround()) {
+                // hop in an arc that keeps a mid-range slant toward/around the target
+                jumpCooldown[0] = 40 + ThreadLocalRandom.current().nextInt(40);
+                Vec toTarget = Vec.fromPoint(target.getPosition().sub(mob.getPosition()));
+                double angle = (ThreadLocalRandom.current().nextDouble() - 0.5) * Math.PI / 2;
+                double cos = Math.cos(angle), sin = Math.sin(angle);
+                Vec flat = new Vec(toTarget.x() * cos - toTarget.z() * sin, 0,
+                        toTarget.x() * sin + toTarget.z() * cos);
+                double toward = distSq > 8 * 8 ? 6 : distSq < 4 * 4 ? -4 : 3;
+                if (flat.lengthSquared() > 0.01) {
+                    mob.setVelocity(flat.normalize().mul(toward).withY(9));
+                }
+            }
+            if (--shootCooldown[0] <= 0 && distSq <= 256) {
+                shootCooldown[0] = 30 + ThreadLocalRandom.current().nextInt(30);
+                shootWindCharge(mob, target);
+            }
+        }).repeat(TaskSchedule.tick(1)).schedule();
+        mob.setInstance(instance, pos);
+        return mob;
+    }
+
+    private static void shootWindCharge(EntityCreature breeze, LivingEntity target) {
+        Instance instance = breeze.getInstance();
+        var charge = new net.minestom.server.entity.EntityProjectile(breeze, EntityType.BREEZE_WIND_CHARGE);
+        Pos from = breeze.getPosition().add(0, breeze.getEyeHeight(), 0);
+        charge.setInstance(instance, from);
+        Vec dir = target.getPosition().add(0, target.getEyeHeight() / 2, 0).sub(from).asVec().normalize();
+        charge.setVelocity(dir.mul(14)); // PROJECTILE_MOVEMENT_SCALE 0.7 * 20t/s
+        // burst on any collision; safety-remove after 5s
+        int[] life = {0};
+        charge.scheduler().buildTask(() -> {
+            if (charge.isRemoved()) return;
+            if (++life[0] > 100) { charge.remove(); return; }
+            if (charge.isOnGround() || charge.getVelocity().lengthSquared() < 1) {
+                windBurst(instance, charge.getPosition(), breeze, null);
+                charge.remove();
+            }
+        }).repeat(TaskSchedule.tick(1)).schedule();
+    }
+
+    /**
+     * BreezeWindCharge.explode: a radius-3 knockback-only burst — 1 damage to the
+     * direct-hit entity, an upward launch for everything caught in it (the breeze
+     * itself is immune), and a "trigger" interaction that flips buttons, doors,
+     * trapdoors, and fence gates it engulfs.
+     */
+    public static void windBurst(Instance instance, Pos at, EntityCreature source, LivingEntity directHit) {
+        if (directHit != null && directHit != source) {
+            directHit.damage(net.minestom.server.entity.damage.Damage.fromEntity(
+                    source != null ? source : directHit, 1f));
+        }
+        for (Entity e : instance.getNearbyEntities(at, 3)) {
+            if (e == source || !(e instanceof LivingEntity living) || living.isDead()) continue;
+            double dist = e.getPosition().distance(at);
+            double strength = Math.max(0, 1 - dist / 3.0);
+            Vec away = Vec.fromPoint(e.getPosition().sub(at)).withY(0);
+            Vec push = (away.lengthSquared() > 0.01 ? away.normalize().mul(6 * strength) : Vec.ZERO)
+                    .withY(12 * strength);
+            e.setVelocity(e.getVelocity().add(push));
+        }
+        int bx = at.blockX(), by = at.blockY(), bz = at.blockZ();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    Block b = instance.getBlock(bx + dx, by + dy, bz + dz);
+                    String key = b.key().value();
+                    Pos p = new Pos(bx + dx, by + dy, bz + dz);
+                    if (key.endsWith("_button") && !"true".equals(b.getProperty("powered"))) {
+                        instance.setBlock(p, b.withProperty("powered", "true"));
+                        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(p);
+                    } else if ((key.endsWith("_door") || key.endsWith("_trapdoor") || key.endsWith("_fence_gate"))
+                            && !key.startsWith("iron")) {
+                        instance.setBlock(p, b.withProperty("open",
+                                "true".equals(b.getProperty("open")) ? "false" : "true"));
+                    }
+                }
+            }
+        }
+    }
+
     /** Magma cube: slime hop movement toward targets, contact damage. */
     public static EntityCreature magmaCube(Instance instance, Pos pos) {
         EntityCreature mob = new EntityCreature(EntityType.MAGMA_CUBE);
@@ -246,39 +420,47 @@ public final class VanillaMobs {
 
     // ---------------------------------------------------------------- hostile variants
 
-    // armor tiers by slot (leather, gold, chainmail, iron, diamond) — Mob.populateDefaultEquipment
+    // armor tiers by slot (leather, copper, gold, chainmail, iron, diamond) — Mob.getEquipmentForSlot
     private static final Material[][] ARMOR = {
-            {Material.LEATHER_HELMET, Material.GOLDEN_HELMET, Material.CHAINMAIL_HELMET, Material.IRON_HELMET, Material.DIAMOND_HELMET},
-            {Material.LEATHER_CHESTPLATE, Material.GOLDEN_CHESTPLATE, Material.CHAINMAIL_CHESTPLATE, Material.IRON_CHESTPLATE, Material.DIAMOND_CHESTPLATE},
-            {Material.LEATHER_LEGGINGS, Material.GOLDEN_LEGGINGS, Material.CHAINMAIL_LEGGINGS, Material.IRON_LEGGINGS, Material.DIAMOND_LEGGINGS},
-            {Material.LEATHER_BOOTS, Material.GOLDEN_BOOTS, Material.CHAINMAIL_BOOTS, Material.IRON_BOOTS, Material.DIAMOND_BOOTS}};
+            {Material.LEATHER_HELMET, Material.COPPER_HELMET, Material.GOLDEN_HELMET, Material.CHAINMAIL_HELMET, Material.IRON_HELMET, Material.DIAMOND_HELMET},
+            {Material.LEATHER_CHESTPLATE, Material.COPPER_CHESTPLATE, Material.GOLDEN_CHESTPLATE, Material.CHAINMAIL_CHESTPLATE, Material.IRON_CHESTPLATE, Material.DIAMOND_CHESTPLATE},
+            {Material.LEATHER_LEGGINGS, Material.COPPER_LEGGINGS, Material.GOLDEN_LEGGINGS, Material.CHAINMAIL_LEGGINGS, Material.IRON_LEGGINGS, Material.DIAMOND_LEGGINGS},
+            {Material.LEATHER_BOOTS, Material.COPPER_BOOTS, Material.GOLDEN_BOOTS, Material.CHAINMAIL_BOOTS, Material.IRON_BOOTS, Material.DIAMOND_BOOTS}};
     private static final EquipmentSlot[] ARMOR_SLOTS = {EquipmentSlot.HELMET, EquipmentSlot.CHESTPLATE, EquipmentSlot.LEGGINGS, EquipmentSlot.BOOTS};
 
     /**
-     * Vanilla Mob.populateDefaultEquipmentSlots: ~15% chance to wear armor, one tier
-     * (weighted leather..diamond), filling helmet down with decreasing probability.
+     * Mob.populateDefaultEquipmentSlots: 15% x regional-difficulty special multiplier
+     * to wear armor at all (so a fresh Normal world spawns none — vanilla behavior),
+     * base tier leather/copper/gold + three 10.87% upgrade rolls, filling helmet down
+     * with a 25% stop chance between pieces (10% on Hard).
      */
-    static void maybeEquipArmor(EntityCreature mob) {
+    static void maybeEquipArmor(EntityCreature mob, Instance instance, Pos pos) {
         java.util.concurrent.ThreadLocalRandom rng = java.util.concurrent.ThreadLocalRandom.current();
-        if (rng.nextFloat() >= 0.15f) return;
-        float t = rng.nextFloat();
-        int tier = t < 0.37f ? 0 : t < 0.64f ? 1 : t < 0.84f ? 2 : t < 0.95f ? 3 : 4;
-        float chance = 1.0f;
-        for (int i = 0; i < 4; i++) {              // helmet -> boots, each less likely
-            if (rng.nextFloat() < chance) mob.setEquipment(ARMOR_SLOTS[i], ItemStack.of(ARMOR[i][tier]));
-            else break;
-            chance *= 0.6f;
+        float specialMultiplier = dev.pointofpressure.minecom.Difficulty.specialMultiplierAt(instance, pos);
+        if (rng.nextFloat() >= 0.15f * specialMultiplier) return;
+        int tier = rng.nextInt(3);
+        for (int i = 1; i <= 3; i++) {
+            if (rng.nextFloat() < 0.1087f) tier++;
+        }
+        float stopChance = dev.pointofpressure.minecom.Difficulty.current()
+                == dev.pointofpressure.minecom.Difficulty.HARD ? 0.1f : 0.25f;
+        boolean first = true;
+        for (int i = 0; i < 4; i++) {              // helmet -> boots (EQUIPMENT_POPULATION_ORDER)
+            if (!first && rng.nextFloat() < stopChance) break;
+            first = false;
+            mob.setEquipment(ARMOR_SLOTS[i], ItemStack.of(ARMOR[i][Math.min(tier, 5)]));
         }
     }
 
     /**
      * Zombie.populateDefaultEquipmentSlots weapon roll (on top of the base armor roll):
-     * 1% chance (5% on hard, approximated flat at 1% since this project has no difficulty
-     * setting) to hold an iron_sword, iron_spear, or iron_shovel (1/6, 1/6, 4/6).
+     * 1% chance (5% on Hard) to hold an iron_sword, iron_spear, or iron_shovel (1/6, 1/6, 4/6).
      */
     static void maybeEquipZombieWeapon(EntityCreature mob) {
         java.util.concurrent.ThreadLocalRandom rng = java.util.concurrent.ThreadLocalRandom.current();
-        if (rng.nextFloat() >= 0.01f) return;
+        float chance = dev.pointofpressure.minecom.Difficulty.current()
+                == dev.pointofpressure.minecom.Difficulty.HARD ? 0.05f : 0.01f;
+        if (rng.nextFloat() >= chance) return;
         int roll = rng.nextInt(6);
         Material weapon = roll == 0 ? Material.IRON_SWORD : roll == 1 ? Material.IRON_SPEAR : Material.IRON_SHOVEL;
         mob.setEquipment(EquipmentSlot.MAIN_HAND, ItemStack.of(weapon));
@@ -346,10 +528,15 @@ public final class VanillaMobs {
             // Drowned.populateDefaultEquipmentSlots overrides entirely (no armor, no super call)
             maybeEquipDrownedWeapon(mob);
         } else {
-            maybeEquipArmor(mob);
+            maybeEquipArmor(mob, instance, pos);
             maybeEquipZombieWeapon(mob);
         }
         maybeBabyZombie(mob);
+        // the true Zombie family shares the reinforcement/leader spawn attributes
+        // (Parched is skeleton-family, ZombifiedPiglin zeroes its reinforcement chance)
+        if (type == EntityType.HUSK || type == EntityType.DROWNED || type == EntityType.ZOMBIE_VILLAGER) {
+            zombieSpawnAttributes(mob, instance, pos);
+        }
         mob.setInstance(instance, pos);
         return mob;
     }
@@ -518,8 +705,7 @@ public final class VanillaMobs {
      * Guardian: charges a laser beam at a target held in continuous line of sight, then
      * fires (`Guardian$GuardianAttackGoal`, decompiled): charge starts at -10 and fires once
      * it reaches {@code getAttackDuration()}=80 (90 ticks total, ~4.5s), dealing 1.0 indirect
-     * magic damage (Normal difficulty — this project has no difficulty setting, so the
-     * Hard-only +2 and elder-only +2 bonuses don't apply) PLUS a normal melee hit via
+     * magic damage (+2 on Hard difficulty, +2 more for elders) PLUS a normal melee hit via
      * {@code doHurtTarget} (this project's 6 ATTACK_DAMAGE, routed through the shared
      * combat pipeline like every other mob). Breaking line of sight resets the charge to
      * zero, matching vanilla exactly. Bounded: no real underwater swim AI (this project has
@@ -581,7 +767,11 @@ public final class VanillaMobs {
             brain.lookAt(target);
             brain.stopNavigation();
             if (++chargeTicks[0] >= attackDuration + 10) {
-                target.damage(DamageType.INDIRECT_MAGIC, 1f);
+                // GuardianAttackGoal.stop-fire: 1.0 base, +2 on Hard, +2 for elders
+                float laser = 1f;
+                if (dev.pointofpressure.minecom.Difficulty.current() == dev.pointofpressure.minecom.Difficulty.HARD) laser += 2f;
+                if (type == EntityType.ELDER_GUARDIAN) laser += 2f;
+                target.damage(DamageType.INDIRECT_MAGIC, laser);
                 net.minestom.server.event.EventDispatcher.call(
                         new net.minestom.server.event.entity.EntityAttackEvent(mob, target));
                 chargeTicks[0] = -10;
@@ -800,7 +990,7 @@ public final class VanillaMobs {
         brain.addTargetGoal(1, new Goals.HurtByTarget(brain, false));
         brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true));
         sunburn(mob, instance);
-        maybeEquipArmor(mob);
+        maybeEquipArmor(mob, instance, pos);
         mob.setInstance(instance, pos);
         return mob;
     }

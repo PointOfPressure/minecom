@@ -71,6 +71,9 @@ public final class Villagers {
         // a wandering trader occasionally appears near a player
         MinecraftServer.getSchedulerManager().buildTask(() -> spawnWanderingTrader(overworld))
                 .repeat(TaskSchedule.minutes(20)).schedule();
+
+        // personal food inventories: passive pickup + farmer harvesting/sharing
+        VillagerFood.start(overworld);
     }
 
     private static void spawnWanderingTrader(Instance overworld) {
@@ -96,10 +99,11 @@ public final class Villagers {
     private static final int CROWD_LIMIT = 10;
 
     /**
-     * Find a nearby eligible villager pair and produce one offspring. Requires a spare
-     * bed nearby (this project's villagers don't farm/gather food into a personal
-     * inventory the way vanilla's willingness check does, so the food-threshold half of
-     * the real rule is approximated away — the bed-capacity half is real and enforced).
+     * Find a nearby eligible villager pair and produce one offspring. Both the real
+     * willingness halves are enforced: each parent needs 12 food points on hand
+     * (Villager.canBreed: foodLevel + inventory food, from picked-up or farmed food —
+     * see {@link VillagerFood}), and there must be a spare bed in the village.
+     * Breeding digests 12 food points from each parent (eatAndDigestFood).
      */
     public static void breedTick(Instance instance, long now) {
         List<Entity> villagers = instance.getEntities().stream()
@@ -107,14 +111,18 @@ public final class Villagers {
         for (int i = 0; i < villagers.size(); i++) {
             Entity a = villagers.get(i);
             if (a.hasTag(BRED_AT) && now - a.getTag(BRED_AT) < BREED_COOLDOWN) continue;
+            if (!VillagerFood.canBreed(a)) continue;
             for (int j = i + 1; j < villagers.size(); j++) {
                 Entity b = villagers.get(j);
                 if (b.hasTag(BRED_AT) && now - b.getTag(BRED_AT) < BREED_COOLDOWN) continue;
+                if (!VillagerFood.canBreed(b)) continue;
                 if (a.getPosition().distanceSquared(b.getPosition()) > 8 * 8) continue;
                 long nearby = villagers.stream()
                         .filter(v -> v.getPosition().distanceSquared(a.getPosition()) < 16 * 16).count();
                 if (nearby >= CROWD_LIMIT) continue;
                 if (!hasSpareBed(instance, a.getPosition(), (int) nearby)) continue;
+                VillagerFood.eatAndDigestFood(a);
+                VillagerFood.eatAndDigestFood(b);
                 Pos mid = a.getPosition().add(b.getPosition()).div(2);
                 var baby = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(instance, mid.withView(0f, 0f));
                 if (baby.getEntityMeta() instanceof net.minestom.server.entity.metadata.AgeableMobMeta meta) {

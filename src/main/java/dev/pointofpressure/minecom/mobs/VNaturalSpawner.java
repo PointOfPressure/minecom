@@ -215,7 +215,7 @@ public final class VNaturalSpawner {
         countMobs();
 
         // 3. which categories may spawn this tick (phase flags + global cap)
-        boolean spawnEnemies = true;
+        boolean spawnEnemies = !dev.pointofpressure.minecom.Difficulty.isPeaceful(); // Level.isSpawningMonsters
         boolean spawnFriendlies = worldTick % 400L == 0L; // creatures spawn every 400 ticks (like vanilla)
         List<Cat> categories = new ArrayList<>();
         for (Cat c : Cat.values()) {
@@ -580,9 +580,12 @@ public final class VNaturalSpawner {
     /** Mob.checkDespawn for every creature: 128-block instant, 32-128 random chance. */
     public void despawnTick() {
         Set<Player> players = instance.getPlayers();
+        boolean peaceful = dev.pointofpressure.minecom.Difficulty.isPeaceful();
         for (Entity e : instance.getEntities()) {
             if (!(e instanceof EntityCreature mob) || mob.isDead()) continue;
             Cat c = TYPE_CATEGORY.getOrDefault(e.getEntityType().key().asString(), Cat.MONSTER);
+            // Mob.checkDespawn: hostiles discard instantly on Peaceful
+            if (peaceful && !c.friendly) { mob.remove(); continue; }
             if (c.persistent) continue; // creatures persist? no — CREATURE.persistent=true handled by removeWhenFarAway
             Player near = null;
             double d2 = Double.MAX_VALUE;

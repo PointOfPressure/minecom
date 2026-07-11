@@ -87,16 +87,27 @@ public final class Survival {
         if (p.getGameMode() != GameMode.SURVIVAL || p.isDead()) return;
         State s = state(p);
 
+        var difficulty = dev.pointofpressure.minecom.Difficulty.current();
         if (s.exhaustion >= 4f) {
             s.exhaustion -= 4f;
             if (p.getFoodSaturation() > 0) {
                 p.setFoodSaturation(Math.max(0, p.getFoodSaturation() - 1));
-            } else {
+            } else if (difficulty != dev.pointofpressure.minecom.Difficulty.PEACEFUL) {
+                // FoodData.tick: the hunger bar never drains on Peaceful
                 p.setFood(Math.max(0, p.getFood() - 1));
             }
         }
 
         float maxHealth = (float) p.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH);
+        // Player.aiStep: Peaceful regenerates 1 health/second and 1 food/half-second outright
+        if (difficulty == dev.pointofpressure.minecom.Difficulty.PEACEFUL) {
+            if (p.getHealth() < maxHealth && p.getAliveTicks() % 20 == 0) {
+                p.setHealth(Math.min(maxHealth, p.getHealth() + 1));
+            }
+            if (p.getFood() < 20 && p.getAliveTicks() % 10 == 0) {
+                p.setFood(p.getFood() + 1);
+            }
+        }
         if (p.getFood() >= 18 && p.getHealth() < maxHealth) {
             if (++s.regenTicks >= 80) {
                 s.regenTicks = 0;
@@ -110,7 +121,14 @@ public final class Survival {
         if (p.getFood() == 0) {
             if (++s.starveTicks >= 80) {
                 s.starveTicks = 0;
-                if (p.getHealth() > 1) p.damage(DamageType.STARVE, 1f);
+                // FoodData.tick: starve to death on Hard, down to 1 HP on Normal, 10 on Easy
+                boolean starves = switch (difficulty) {
+                    case HARD -> true;
+                    case NORMAL -> p.getHealth() > 1;
+                    case EASY -> p.getHealth() > 10;
+                    case PEACEFUL -> false; // unreachable: food never hits 0
+                };
+                if (starves) p.damage(DamageType.STARVE, 1f);
             }
         } else {
             s.starveTicks = 0;

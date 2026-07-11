@@ -83,6 +83,11 @@ public final class VStructureGen {
             // rotate the final state (StructureTemplate placeInWorld: state.mirror().rotate())
             state = VBlockRotate.rotate(state, rot);
             canvas.set(wx, wy, wz, state);
+
+            // functional block entities keep their template config (trial spawners, vaults)
+            if (b.nbt != null && (name.equals("minecraft:trial_spawner") || name.equals("minecraft:vault"))) {
+                dev.pointofpressure.minecom.blocks.TrialChambers.registerTemplateBlockEntity(wx, wy, wz, name, b.nbt);
+            }
         }
     }
 

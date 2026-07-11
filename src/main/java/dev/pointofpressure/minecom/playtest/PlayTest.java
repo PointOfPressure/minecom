@@ -56,7 +56,10 @@ public final class PlayTest {
         world = Bootstrap.boot(Bootstrap.Config.playtest());
         Pos spawn = Bootstrap.spawnOf(world);
         Main.registerConnectionFlow(MinecraftServer.getGlobalEventHandler(), world, spawn);
-        server.start("127.0.0.1", 25599); // real tick loop; port unused by scenarios
+        // real tick loop; port unused by scenarios — overridable so multiple concurrent
+        // playtest runs (e.g. different models working the same tree at once) don't collide
+        int port = Integer.parseInt(System.getenv().getOrDefault("MINECOM_TEST_PORT", "25599"));
+        server.start("127.0.0.1", port);
 
         for (int cx = -4; cx < 4; cx++) {
             for (int cz = -4; cz < 4; cz++) {
@@ -141,6 +144,7 @@ public final class PlayTest {
         scenario("end: dragon spawns, dies, forms the exit portal", PlayTest::scenarioEnderDragon);
         scenario("end: portal travel there and back", PlayTest::scenarioEndPortal);
         scenario("village: villager entity spawns and wanders", PlayTest::scenarioVillager);
+        scenario("village: food economy gates breeding — tossed bread is picked up, eaten, and digested by breeding; farmers harvest and share", PlayTest::scenarioVillagerFood);
         scenario("raid: three escalating waves, clearing each advances, clearing all wins", PlayTest::scenarioRaid);
         scenario("stronghold: portal room builds, 12 eyes light the end_portal", PlayTest::scenarioStronghold);
         scenario("end: chorus plant grows a branching stem on end_stone", PlayTest::scenarioChorus);
@@ -151,6 +155,9 @@ public final class PlayTest {
         scenario("minecart: chest/furnace/hopper/TNT variants", PlayTest::scenarioMinecartVariants);
         scenario("minecart: cart-to-cart collision queues up instead of passing through", PlayTest::scenarioMinecartCollision);
         scenario("redstone: detector rail powers a lamp while a cart sits on it", PlayTest::scenarioDetectorRail);
+        scenario("redstone: daylight detector tracks the sun, inverts into a night sensor", PlayTest::scenarioDaylightDetector);
+        scenario("difficulty: peaceful nullifies mobs and hunger, easy/hard scale damage, hard calls zombie reinforcements", PlayTest::scenarioDifficulty);
+        scenario("trial chambers: the spawner runs a full wave trial and ejects rewards, the vault unlocks once per player with a trial key, wind charges burst", PlayTest::scenarioTrialChamber);
         scenario("boat: sneak dismounts the rider, attacking breaks it and drops the item", PlayTest::scenarioBoatBreakAndDismount);
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
@@ -163,6 +170,9 @@ public final class PlayTest {
         scenario("lectern: books drives a real page-count comparator signal, page-turns pulse redstone, taking returns the book", PlayTest::scenarioLectern);
         scenario("tripwire: two facing hooks connect through wire, stepping on it powers a direct signal, shears disarm in place", PlayTest::scenarioTripwire);
         scenario("respawn anchor: charges with glowstone, explodes outside the nether, sets spawn and depletes a charge on respawn in it", PlayTest::scenarioRespawnAnchor);
+        scenario("target block: a bullseye arrow hit gives max signal, a grazing hit gives a low one, and mid-reset hits are ignored", PlayTest::scenarioTargetBlock);
+        scenario("candle: flint and steel lights it, stacking requires a matching color, empty-hand extinguishes it", PlayTest::scenarioCandle);
+        scenario("cake: eating a slice restores hunger and advances bites, the comparator signal follows (7-bites)*2, the last bite removes it", PlayTest::scenarioCake);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
@@ -319,16 +329,38 @@ public final class PlayTest {
     /** Mob equipment: a fraction of zombies spawn wearing armor (difficulty variety). */
     private static void scenarioMobEquipment() {
         clearEntitiesExceptPlayer();
-        int armored = 0;
+        // armor rolls are 0.15 * regional special multiplier, which is 0 on a fresh
+        // world (vanilla: no armored mobs early on) — assert that first, then max out
+        // the region (Hard + fully inhabited chunks -> multiplier 1) for the real roll
+        var difficulty = dev.pointofpressure.minecom.Difficulty.current();
         java.util.List<Entity> spawned = new java.util.ArrayList<>();
+        int armoredFresh = 0;
+        for (int i = 0; i < 40; i++) {
+            var z = Mobs.spawn("zombie", world, new Pos(30 + i % 10, Y + 1, 30 + i / 10));
+            if (z == null) continue;
+            spawned.add(z);
+            if (!z.getEquipment(EquipmentSlot.HELMET).isAir()) armoredFresh++;
+        }
+        check("on a fresh world no zombie spawns with armor (special multiplier 0; "
+                + armoredFresh + "/40)", armoredFresh == 0);
+
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.HARD);
+        for (int cx = 1; cx <= 3; cx++) {
+            for (int cz = 1; cz <= 3; cz++) {
+                dev.pointofpressure.minecom.Difficulty.setInhabitedTicks(
+                        world, new Pos(cx << 4, Y, cz << 4), 3600000L);
+            }
+        }
+        int armored = 0;
         for (int i = 0; i < 80; i++) {
             var z = Mobs.spawn("zombie", world, new Pos(30 + i % 10, Y + 1, 30 + i / 10));
             if (z == null) continue;
             spawned.add(z);
             if (!z.getEquipment(EquipmentSlot.HELMET).isAir()) armored++;
         }
-        check("some zombies spawn wearing armor (" + armored + "/80), but not all",
-                armored >= 1 && armored <= 45);
+        check("in a maxed-out hard region some zombies spawn wearing armor ("
+                + armored + "/80), but not all", armored >= 2 && armored <= 45);
+        dev.pointofpressure.minecom.Difficulty.set(difficulty);
         spawned.forEach(Entity::remove);
         clearEntitiesExceptPlayer();
     }
@@ -606,6 +638,121 @@ public final class PlayTest {
         nether.setBlock(nx, ny, nz, Block.AIR);
         player.setInstance(world, new Pos(0.5, Y + 1, 0.5)).join();
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    private static void scenarioTargetBlock() {
+        clearEntitiesExceptPlayer();
+        int tx = 60, ty = Y + 1, tz = 60;
+        world.setBlock(tx, ty, tz, Block.TARGET);
+        rs(tx - 1, ty, tz, Block.REDSTONE_LAMP);
+        tick(2);
+
+        Entity arrow = new Entity(EntityType.ARROW);
+        arrow.setInstance(world, new Pos(tx - 1.0, ty + 0.5, tz + 0.5)).join();
+        arrow.setVelocity(new Vec(5, 0, 0));
+        // dead center of the west face: y/z fractions both exactly 0.5 -> distance 0 -> strength 15
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent(
+                arrow, new Pos(tx, ty + 0.5, tz + 0.5), Block.TARGET));
+        tick(1);
+        check("a dead-center arrow hit gives the maximum signal (15)",
+                "15".equals(world.getBlock(tx, ty, tz).getProperty("power")));
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(tx, ty, tz));
+        check("a powered target block emits a direct signal (lights the adjacent lamp)",
+                waitFor(() -> "true".equals(prop(tx - 1, ty, tz, "lit")), 2000));
+
+        // a second hit while the first's 20-tick (arrow) reset is still pending is ignored
+        arrow.setVelocity(new Vec(5, 0, 0));
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent(
+                arrow, new Pos(tx, ty + 0.05, tz + 0.05), Block.TARGET));
+        tick(1);
+        check("a hit while a previous reset is still pending doesn't overwrite the value",
+                "15".equals(world.getBlock(tx, ty, tz).getProperty("power")));
+
+        check("the signal resets to 0 after the arrow's 20-tick window",
+                waitFor(() -> "0".equals(world.getBlock(tx, ty, tz).getProperty("power")), 3000));
+        dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(tx, ty, tz));
+        check("the lamp turns off once the signal resets",
+                waitFor(() -> "false".equals(prop(tx - 1, ty, tz, "lit")), 2000));
+
+        // now that the reset has fired, a fresh grazing near-corner hit is accepted
+        arrow.setVelocity(new Vec(5, 0, 0));
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent(
+                arrow, new Pos(tx, ty + 0.05, tz + 0.05), Block.TARGET));
+        tick(1);
+        String grazing = world.getBlock(tx, ty, tz).getProperty("power");
+        check("a grazing near-corner hit gives a low signal, not the max (got " + grazing + ")",
+                !grazing.equals("0") && !grazing.equals("15"));
+
+        arrow.remove();
+        world.setBlock(tx, ty, tz, Block.AIR);
+        world.setBlock(tx - 1, ty, tz, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * CandleBlock: lit via flint-and-steel, extinguished via an empty-hand right-click while
+     * lit, and stacking (1-4) only accepts a candle item of the exact same color/block-key —
+     * real vanilla candle colors are separate block types, not a shared color property.
+     */
+    private static void scenarioCandle() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(0, Y, 0);
+        world.setBlock(pos, Block.RED_CANDLE);
+
+        useItemOnBlock(ItemStack.of(Material.FLINT_AND_STEEL), pos, BlockFace.TOP);
+        check("flint and steel lights the candle", "true".equals(world.getBlock(pos).getProperty("lit")));
+
+        useItemOnBlock(ItemStack.of(Material.RED_CANDLE), pos, BlockFace.TOP);
+        check("a matching-color candle item stacks the count to 2",
+                "2".equals(world.getBlock(pos).getProperty("candles")));
+
+        useItemOnBlock(ItemStack.of(Material.CANDLE), pos, BlockFace.TOP); // plain white candle
+        check("a different-color candle item does not stack (real vanilla: separate block types)",
+                "2".equals(world.getBlock(pos).getProperty("candles")));
+
+        interact(pos);
+        check("an empty-hand right-click extinguishes a lit candle",
+                "false".equals(world.getBlock(pos).getProperty("lit")));
+
+        world.setBlock(pos, Block.AIR);
+        resetPlayer();
+    }
+
+    /**
+     * CakeBlock: eating a slice (empty-hand right-click) restores the real 2 nutrition / 0.1
+     * saturation-modifier, advances BITES, and the comparator follows (7-bites)*2; the 7th
+     * eat (bites already at 6) removes the block instead of exceeding the max.
+     */
+    private static void scenarioCake() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(0, Y, 0);
+        world.setBlock(pos, Block.CAKE);
+        player.setFood(10);
+        player.setFoodSaturation(0);
+
+        check("a full cake (0 bites) gives comparator output 14 ((7-0)*2)",
+                dev.pointofpressure.minecom.blocks.Cake.comparatorOutput(world.getBlock(pos)) == 14);
+
+        interact(pos);
+        check("eating a slice restores 2 food (10 -> 12)", player.getFood() == 12);
+        check("eating a slice restores saturation (0.1 modifier * 2 nutrition * 2 = 0.4)",
+                Math.abs(player.getFoodSaturation() - 0.4f) < 0.01f);
+        check("eating a slice advances bites to 1", "1".equals(world.getBlock(pos).getProperty("bites")));
+        check("comparator output drops to 12 ((7-1)*2)",
+                dev.pointofpressure.minecom.blocks.Cake.comparatorOutput(world.getBlock(pos)) == 12);
+
+        for (int i = 0; i < 5; i++) {
+            player.setFood(10); // stay under the 20-food eat gate for every remaining bite
+            interact(pos); // bites 2..6
+        }
+        check("6 total bites eaten, block still present", "6".equals(world.getBlock(pos).getProperty("bites")));
+
+        player.setFood(10);
+        interact(pos); // 7th eat: removes the block instead of a 7th bite
+        check("eating the last slice removes the cake block entirely", world.getBlock(pos).isAir());
+
         resetPlayer();
     }
 
@@ -1208,8 +1355,12 @@ public final class PlayTest {
         clearEntitiesExceptPlayer();
 
         // breeding: two nearby villagers produce one offspring, but only with a spare bed
-        dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(10.5, Y + 1, 10.5));
-        dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(11.5, Y + 1, 10.5));
+        // (both are pre-fed to 12 food points here — the food half of the willingness
+        // gate has its own scenario)
+        var parentA = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(10.5, Y + 1, 10.5));
+        var parentB = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(11.5, Y + 1, 10.5));
+        parentA.setTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL, 12);
+        parentB.setTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL, 12);
         tick(2);
         int before = (int) world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.VILLAGER).count();
         dev.pointofpressure.minecom.mobs.Villagers.breedTick(world, 1_000_000);
@@ -1266,6 +1417,92 @@ public final class PlayTest {
                         && player.getOpenInventory() instanceof net.minestom.server.inventory.Inventory wi
                         && wi.getInventoryType() == net.minestom.server.inventory.InventoryType.MERCHANT);
         player.closeInventory();
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Villager food economy: the breeding gate is foodLevel + inventory food points >= 12
+     * per parent; tossed bread (#villager_picks_up) is collected into the 8-slot personal
+     * inventory, eaten on breeding, and 12 points digested; farmers harvest mature crops
+     * and throw excess food to hungry villagers.
+     */
+    private static void scenarioVillagerFood() {
+        clearEntitiesExceptPlayer();
+        dev.pointofpressure.minecom.mobs.VillagerFood.start(world); // flat worlds don't auto-start it
+
+        // both willingness halves off: beds present but nobody has food -> no offspring
+        int bx = 100, bz = 100;
+        world.setBlock(bx, Y + 1, bz + 3, Block.RED_BED.withProperty("part", "foot"));
+        world.setBlock(bx, Y + 1, bz + 4, Block.RED_BED.withProperty("part", "head"));
+        world.setBlock(bx + 2, Y + 1, bz + 3, Block.RED_BED.withProperty("part", "foot"));
+        world.setBlock(bx + 2, Y + 1, bz + 4, Block.RED_BED.withProperty("part", "head"));
+        // 5 blocks apart: close enough to breed (8), far enough that neither can
+        // vacuum the other's tossed bread (pickup reach is ~1.5)
+        var a = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(bx + 0.5, Y + 1, bz + 0.5));
+        var b = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(bx + 5.5, Y + 1, bz + 0.5));
+        tick(2);
+        dev.pointofpressure.minecom.mobs.Villagers.breedTick(world, 5_000_000);
+        tick(2);
+        long babies = world.getEntities().stream().filter(ent -> ent.getEntityType() == EntityType.VILLAGER
+                && ent.getEntityMeta() instanceof net.minestom.server.entity.metadata.AgeableMobMeta m && m.isBaby()).count();
+        check("hungry villagers refuse to breed even with spare beds", babies == 0);
+
+        // toss 3 bread (12 food points) at one parent's feet: picked up within a sweep;
+        // the other parent is fed directly so the breed check isolates the pickup path
+        ItemEntity bread = new ItemEntity(ItemStack.of(Material.BREAD, 3));
+        bread.setInstance(world, a.getPosition().add(0, 0.3, 0));
+        boolean fedUp = waitFor(() ->
+                dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) >= 12, 8000);
+        check("a villager picks up tossed bread into its personal inventory (a="
+                + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) + " pts)", fedUp);
+        b.setTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL, 12);
+
+        // both wander freely during the pickup window — pin them back within breeding
+        // range (8 blocks) before rolling the pair check
+        a.teleport(new Pos(bx + 0.5, Y + 1, bz + 0.5)).join();
+        b.teleport(new Pos(bx + 2.5, Y + 1, bz + 0.5)).join();
+        tick(2);
+        dev.pointofpressure.minecom.mobs.Villagers.breedTick(world, 6_000_000);
+        tick(2);
+        long fedBabies = world.getEntities().stream().filter(ent -> ent.getEntityType() == EntityType.VILLAGER
+                && ent.getEntityMeta() instanceof net.minestom.server.entity.metadata.AgeableMobMeta m && m.isBaby()).count();
+        check("with 12 food points each the same pair breeds", fedBabies == 1);
+        check("breeding digests the food (12 points eaten per parent; a now has "
+                        + (a.getTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL)
+                        + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a)) + ")",
+                a.getTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL)
+                        + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) < 12);
+        clearEntitiesExceptPlayer();
+
+        // farmer: harvests an adjacent mature wheat crop into its inventory and replants
+        world.setBlock(bx + 1, Y, bz + 1, Block.FARMLAND);
+        world.setBlock(bx + 1, Y + 1, bz + 1, Block.WHEAT.withProperty("age", "7"));
+        var farmer = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(bx + 0.5, Y + 1, bz + 0.5));
+        farmer.setTag(dev.pointofpressure.minecom.mobs.VillagerTrades.PROFESSION, "farmer");
+        boolean harvested = waitFor(() -> {
+            String age = world.getBlock(bx + 1, Y + 1, bz + 1).getProperty("age");
+            return age == null || "0".equals(age);
+        }, 6000);
+        boolean gotWheat = java.util.Arrays.stream(dev.pointofpressure.minecom.mobs.VillagerFood.inventory(farmer))
+                .anyMatch(st -> st.material() == Material.WHEAT);
+        check("a farmer harvests a mature wheat crop nearby (replanting from its seeds)", harvested);
+        check("the harvested wheat lands in the farmer's inventory", gotWheat);
+
+        // sharing: a farmer with >= 24 food points throws food toward a hungry villager
+        var hungry = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(bx + 4.5, Y + 1, bz + 0.5));
+        ItemEntity stack = new ItemEntity(ItemStack.of(Material.BREAD, 64)); // plenty over the 24-point excess bar
+        stack.setInstance(world, farmer.getPosition().add(0, 0.3, 0));
+        boolean shared = waitFor(() ->
+                hungry.getTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL)
+                        + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(hungry) > 0, 12000);
+        check("a farmer with excess food shares it with a hungry villager", shared);
+
+        for (int dx = 0; dx <= 4; dx++) {
+            for (int dz = 0; dz <= 4; dz++) {
+                world.setBlock(bx + dx, Y + 1, bz + dz, Block.AIR);
+                world.setBlock(bx + dx, Y, bz + dz, Block.STONE);
+            }
+        }
         clearEntitiesExceptPlayer();
     }
 
@@ -2335,6 +2572,224 @@ public final class PlayTest {
 
         world.setBlock(wx, Y, wz, Block.AIR);
         clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Trial chambers: a registered trial spawner detects a player in line of sight,
+     * spawns its config's zombie waves (killing them all ejects reward loot and enters
+     * the 30-minute cooldown); a registered vault activates near a player and unlocks
+     * exactly once per player for a trial key; a wind burst launches entities upward
+     * and presses buttons.
+     */
+    private static void scenarioTrialChamber() {
+        clearEntitiesExceptPlayer();
+        var savedDifficulty = dev.pointofpressure.minecom.Difficulty.current();
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.NORMAL);
+        int sx = 140, sz = 140;
+        world.setBlock(sx, Y + 1, sz, Block.TRIAL_SPAWNER);
+        dev.pointofpressure.minecom.blocks.TrialChambers.registerSpawner(new Vec(sx, Y + 1, sz),
+                "minecraft:trial_chamber/melee/zombie/normal", "minecraft:trial_chamber/melee/zombie/ominous");
+        player.teleport(new Pos(sx + 5.5, Y + 1, sz + 0.5)).join();
+        tick(2);
+
+        boolean activated = waitFor(() -> "active".equals(prop(sx, Y + 1, sz, "trial_spawner_state")), 5000);
+        check("trial spawner: a player in range flips waiting_for_players -> active", activated);
+
+        // fight the trial: cull each wave as it spawns until the full quota (6) is spent
+        boolean sawZombie = waitFor(() -> world.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.ZOMBIE && !e.isRemoved()), 5000);
+        check("trial spawner: the wave mobs (melee/zombie config) start spawning", sawZombie);
+        long fightUntil = System.currentTimeMillis() + 25000;
+        while (System.currentTimeMillis() < fightUntil
+                && !"ejecting_reward".equals(prop(sx, Y + 1, sz, "trial_spawner_state"))
+                && !"cooldown".equals(prop(sx, Y + 1, sz, "trial_spawner_state"))) {
+            world.getEntities().stream()
+                    .filter(e -> e.getEntityType() == EntityType.ZOMBIE && !e.isRemoved())
+                    .forEach(e -> ((EntityCreature) e).kill());
+            tick(4);
+        }
+        // reward tables are consumables (bread/cooked_chicken/baked_potato/potion) or the
+        // trial key — distinct from zombie corpse drops, so the fight can't false-positive
+        java.util.Set<Material> rewardItems = java.util.Set.of(Material.BREAD, Material.COOKED_CHICKEN,
+                Material.BAKED_POTATO, Material.POTION, Material.TRIAL_KEY);
+        boolean rewarded = waitFor(() -> world.getEntities().stream().anyMatch(e -> e instanceof ItemEntity item
+                && !item.isRemoved() && rewardItems.contains(item.getItemStack().material())
+                && item.getPosition().distanceSquared(new Pos(sx + 0.5, Y + 2, sz + 0.5)) < 8 * 8), 8000);
+        check("trial spawner: clearing every wave ejects reward loot above the spawner", rewarded);
+        boolean cooled = waitFor(() -> "cooldown".equals(prop(sx, Y + 1, sz, "trial_spawner_state")), 8000);
+        check("trial spawner: the trial ends in the 30-minute cooldown state", cooled);
+        clearEntitiesExceptPlayer();
+
+        // vault: activates nearby, unlocks once per player with a trial key
+        int vx = 146;
+        world.setBlock(vx, Y + 1, sz, Block.VAULT);
+        dev.pointofpressure.minecom.blocks.TrialChambers.registerVault(new Vec(vx, Y + 1, sz),
+                "minecraft:chests/trial_chambers/reward", "minecraft:trial_key");
+        player.teleport(new Pos(vx + 2.5, Y + 1, sz + 0.5)).join();
+        boolean vaultActive = waitFor(() -> "active".equals(prop(vx, Y + 1, sz, "vault_state")), 5000);
+        check("vault: lights up (active) with a player within 4 blocks", vaultActive);
+
+        player.setItemInMainHand(ItemStack.of(Material.TRIAL_KEY, 2));
+        interact(new BlockVec(vx, Y + 1, sz));
+        check("vault: inserting a trial key consumes it and starts unlocking",
+                player.getItemInMainHand().amount() == 1
+                        && ("unlocking".equals(prop(vx, Y + 1, sz, "vault_state"))
+                        || "ejecting".equals(prop(vx, Y + 1, sz, "vault_state"))));
+        boolean vaultLoot = waitFor(() -> world.getEntities().stream().anyMatch(e -> e instanceof ItemEntity item
+                && !item.isRemoved()
+                && item.getPosition().distanceSquared(new Pos(vx + 0.5, Y + 2, sz + 0.5)) < 6 * 6), 8000);
+        check("vault: the reward loot ejects from the vault", vaultLoot);
+        waitFor(() -> !"ejecting".equals(prop(vx, Y + 1, sz, "vault_state"))
+                && !"unlocking".equals(prop(vx, Y + 1, sz, "vault_state")), 15000);
+        clearEntitiesExceptPlayer();
+        interact(new BlockVec(vx, Y + 1, sz));
+        tick(2);
+        check("vault: the same player can never unlock the same vault twice",
+                player.getItemInMainHand().amount() == 1
+                        && !"unlocking".equals(prop(vx, Y + 1, sz, "vault_state")));
+
+        // wind burst: launches a bystander upward and presses a button it engulfs
+        var cow = Mobs.spawn("cow", world, new Pos(150.5, Y + 1, 150.5));
+        world.setBlock(152, Y + 1, 150, Block.OAK_BUTTON.withProperty("face", "floor").withProperty("powered", "false"));
+        dev.pointofpressure.minecom.mobs.ai.VanillaMobs.windBurst(
+                world, new Pos(151.0, Y + 1, 150.5), null, null);
+        tick(2);
+        check("wind burst: launches a nearby entity upward (vy=" + String.format("%.1f", cow.getVelocity().y()) + ")",
+                cow.getVelocity().y() > 2);
+        check("wind burst: presses a wooden button it engulfs",
+                "true".equals(prop(152, Y + 1, 150, "powered")));
+
+        // breeze: spawns and opens fire with wind charges
+        var breeze = Mobs.spawn("breeze", world, new Pos(150.5, Y + 1, 140.5));
+        player.teleport(new Pos(150.5, Y + 1, 146.5)).join();
+        boolean charged = waitFor(() -> world.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.BREEZE_WIND_CHARGE && !e.isRemoved()), 10000);
+        check("breeze: engages the player with wind charge projectiles", breeze != null && charged);
+
+        world.setBlock(sx, Y + 1, sz, Block.AIR);
+        world.setBlock(vx, Y + 1, sz, Block.AIR);
+        world.setBlock(152, Y + 1, 150, Block.AIR);
+        dev.pointofpressure.minecom.Difficulty.set(savedDifficulty);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Difficulty: mob damage to players scales 0 / x/2+1 / x1.0 / x1.5 across the four
+     * settings, Peaceful removes hostiles and regenerates food, and on Hard a hurt
+     * zombie can call a same-kind reinforcement nearby (chance forced to 1 via its tag).
+     */
+    private static void scenarioDifficulty() {
+        clearEntitiesExceptPlayer();
+        var saved = dev.pointofpressure.minecom.Difficulty.current();
+        java.util.function.Function<dev.pointofpressure.minecom.Difficulty, Float> mobHit = difficulty -> {
+            dev.pointofpressure.minecom.Difficulty.set(difficulty);
+            resetPlayer();
+            // a bare zombie (attributes only, no AI brain) so exactly one controlled
+            // hit reaches the player — this check is about the damage scaling alone
+            var zombie = new EntityCreature(EntityType.ZOMBIE);
+            zombie.getAttribute(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE).setBaseValue(3);
+            zombie.setInstance(world, new Pos(8.5, Y + 1, 0.5)).join();
+            tick(1);
+            EventDispatcher.call(new EntityAttackEvent(zombie, player));
+            tick(2);
+            float lost = 20f - player.getHealth();
+            zombie.remove();
+            return lost;
+        };
+        float normal = mobHit.apply(dev.pointofpressure.minecom.Difficulty.NORMAL);
+        float easy = mobHit.apply(dev.pointofpressure.minecom.Difficulty.EASY);
+        float hard = mobHit.apply(dev.pointofpressure.minecom.Difficulty.HARD);
+        float peaceful = mobHit.apply(dev.pointofpressure.minecom.Difficulty.PEACEFUL);
+        check("a zombie melee hit (attack 3) deals 3.0 on Normal (got " + normal + ")", normal == 3.0f);
+        check("the same hit deals 2.5 on Easy (min(x/2+1, x); got " + easy + ")", easy == 2.5f);
+        check("the same hit deals 4.5 on Hard (x1.5; got " + hard + ")", hard == 4.5f);
+        check("the same hit deals nothing on Peaceful (got " + peaceful + ")", peaceful == 0.0f);
+
+        // Peaceful: hostiles are discarded by the despawn sweep, food regenerates
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.PEACEFUL);
+        resetPlayer();
+        var doomed = Mobs.spawn("zombie", world, new Pos(5.5, Y + 1, 5.5));
+        new dev.pointofpressure.minecom.mobs.VNaturalSpawner(
+                world, (x, y, z) -> "minecraft:plains", false).despawnTick();
+        tick(1);
+        check("peaceful: the despawn sweep discards hostile mobs instantly", doomed.isRemoved());
+        player.setFood(10);
+        boolean fed = waitFor(() -> player.getFood() > 12, 4000);
+        check("peaceful: the food bar regenerates on its own (got " + player.getFood() + ")", fed);
+
+        // Hard: a hurt zombie with a forced reinforcement chance calls another zombie
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.HARD);
+        clearEntitiesExceptPlayer();
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        var caller = Mobs.spawn("zombie", world, new Pos(60.5, Y + 1, 60.5));
+        caller.setTag(dev.pointofpressure.minecom.mobs.ai.VanillaMobs.REINFORCEMENT_CHANCE, 1.0);
+        boolean reinforced = waitFor(() -> {
+            dev.pointofpressure.minecom.mobs.ai.VanillaMobs.notifyHurt(caller, player);
+            return world.getEntities().stream()
+                    .filter(e -> e.getEntityType() == EntityType.ZOMBIE && e != caller).count() >= 1;
+        }, 6000);
+        check("hard: a hurt zombie calls a same-kind reinforcement 7-40 blocks away", reinforced);
+        Double spent = caller.getTag(dev.pointofpressure.minecom.mobs.ai.VanillaMobs.REINFORCEMENT_CHANCE);
+        check("the caller's reinforcement charge drains 5% per call (got " + spent + ")",
+                spent != null && spent < 1.0);
+
+        dev.pointofpressure.minecom.Difficulty.set(saved);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Daylight detector: 15 at clear noon, a reduced sun-angle-scaled reading mid-morning,
+     * 0 at night; rain dims it; inverting turns it into a night sensor reading 11 at midnight
+     * (night sky brightness is 4, not 0 — vanilla's skyDarken floor).
+     */
+    private static void scenarioDaylightDetector() {
+        int y = Y + 1, z = 64;
+        world.setWeather(net.minestom.server.instance.Weather.CLEAR);
+        world.setTime(6000); // noon
+        rs(50, y, z, Block.DAYLIGHT_DETECTOR);
+        dev.pointofpressure.minecom.redstone.Redstone.trackDaylightDetector(new Vec(50, y, z));
+        for (int x = 51; x <= 52; x++) rs(x, y, z, Block.REDSTONE_WIRE);
+        rs(53, y, z, Block.REDSTONE_LAMP);
+        // lazy light engine: the first queries after placing into an unlit area read 0
+        // until the relight settles, so prime it and give the first check a longer window
+        world.getSkyLight(50, y + 1, z);
+        tick(2);
+
+        boolean noon = waitFor(() -> "15".equals(prop(50, y, z, "power")), 10000);
+        check("clear noon reads the full 15 (got " + prop(50, y, z, "power") + ")", noon);
+        check("the signal drives a wire-lamp line", waitFor(() -> "true".equals(prop(53, y, z, "lit")), 3000));
+
+        world.setTime(9000); // mid-afternoon: cos(sun angle nudged 20% toward noon) ~ 14
+        boolean afternoon = waitFor(() -> {
+            String p = prop(50, y, z, "power");
+            return p != null && !p.isEmpty() && Integer.parseInt(p) >= 11 && Integer.parseInt(p) <= 14;
+        }, 3000);
+        check("mid-afternoon reads a sun-angle-scaled 11-14 (got " + prop(50, y, z, "power") + ")", afternoon);
+
+        world.setTime(18000); // midnight
+        boolean night = waitFor(() -> "0".equals(prop(50, y, z, "power")), 3000);
+        check("midnight reads 0 (got " + prop(50, y, z, "power") + ")", night);
+        check("the lamp goes dark at night", waitFor(() -> "false".equals(prop(53, y, z, "lit")), 3000));
+
+        interact(new BlockVec(50, y, z)); // right-click: invert
+        check("right-click flips the INVERTED state", "true".equals(prop(50, y, z, "inverted")));
+        boolean invertedNight = waitFor(() -> "11".equals(prop(50, y, z, "power")), 3000);
+        check("inverted at midnight reads 11 = 15 - night brightness 4 (got "
+                + prop(50, y, z, "power") + ")", invertedNight);
+        check("the inverted signal lights the lamp at night", waitFor(() -> "true".equals(prop(53, y, z, "lit")), 3000));
+
+        world.setTime(6000);
+        boolean invertedNoon = waitFor(() -> "0".equals(prop(50, y, z, "power")), 3000);
+        check("inverted at noon reads 0 (got " + prop(50, y, z, "power") + ")", invertedNoon);
+
+        interact(new BlockVec(50, y, z)); // back to normal mode
+        dev.pointofpressure.minecom.survival.WeatherCycle.setRaining(world, true);
+        boolean rainy = waitFor(() -> "12".equals(prop(50, y, z, "power")), 3000);
+        check("rain at noon dims the reading to 12 (skyDarken 3; got " + prop(50, y, z, "power") + ")", rainy);
+        dev.pointofpressure.minecom.survival.WeatherCycle.setRaining(world, false);
+
+        for (int x = 50; x <= 53; x++) world.setBlock(x, y, z, Block.AIR);
+        world.setTime(6000);
     }
 
     /** Detector rail: powers a wire-lamp line while a minecart sits on it, unpowers when it leaves. */

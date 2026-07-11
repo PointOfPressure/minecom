@@ -165,6 +165,10 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.Jukebox.register(events);
         dev.pointofpressure.minecom.blocks.Lectern.register(events);
         dev.pointofpressure.minecom.blocks.RespawnAnchor.register(events, overworld);
+        dev.pointofpressure.minecom.blocks.TargetBlock.register(events);
+        dev.pointofpressure.minecom.blocks.TrialChambers.start(overworld, events);
+        dev.pointofpressure.minecom.blocks.Candle.register(events);
+        dev.pointofpressure.minecom.blocks.Cake.register(events);
         dev.pointofpressure.minecom.survival.Potions.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Brewing.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Anvils.register(events);
@@ -213,6 +217,9 @@ public final class Bootstrap {
         commands.register(new Commands.End(overworld, spawn));
         commands.register(new Commands.RaidCmd());
         commands.register(new Commands.LocateStrongholdCmd());
+        commands.register(new Commands.DifficultyCmd());
+
+        Difficulty.startTracking();
 
         dev.pointofpressure.minecom.blocks.EndPortal.register(overworld, end, spawn);
         overworld.setTag(SPAWN_TAG, spawn);

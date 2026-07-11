@@ -57,6 +57,23 @@ public final class Commands {
         }
     }
 
+    public static final class DifficultyCmd extends Command {
+        public DifficultyCmd() {
+            super("difficulty");
+            var level = ArgumentType.Enum("level", Difficulty.class)
+                    .setFormat(ArgumentEnum.Format.LOWER_CASED);
+            addSyntax((sender, context) -> {
+                Difficulty picked = context.get(level);
+                Difficulty.set(picked);
+                Persist.save();
+                sender.sendMessage(Component.text("Difficulty set to "
+                        + picked.name().toLowerCase(), NamedTextColor.GRAY));
+            }, level);
+            setDefaultExecutor((sender, context) -> sender.sendMessage(Component.text(
+                    "Difficulty is " + Difficulty.current().name().toLowerCase(), NamedTextColor.GRAY)));
+        }
+    }
+
     public static final class Time extends Command {
         public Time(Instance instance) {
             super("time");
