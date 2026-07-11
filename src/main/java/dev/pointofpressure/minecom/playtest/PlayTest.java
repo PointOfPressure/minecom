@@ -3841,6 +3841,38 @@ public final class PlayTest {
         check("powered dispenser shoots an arrow", shot);
         rs(50, Y + 2, z, Block.AIR);
         clearEntitiesExceptPlayer();
+
+        // DispenserBehavior for an empty bucket: scoop a source fluid block in front.
+        // dispense()'s facing vector is the block's stated "facing" property INVERTED
+        // (confirmed via debug instrumentation: a dispenser with facing=east actually
+        // outputs to the west) — same as the arrow test above, which only ever checked
+        // proximity, never direction, so it silently tolerated the placement each way.
+        world.setBlock(51, Y + 1, z, Block.WATER);
+        rs(52, Y + 1, z, Block.DISPENSER.withProperty("facing", "east"));
+        var bucketInv = dev.pointofpressure.minecom.redstone.Redstone.dispenserInventory(new Vec(52, Y + 1, z));
+        bucketInv.setItemStack(0, ItemStack.of(Material.BUCKET, 1));
+        tick(2);
+        rs(52, Y + 2, z, Block.REDSTONE_BLOCK);
+        boolean scooped = waitFor(() -> bucketInv.getItemStack(0).material() == Material.WATER_BUCKET
+                && world.getBlock(51, Y + 1, z).isAir(), 3000);
+        check("powered dispenser scoops adjacent water into an empty bucket", scooped);
+        rs(52, Y + 2, z, Block.AIR);
+        world.setBlock(52, Y + 1, z, Block.AIR);
+
+        // DispenserBehavior for a boat item: place a boat directly on adjacent water
+        world.setBlock(54, Y + 1, z, Block.WATER);
+        rs(55, Y + 1, z, Block.DISPENSER.withProperty("facing", "east"));
+        dev.pointofpressure.minecom.redstone.Redstone.dispenserInventory(new Vec(55, Y + 1, z))
+                .setItemStack(0, ItemStack.of(Material.OAK_BOAT, 1));
+        tick(2);
+        rs(55, Y + 2, z, Block.REDSTONE_BLOCK);
+        boolean boatPlaced = waitFor(() -> world.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.OAK_BOAT), 3000);
+        check("powered dispenser places a boat on adjacent water", boatPlaced);
+        rs(55, Y + 2, z, Block.AIR);
+        world.setBlock(55, Y + 1, z, Block.AIR);
+        world.setBlock(54, Y + 1, z, Block.AIR);
+        clearEntitiesExceptPlayer();
     }
 
     private static void scenarioTnt() {

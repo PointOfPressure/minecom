@@ -763,6 +763,26 @@ public final class Redstone {
             return;
         } else if (!dropper && mat == Material.TNT) {
             Explosions.primeTnt(instance, front, 80, null);
+        } else if (!dropper && mat == Material.BUCKET
+                && instance.getBlock(front).isLiquid()
+                && (instance.getBlock(front).getProperty("level") == null
+                        || "0".equals(instance.getBlock(front).getProperty("level")))) {
+            // DispenserBehavior for the empty bucket: scoop a SOURCE fluid block in
+            // front into a filled bucket (real vanilla also refuses a flowing/
+            // non-source block; a freshly-placed block with no explicit "level"
+            // property is itself a source, matching Fluids.java's own level() helper
+            // and its player-driven bucket-fill logic exactly).
+            boolean water = instance.getBlock(front).key().value().equals("water");
+            instance.setBlock(front, Block.AIR);
+            dev.pointofpressure.minecom.blocks.Fluids.notifyAround(front);
+            inv.setItemStack(slot, ItemStack.of(water ? Material.WATER_BUCKET : Material.LAVA_BUCKET));
+            return;
+        } else if (!dropper && dev.pointofpressure.minecom.blocks.Boats.BOATS.containsKey(mat)
+                && instance.getBlock(front).key().value().equals("water")) {
+            // DispenserBehavior for boat items: place a boat directly on adjacent water.
+            dev.pointofpressure.minecom.blocks.Boats.spawn(instance,
+                    dev.pointofpressure.minecom.blocks.Boats.BOATS.get(mat),
+                    new net.minestom.server.coordinate.Pos(spawnAt.x(), front.blockY() + 0.1, spawnAt.z()));
         } else {
             var item = new net.minestom.server.entity.ItemEntity(stack.withAmount(1));
             item.setPickupDelay(java.time.Duration.ofMillis(500));

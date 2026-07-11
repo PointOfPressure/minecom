@@ -28,7 +28,9 @@ import java.util.Set;
  */
 public final class Boats {
 
-    private static final Map<Material, EntityType> BOATS = Map.ofEntries(
+    /** Public: reused by Redstone.java's dispenser behavior (DispenserBehavior placing
+     *  a boat item onto adjacent water is a real vanilla dispenser behavior). */
+    public static final Map<Material, EntityType> BOATS = Map.ofEntries(
             Map.entry(Material.OAK_BOAT, EntityType.OAK_BOAT),
             Map.entry(Material.BIRCH_BOAT, EntityType.BIRCH_BOAT),
             Map.entry(Material.SPRUCE_BOAT, EntityType.SPRUCE_BOAT),
