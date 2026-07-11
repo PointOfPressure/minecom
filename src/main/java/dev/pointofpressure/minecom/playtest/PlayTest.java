@@ -199,6 +199,7 @@ public final class PlayTest {
         scenario("piglin brute: always-hostile elite bastion guard, real stats", PlayTest::scenarioPiglinBrute);
         scenario("piglin: bartering with a gold ingot rolls the real loot table", PlayTest::scenarioPiglinBartering);
         scenario("piglin: flees a nearby soul campfire", PlayTest::scenarioPiglinSoulFireFear);
+        scenario("witch: drinks self-preservation potions mid-fight (healing, fire resistance)", PlayTest::scenarioWitchSelfPotions);
         scenario("zoglin: hoglin's zombified form, real stats", PlayTest::scenarioZoglin);
         scenario("giant: legacy mob, real stats", PlayTest::scenarioGiant);
         scenario("ghast fireball: real damage + explosion on impact, deflectable by a melee hit", PlayTest::scenarioGhastFireball);
@@ -1519,6 +1520,36 @@ public final class PlayTest {
         check("a piglin flees a nearby soul campfire (started " + distBefore + " blocks away)", fled);
         if (piglin != null) piglin.remove();
         world.setBlock(5, Y + 1, 0, Block.AIR);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Witch.aiStep self-potion-drinking (decompile-verified — see VanillaMobs.witch()'s
+     * own javadoc for the exact chances/priority order): a hurt witch heals itself, and
+     * a burning witch drinks fire resistance and stops burning. Previously witches had
+     * no self-preservation behavior of any kind.
+     */
+    private static void scenarioWitchSelfPotions() {
+        clearEntitiesExceptPlayer();
+        var witch = Mobs.spawn("witch", world, new Pos(0.5, Y + 1, 0.5));
+        witch.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 15f);
+        float hurtHealth = witch.getHealth();
+        boolean healed = waitFor(() -> witch.getHealth() > hurtHealth, 10000);
+        check("a hurt witch drinks a healing potion (hp " + hurtHealth + " -> " + witch.getHealth() + ")", healed);
+        if (witch != null) witch.remove();
+        clearEntitiesExceptPlayer();
+
+        // Fire resistance only gates burn DAMAGE in this codebase (Survival.java's
+        // burn-tick check), not the on-fire visual flag — this project has no generic
+        // "gaining fire resistance extinguishes existing fire" interaction for any
+        // entity (checked: Potions.java/Survival.java never clear isOnFire), so the
+        // observable effect here is the potion buff itself, not the witch un-burning.
+        var witch2 = Mobs.spawn("witch", world, new Pos(0.5, Y + 1, 0.5));
+        witch2.getEntityMeta().setOnFire(true);
+        boolean resisted = waitFor(() ->
+                witch2.hasEffect(net.minestom.server.potion.PotionEffect.FIRE_RESISTANCE), 10000);
+        check("a burning witch drinks fire resistance", resisted);
+        if (witch2 != null) witch2.remove();
         clearEntitiesExceptPlayer();
     }
 

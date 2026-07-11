@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.survival;
 
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.component.DataComponents;
+import net.minestom.server.entity.LivingEntity;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.item.PlayerFinishItemUseEvent;
@@ -41,8 +42,10 @@ public final class Potions {
         }
     }
 
-    /** Apply a potion type's effects with vanilla durations (ticks). */
-    public static void apply(Player player, PotionType type) {
+    /** Apply a potion type's effects with vanilla durations (ticks). Any LivingEntity
+     *  (not just players) can drink one — reused by VanillaMobs.witch() for its own
+     *  self-potion-drinking AI, which needs the exact same duration table. */
+    public static void apply(LivingEntity player, PotionType type) {
         String key = type.key().value();
         boolean strong = key.startsWith("strong_");
         boolean isLong = key.startsWith("long_");

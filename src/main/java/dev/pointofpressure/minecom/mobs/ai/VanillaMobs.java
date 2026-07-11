@@ -737,7 +737,22 @@ public final class VanillaMobs {
         return mob;
     }
 
-    /** Witch: keeps its distance and lobs harming "splash potions" (modelled as ranged magic hits). */
+    /**
+     * Witch: keeps its distance and lobs harming "splash potions" (modelled as ranged
+     * magic hits). Also drinks real self-preservation potions mid-fight
+     * (Witch.aiStep, decompile-verified — checked as an if-else priority chain, one
+     * roll per tick, first match wins): 15% water breathing while eye-submerged and
+     * not already under it, 15% fire resistance while on fire and not already under
+     * it, 5% healing while below max HP, 50% swiftness while it has a target &gt;11
+     * blocks away and isn't already sped up. Not modelled: the "was just hit by fire
+     * damage" half of the real fire-resistance condition (this project doesn't track
+     * last-damage-source TYPE generically, only the source entity) — only "currently
+     * on fire" is checked, the same simplification already used for zombie/skeleton
+     * sunburn elsewhere. Reuses Potions.apply (originally player-only, widened to
+     * LivingEntity) for the exact same vanilla potion durations rather than
+     * duplicating them. Witch raid participation (healing OTHER raiders) isn't
+     * modelled — a bigger scope tied to Raid.java, out of scope here.
+     */
     public static EntityCreature witch(Instance instance, Pos pos) {
         EntityCreature mob = new EntityCreature(EntityType.WITCH);
         VBrain brain = brain(mob, 0.25, 16, 0, 26, 0);
@@ -747,16 +762,50 @@ public final class VanillaMobs {
         brain.addTargetGoal(1, new Goals.HurtByTarget(brain, false));
         brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true));
         int[] cd = {40};
+        int[] drinkTimer = {0};
+        net.minestom.server.potion.PotionType[] pending = {null};
         mob.scheduler().buildTask(() -> {
             if (mob.isDead() || mob.getInstance() == null) return;
             LivingEntity target = brain.target;
-            if (target == null || target.isDead()) return;
-            brain.lookAt(target);
-            double d2 = mob.getPosition().distanceSquared(target.getPosition());
-            if (d2 > 100) brain.moveTo(target.getPosition(), 1.0);   // stay ~10 blocks out
-            if (--cd[0] > 0) return;
-            cd[0] = 60;
-            if (d2 <= 144) target.damage(DamageType.MAGIC, 3f);      // splash-potion of harming (approx)
+            if (target != null && !target.isDead()) {
+                brain.lookAt(target);
+                double d2 = mob.getPosition().distanceSquared(target.getPosition());
+                if (d2 > 100) brain.moveTo(target.getPosition(), 1.0);   // stay ~10 blocks out
+                if (--cd[0] <= 0) {
+                    cd[0] = 60;
+                    if (d2 <= 144) target.damage(DamageType.MAGIC, 3f); // splash-potion of harming (approx)
+                }
+            }
+
+            if (drinkTimer[0] > 0) {
+                if (--drinkTimer[0] <= 0 && pending[0] != null) {
+                    dev.pointofpressure.minecom.survival.Potions.apply(mob, pending[0]);
+                    pending[0] = null;
+                }
+                return;
+            }
+            var rng = java.util.concurrent.ThreadLocalRandom.current();
+            net.minestom.server.potion.PotionType chosen = null;
+            boolean eyeInWater = mob.getInstance().getBlock(mob.getPosition().add(0, mob.getEyeHeight(), 0))
+                    .compare(Block.WATER);
+            if (rng.nextFloat() < 0.15f && eyeInWater
+                    && !mob.hasEffect(net.minestom.server.potion.PotionEffect.WATER_BREATHING)) {
+                chosen = net.minestom.server.potion.PotionType.WATER_BREATHING;
+            } else if (rng.nextFloat() < 0.15f && mob.getEntityMeta().isOnFire()
+                    && !mob.hasEffect(net.minestom.server.potion.PotionEffect.FIRE_RESISTANCE)) {
+                chosen = net.minestom.server.potion.PotionType.FIRE_RESISTANCE;
+            } else if (rng.nextFloat() < 0.05f
+                    && mob.getHealth() < mob.getAttributeValue(Attribute.MAX_HEALTH)) {
+                chosen = net.minestom.server.potion.PotionType.HEALING;
+            } else if (rng.nextFloat() < 0.5f && target != null && !target.isDead()
+                    && !mob.hasEffect(net.minestom.server.potion.PotionEffect.SPEED)
+                    && mob.getPosition().distanceSquared(target.getPosition()) > 121) {
+                chosen = net.minestom.server.potion.PotionType.SWIFTNESS;
+            }
+            if (chosen != null) {
+                pending[0] = chosen;
+                drinkTimer[0] = 32; // ItemStack.getUseDuration for a regular potion
+            }
         }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);
         return mob;
