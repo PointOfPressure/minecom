@@ -69,8 +69,7 @@ public final class Containers {
             }
             case "chest" -> {
                 e.setBlockingItemUse(true);
-                player.openInventory(CHESTS.computeIfAbsent(posKey(pos),
-                        p -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Chest"))));
+                player.openInventory(openMergeable(instance, pos, block, "chest", "Chest"));
             }
             case "barrel" -> {
                 e.setBlockingItemUse(true);
@@ -79,8 +78,7 @@ public final class Containers {
             }
             case "trapped_chest" -> {
                 e.setBlockingItemUse(true);
-                Inventory inv = CHESTS.computeIfAbsent(posKey(pos),
-                        p -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Trapped Chest")));
+                Inventory inv = openMergeable(instance, pos, block, "trapped_chest", "Trapped Chest");
                 TRAPPED_CHEST_POS.put(inv, pos);
                 player.openInventory(inv);
                 dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(pos);
@@ -100,6 +98,34 @@ public final class Containers {
                 }
             }
         }
+    }
+
+    /**
+     * ChestBlock.getContainer/DoubleBlockCombiner (decompile-verified): a chest whose "type" is
+     * left/right shares ONE 54-slot Inventory with its partner half — whichever half is opened
+     * first creates it and stores it under BOTH positions' keys, so the other half's own open
+     * (or a comparator reading either position) reuses the exact same merged inventory.
+     */
+    private static Inventory openMergeable(Instance instance, Point pos, Block block, String key, String title) {
+        String type = block.getProperty("type");
+        if (type == null || type.equals("single")) {
+            return CHESTS.computeIfAbsent(posKey(pos),
+                    p -> new Inventory(InventoryType.CHEST_3_ROW, Component.text(title)));
+        }
+        Point partnerPos = partnerPos(pos, block);
+        Inventory inv = CHESTS.get(posKey(pos));
+        if (inv == null) inv = CHESTS.get(posKey(partnerPos));
+        if (inv == null) inv = new Inventory(InventoryType.CHEST_6_ROW, Component.text("Large " + title));
+        CHESTS.put(posKey(pos), inv);
+        CHESTS.put(posKey(partnerPos), inv);
+        return inv;
+    }
+
+    /** The other half of a left/right chest pair (ChestBlock.getConnectedDirection). */
+    private static Point partnerPos(Point pos, Block block) {
+        String facing = block.getProperty("facing");
+        String dir = "left".equals(block.getProperty("type")) ? Placement.clockwise(facing) : Placement.counterClockwise(facing);
+        return Placement.offset(pos, dir);
     }
 
     private static Block toggled(Block block) {
@@ -122,6 +148,15 @@ public final class Containers {
         String key = block.key().value();
         if (key.equals("chest") || key.equals("barrel") || key.equals("trapped_chest")) {
             Inventory inv = CHESTS.remove(posKey(pos));
+            String type = block.getProperty("type");
+            if (type != null && !type.equals("single")) {
+                Point partnerPos = partnerPos(pos, block);
+                CHESTS.remove(posKey(partnerPos));
+                Block partner = instance.getBlock(partnerPos);
+                if (partner.key().value().equals(key)) {
+                    instance.setBlock(partnerPos, partner.withProperty("type", "single"));
+                }
+            }
             if (inv != null) {
                 TRAPPED_CHEST_POS.remove(inv);
                 spill(instance, pos, inv);

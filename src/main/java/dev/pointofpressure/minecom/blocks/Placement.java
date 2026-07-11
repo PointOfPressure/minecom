@@ -147,6 +147,15 @@ public final class Placement {
             return;
         }
 
+        // chests/trapped chests: face the player, and auto-merge into a double chest with a
+        // same-key, same-facing, still-single neighbor immediately to either side (ChestBlock.
+        // getChestType, decompile-verified) — clockwise neighbor becomes our RIGHT half (we
+        // become LEFT), counter-clockwise neighbor becomes our LEFT half (we become RIGHT).
+        if (key.equals("chest") || key.equals("trapped_chest")) {
+            placeChest(e, block, opposite, key);
+            return;
+        }
+
         // blocks that face the player (furnace, chest, barrel-style front)
         if (block.getProperty("facing") != null) {
             String facing = block.getProperty("facing");
@@ -156,6 +165,29 @@ public final class Placement {
                 e.setBlock(block.withProperty("facing", opposite));
             }
         }
+    }
+
+    private static void placeChest(PlayerBlockPlaceEvent e, Block block, String facing, String key) {
+        var instance = e.getInstance();
+        Point pos = e.getBlockPosition();
+        String type = "single";
+
+        Point cwPos = offset(pos, clockwise(facing));
+        Block cw = instance.getBlock(cwPos);
+        if (cw.key().value().equals(key) && facing.equals(cw.getProperty("facing"))
+                && "single".equals(cw.getProperty("type"))) {
+            type = "left";
+            instance.setBlock(cwPos, cw.withProperty("type", "right"));
+        } else {
+            Point ccwPos = offset(pos, counterClockwise(facing));
+            Block ccw = instance.getBlock(ccwPos);
+            if (ccw.key().value().equals(key) && facing.equals(ccw.getProperty("facing"))
+                    && "single".equals(ccw.getProperty("type"))) {
+                type = "right";
+                instance.setBlock(ccwPos, ccw.withProperty("type", "left"));
+            }
+        }
+        e.setBlock(block.withProperty("facing", facing).withProperty("type", type));
     }
 
     /** The horizontal direction the player is looking. */
@@ -176,7 +208,25 @@ public final class Placement {
         };
     }
 
-    private static Point offset(Point pos, String facing) {
+    static String clockwise(String facing) {
+        return switch (facing) {
+            case "north" -> "east";
+            case "east" -> "south";
+            case "south" -> "west";
+            default -> "north";
+        };
+    }
+
+    static String counterClockwise(String facing) {
+        return switch (facing) {
+            case "north" -> "west";
+            case "west" -> "south";
+            case "south" -> "east";
+            default -> "north";
+        };
+    }
+
+    static Point offset(Point pos, String facing) {
         return switch (facing) {
             case "north" -> pos.add(0, 0, -1);
             case "south" -> pos.add(0, 0, 1);

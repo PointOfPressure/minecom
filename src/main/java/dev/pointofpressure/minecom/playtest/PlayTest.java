@@ -109,6 +109,7 @@ public final class PlayTest {
         scenario("combat: killed mobs sometimes drop their worn equipment", PlayTest::scenarioEquipmentDropChance);
         scenario("redstone: lever-wire-lamp + decay", PlayTest::scenarioRedstoneBasic);
         scenario("trapped chest: opening/closing directly powers redstone, still comparator-readable for fullness", PlayTest::scenarioTrappedChest);
+        scenario("double chest: placing a matching chest alongside merges into one shared 54-slot inventory", PlayTest::scenarioDoubleChest);
         scenario("redstone: 16th block signal dies", PlayTest::scenarioRedstoneDecay);
         scenario("redstone: torch inversion", PlayTest::scenarioTorch);
         scenario("redstone: repeater delay", PlayTest::scenarioRepeater);
@@ -3970,6 +3971,61 @@ public final class PlayTest {
         rs(52, Y + 1, z, Block.AIR);
         world.setBlock(50, Y + 1, z, Block.AIR);
         dev.pointofpressure.minecom.blocks.Containers.onBlockRemoved(world, new Vec(50, Y + 1, z), Block.TRAPPED_CHEST);
+        resetPlayer();
+    }
+
+    /**
+     * ChestBlock.getStateForPlacement/getChestType (decompile-verified): placing a chest next to
+     * an existing single, same-facing chest auto-merges them into a left/right pair sharing ONE
+     * 54-slot Container (DoubleBlockCombiner) — not two independent 27-slot inventories. Breaking
+     * either half spills the WHOLE merged inventory and resets the surviving half back to single.
+     */
+    private static void scenarioDoubleChest() {
+        clearEntitiesExceptPlayer();
+        resetPlayer(); // yaw 0 = facing south, so a placed chest's facing is deterministically north
+        BlockVec posA = new BlockVec(60, Y + 1, 60);
+        BlockVec posB = new BlockVec(61, Y + 1, 60);
+
+        var placeA = new PlayerBlockPlaceEvent(player, world, Block.CHEST, BlockFace.TOP,
+                posA, new Vec(0.5, 1.0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(placeA);
+        world.setBlock(posA, placeA.getBlock());
+        tick(1);
+        check("a lone placed chest starts single", "single".equals(world.getBlock(posA).getProperty("type")));
+
+        var placeB = new PlayerBlockPlaceEvent(player, world, Block.CHEST, BlockFace.TOP,
+                posB, new Vec(0.5, 1.0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(placeB);
+        world.setBlock(posB, placeB.getBlock());
+        tick(1);
+        String typeA = world.getBlock(posA).getProperty("type");
+        String typeB = world.getBlock(posB).getProperty("type");
+        check("placing a matching chest alongside it merges both into a left/right pair",
+                !"single".equals(typeA) && !"single".equals(typeB) && !typeA.equals(typeB));
+
+        interact(posA);
+        boolean openedLarge = player.getOpenInventory() instanceof Inventory ia
+                && ia.getInventoryType() == net.minestom.server.inventory.InventoryType.CHEST_6_ROW;
+        check("opening either half opens one merged 54-slot inventory", openedLarge);
+        Inventory invA = (Inventory) player.getOpenInventory();
+        invA.setItemStack(40, ItemStack.of(Material.DIAMOND, 3));
+        player.closeInventory();
+
+        interact(posB);
+        Inventory invB = (Inventory) player.getOpenInventory();
+        check("both halves resolve to the exact same shared inventory instance", invA == invB);
+        player.closeInventory();
+
+        breakBlock(posA);
+        check("breaking one half resets the surviving half back to a single chest",
+                "single".equals(world.getBlock(posB).getProperty("type")));
+        check("breaking either half spills the whole merged inventory's contents", waitFor(
+                () -> world.getEntities().stream().anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.DIAMOND), 1000));
+
+        world.setBlock(posA, Block.AIR);
+        world.setBlock(posB, Block.AIR);
+        clearEntitiesExceptPlayer();
         resetPlayer();
     }
 
