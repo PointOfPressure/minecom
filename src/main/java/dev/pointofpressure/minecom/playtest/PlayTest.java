@@ -198,6 +198,7 @@ public final class PlayTest {
         scenario("illusioner: real stats + bow attack", PlayTest::scenarioIllusioner);
         scenario("piglin brute: always-hostile elite bastion guard, real stats", PlayTest::scenarioPiglinBrute);
         scenario("piglin: bartering with a gold ingot rolls the real loot table", PlayTest::scenarioPiglinBartering);
+        scenario("piglin: flees a nearby soul campfire", PlayTest::scenarioPiglinSoulFireFear);
         scenario("zoglin: hoglin's zombified form, real stats", PlayTest::scenarioZoglin);
         scenario("giant: legacy mob, real stats", PlayTest::scenarioGiant);
         scenario("ghast fireball: real damage + explosion on impact, deflectable by a melee hit", PlayTest::scenarioGhastFireball);
@@ -1468,6 +1469,24 @@ public final class PlayTest {
         check("bartering drops exactly one item from the real piglin_bartering table (got " + dropped + ")",
                 dropped == 1);
         if (piglin != null) piglin.remove();
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Piglins flee nearby soul fire (PiglinAi.avoidRepellent, decompile-verified —
+     * see VanillaMobs.piglin()'s own javadoc). Previously piglins had zero fear of
+     * anything.
+     */
+    private static void scenarioPiglinSoulFireFear() {
+        clearEntitiesExceptPlayer();
+        world.setBlock(5, Y + 1, 0, Block.SOUL_CAMPFIRE);
+        var piglin = Mobs.spawn("piglin", world, new Pos(4.5, Y + 1, 0.5));
+        double distBefore = piglin.getPosition().distance(new Pos(5.5, Y + 1.5, 0.5));
+        boolean fled = waitFor(() ->
+                piglin.getPosition().distance(new Pos(5.5, Y + 1.5, 0.5)) > distBefore + 2, 6000);
+        check("a piglin flees a nearby soul campfire (started " + distBefore + " blocks away)", fled);
+        if (piglin != null) piglin.remove();
+        world.setBlock(5, Y + 1, 0, Block.AIR);
         clearEntitiesExceptPlayer();
     }
 

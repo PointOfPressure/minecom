@@ -613,10 +613,54 @@ public final class VanillaMobs {
         return mob;
     }
 
-    /** Piglin: neutral (retaliates only), carries a golden sword. */
+    private static final java.util.Set<String> PIGLIN_REPELLENTS =
+            java.util.Set.of("soul_torch", "soul_lantern", "soul_campfire");
+
+    /**
+     * Piglin: neutral (retaliates only), carries a golden sword. Flees nearby soul
+     * fire sources (PiglinAi.avoidRepellent, decompile-verified:
+     * SetWalkTargetAwayFrom.pos(NEAREST_REPELLENT, speed 1.0, 8) — the
+     * piglin_repellents item/block tag is soul_torch/soul_lantern/soul_campfire).
+     * Not built via the shared melee() helper (unlike every other simple brute in
+     * this codebase) because it needs its own VBrain reference for brain.moveTo();
+     * ported as a manual scheduled block scan (every 20 ticks, matching this
+     * project's other periodic-environmental-check conventions — sunburn, enderman
+     * water) rather than the full Brain-sensor/memory framework real vanilla uses,
+     * the same kind of simplification already used for evoker/illusioner's
+     * spellcasting.
+     */
     public static EntityCreature piglin(Instance i, Pos p) {
-        EntityCreature mob = melee(EntityType.PIGLIN, i, p, 0.35, 16, 5, 16, 0, false);
+        EntityCreature mob = new EntityCreature(EntityType.PIGLIN);
+        VBrain brain = brain(mob, 0.35, 16, 5, 16, 0);
+        brain.addGoal(3, new Goals.MeleeAttack(brain, 1.0, false));
+        brain.addGoal(7, new Goals.WaterAvoidingRandomStroll(brain, 1.0));
+        brain.addGoal(8, new Goals.LookAtPlayer(brain, 8));
+        brain.addGoal(8, new Goals.RandomLookAround(brain));
+        brain.addTargetGoal(1, new Goals.HurtByTarget(brain, false));
         mob.setEquipment(EquipmentSlot.MAIN_HAND, ItemStack.of(Material.GOLDEN_SWORD));
+        mob.scheduler().buildTask(() -> {
+            if (mob.isDead() || mob.getInstance() == null) return;
+            Instance instance = mob.getInstance();
+            Pos pos = mob.getPosition();
+            Vec nearest = null;
+            double bestDistSq = 64.0; // search radius 8, squared
+            for (int dx = -8; dx <= 8; dx++) {
+                for (int dy = -8; dy <= 8; dy++) {
+                    for (int dz = -8; dz <= 8; dz++) {
+                        int bx = pos.blockX() + dx, by = pos.blockY() + dy, bz = pos.blockZ() + dz;
+                        if (!PIGLIN_REPELLENTS.contains(instance.getBlock(bx, by, bz).key().value())) continue;
+                        Vec blockCenter = new Vec(bx + 0.5, by + 0.5, bz + 0.5);
+                        double d = pos.distanceSquared(blockCenter);
+                        if (d < bestDistSq) { bestDistSq = d; nearest = blockCenter; }
+                    }
+                }
+            }
+            if (nearest != null) {
+                Vec away = pos.asVec().sub(nearest).normalize().mul(8);
+                brain.moveTo(pos.add(away.x(), 0, away.z()), 1.0);
+            }
+        }).repeat(TaskSchedule.tick(20)).schedule();
+        mob.setInstance(i, p);
         return mob;
     }
 
