@@ -1219,7 +1219,17 @@ public final class VanillaMobs {
      * water-flee behavior once the real water damage exists, without needing a
      * separate hard-coded "standing on a water block" special case; that hard-coded
      * check has been removed as redundant/less accurate now that the real mechanic
-     * drives it). 40 HP, fast, high reach.
+     * drives it). Also picks up and later places down ENDERMAN_HOLDABLE blocks
+     * (EndermanTakeBlockGoal/EndermanLeaveBlockGoal, decompile-verified: 1/20 chance
+     * per tick to take a block from a random nearby offset when not already carrying
+     * one, 1/2000 chance per tick to place the carried block back down elsewhere) —
+     * Minestom's EndermanMeta already has native getCarriedBlock/setCarriedBlock for
+     * the client-visible held-block display, so no custom state tracking was needed.
+     * Not modelled: the pickup raycast's line-of-sight "reachable" check (real vanilla
+     * requires clear line of sight to the target block before taking it) — this
+     * project's simplified version can occasionally reach through thin obstructions,
+     * a narrow simplification given how rarely it would matter in practice. 40 HP,
+     * fast, high reach.
      */
     public static EntityCreature enderman(Instance instance, Pos pos) {
         EntityCreature mob = new EntityCreature(EntityType.ENDERMAN);
@@ -1237,12 +1247,40 @@ public final class VanillaMobs {
             float h = mob.getHealth();
             if (h < lastHealth[0]) endermanTeleport(mob);
             lastHealth[0] = mob.getHealth();
-            boolean wet = mob.getInstance().getBlock(mob.getPosition()).compare(Block.WATER)
-                    || dev.pointofpressure.minecom.survival.WeatherCycle.isRaining(mob.getInstance());
+            Instance in = mob.getInstance();
+            boolean wet = in.getBlock(mob.getPosition()).compare(Block.WATER)
+                    || dev.pointofpressure.minecom.survival.WeatherCycle.isRaining(in);
             if (waterDamageCooldown[0] > 0) waterDamageCooldown[0]--;
             if (wet && waterDamageCooldown[0] <= 0) {
                 mob.damage(DamageType.DROWN, 1f);
                 waterDamageCooldown[0] = 20;
+            }
+            var rng = java.util.concurrent.ThreadLocalRandom.current();
+            var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) mob.getEntityMeta();
+            Block carried = meta.getCarriedBlock();
+            Pos p = mob.getPosition();
+            if (carried == null || carried.isAir()) {
+                if (rng.nextInt(20) == 0) {
+                    int tx = (int) Math.floor(p.x() - 2 + rng.nextDouble() * 4);
+                    int ty = (int) Math.floor(p.y() + rng.nextDouble() * 3);
+                    int tz = (int) Math.floor(p.z() - 2 + rng.nextDouble() * 4);
+                    Block b = in.getBlock(tx, ty, tz);
+                    if (!b.isAir() && dev.pointofpressure.minecom.data.VanillaData
+                            .blockTag("enderman_holdable").contains(b.key().asString())) {
+                        in.setBlock(tx, ty, tz, Block.AIR);
+                        meta.setCarriedBlock(b);
+                    }
+                }
+            } else if (rng.nextInt(2000) == 0) {
+                int tx = (int) Math.floor(p.x() - 1 + rng.nextDouble() * 2);
+                int ty = (int) Math.floor(p.y() + rng.nextDouble() * 2);
+                int tz = (int) Math.floor(p.z() - 1 + rng.nextDouble() * 2);
+                Block target = in.getBlock(tx, ty, tz);
+                Block below = in.getBlock(tx, ty - 1, tz);
+                if (target.isAir() && !below.isAir() && below.isSolid() && !below.key().value().equals("bedrock")) {
+                    in.setBlock(tx, ty, tz, carried);
+                    meta.setCarriedBlock(Block.AIR);
+                }
             }
         }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);

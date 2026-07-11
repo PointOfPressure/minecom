@@ -90,7 +90,8 @@ public final class VanillaData {
         return resolveTag(tagsItem, tag, ITEM_TAG_CACHE);
     }
 
-    static Set<String> blockTag(String tag) {
+    /** Public: also used by VanillaMobs.enderman() (ENDERMAN_HOLDABLE, decompile-verified). */
+    public static Set<String> blockTag(String tag) {
         return resolveTag(tagsBlock, tag, BLOCK_TAG_CACHE);
     }
 

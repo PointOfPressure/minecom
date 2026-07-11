@@ -151,6 +151,7 @@ public final class PlayTest {
         scenario("vanilla-ai: enderman angers only when stared at", PlayTest::scenarioEnderman);
         scenario("enderman: takes real drown-type damage while in water or rain", PlayTest::scenarioEndermanWater);
         scenario("enderman: dodges/is immune to projectile damage", PlayTest::scenarioEndermanProjectileDodge);
+        scenario("enderman: picks up and later places down a holdable block", PlayTest::scenarioEndermanBlockPickup);
         scenario("end: dragon spawns, dies, forms the exit portal", PlayTest::scenarioEnderDragon);
         scenario("end: portal travel there and back", PlayTest::scenarioEndPortal);
         scenario("village: villager entity spawns and wanders", PlayTest::scenarioVillager);
@@ -2297,6 +2298,62 @@ public final class PlayTest {
         check("an arrow fired at an enderman is consumed on contact", consumed);
         check("the arrow deals no damage to the enderman (hp stays " + enderman.getHealth() + ")",
                 enderman.getHealth() == before);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * EndermanTakeBlockGoal/EndermanLeaveBlockGoal (decompile-verified — see
+     * VanillaMobs.enderman()'s own javadoc): a real Minestom EndermanMeta carried-
+     * block, picked up from a nearby ENDERMAN_HOLDABLE block (sand is in the real
+     * tag) and later set back down elsewhere. Previously endermen never interacted
+     * with blocks at all. This mob wanders/teleports on its own timeline, so the
+     * scenario pre-loads a much wider chunk radius than usual around its spawn point
+     * first — an earlier version of this test relied only on the world's default
+     * ±64-block pre-load and flaked once (debug instrumentation showed the enderman's
+     * own undirected wander had carried it to x≈75 during the wait, past that
+     * boundary into unloaded terrain that reads back as air instead of the flat
+     * world's real solid ground, so its "is there solid ground below" placement check
+     * kept failing purely due to missing terrain data, not mechanic logic).
+     */
+    private static void scenarioEndermanBlockPickup() {
+        clearEntitiesExceptPlayer();
+        int bx = 40, bz = 30;
+        for (int cx = (bx - 80) >> 4; cx <= (bx + 80) >> 4; cx++) {
+            for (int cz = (bz - 80) >> 4; cz <= (bz + 80) >> 4; cz++) world.loadChunk(cx, cz).join();
+        }
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                for (int dy = 0; dy <= 3; dy++) world.setBlock(bx + dx, Y + 1 + dy, bz + dz, Block.SAND);
+            }
+        }
+        EntityCreature enderman = Mobs.spawn("enderman", world, new Pos(bx + 0.5, Y + 1, bz + 0.5));
+        boolean picked = waitFor(() -> {
+            var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) enderman.getEntityMeta();
+            Block carried = meta.getCarriedBlock();
+            return carried != null && !carried.isAir();
+        }, 15000);
+        check("an enderman picks up a nearby holdable block (sand)", picked);
+
+        // clear the remaining sand so the only way it can "place" is by dropping the
+        // one it's already carrying — then wait for the carried slot to empty again
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                for (int dy = 0; dy <= 3; dy++) world.setBlock(bx + dx, Y + 1 + dy, bz + dz, Block.AIR);
+            }
+        }
+        // 1/2000 chance per tick (decompile-verified) — expected ~2000 ticks, wide
+        // margin against variance on an unlucky roll.
+        boolean placed = waitFor(() -> {
+            var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) enderman.getEntityMeta();
+            Block carried = meta.getCarriedBlock();
+            return carried == null || carried.isAir();
+        }, 240000);
+        check("the enderman later places the carried block back down", placed);
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                for (int dy = 0; dy <= 3; dy++) world.setBlock(bx + dx, Y + 1 + dy, bz + dz, Block.AIR);
+            }
+        }
         clearEntitiesExceptPlayer();
     }
 
