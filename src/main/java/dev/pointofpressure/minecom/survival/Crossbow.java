@@ -118,7 +118,9 @@ public final class Crossbow {
         return new Vec(dir.x() * cos - dir.z() * sin, dir.y(), dir.x() * sin + dir.z() * cos);
     }
 
+    /** ProjectileWeaponItem.getHeldProjectile checks the offhand before the inventory. */
     private static boolean hasArrow(Player player) {
+        if (player.getItemInOffHand().material() == Material.ARROW) return true;
         var inv = player.getInventory();
         for (int i = 0; i < inv.getSize(); i++) {
             if (inv.getItemStack(i).material() == Material.ARROW) return true;
@@ -126,7 +128,18 @@ public final class Crossbow {
         return false;
     }
 
+    /**
+     * Finds and removes 1 arrow; true if one was found. Offhand first (decompile-
+     * verified against ProjectileWeaponItem.getHeldProjectile, same as Bow.java) —
+     * previously only ever scanned the general inventory, so an arrow held in the
+     * offhand was neither detected by hasArrow() nor consumed by this.
+     */
     private static boolean consumeArrow(Player player) {
+        ItemStack offhand = player.getItemInOffHand();
+        if (offhand.material() == Material.ARROW) {
+            player.setItemInOffHand(offhand.amount() <= 1 ? ItemStack.AIR : offhand.withAmount(offhand.amount() - 1));
+            return true;
+        }
         var inv = player.getInventory();
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack stack = inv.getItemStack(i);

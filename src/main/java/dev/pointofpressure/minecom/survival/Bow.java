@@ -63,8 +63,20 @@ public final class Bow {
         if (!creative) player.setItemInHand(hand, dev.pointofpressure.minecom.data.Items.damageItem(player, bow, 1));
     }
 
-    /** Finds and removes 1 arrow from the player's inventory; true if one was found. */
+    /**
+     * Finds and removes 1 arrow; true if one was found. ProjectileWeaponItem.
+     * getHeldProjectile (decompile-verified) checks the offhand first, then falls
+     * back to a plain inventory scan — previously this only ever scanned the general
+     * inventory, so an arrow held in the offhand was invisible to it (and, worse,
+     * NOT what got consumed even when a bow-in-mainhand/arrows-in-offhand player
+     * also happened to have arrows elsewhere in their inventory).
+     */
     private static boolean consumeArrow(Player player) {
+        ItemStack offhand = player.getItemInOffHand();
+        if (offhand.material() == Material.ARROW) {
+            player.setItemInOffHand(offhand.amount() <= 1 ? ItemStack.AIR : offhand.withAmount(offhand.amount() - 1));
+            return true;
+        }
         var inv = player.getInventory();
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack stack = inv.getItemStack(i);

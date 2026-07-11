@@ -95,6 +95,7 @@ public final class PlayTest {
         scenario("wither skeleton: melee hit inflicts the Wither effect", PlayTest::scenarioWitherSkeletonEffect);
         scenario("skeleton bow + arrows", PlayTest::scenarioSkeleton);
         scenario("player bow: draw-charge fires an arrow, consumes ammo, power/punch/flame apply", PlayTest::scenarioPlayerBow);
+        scenario("bow/crossbow: an arrow held in the offhand is found and consumed before the inventory", PlayTest::scenarioOffhandArrowPriority);
         scenario("crossbow: load-then-fire, multishot triples arrows, piercing passes through", PlayTest::scenarioCrossbow);
         scenario("trident: melee + throw, riptide launches instead on wet ground, loyalty returns, impaling vs aquatic", PlayTest::scenarioTrident);
         scenario("channeling: thunderstorm melee/throw strikes lightning, clear weather doesn't", PlayTest::scenarioLightning);
@@ -2742,6 +2743,30 @@ public final class PlayTest {
                 countArrowsHeld(player) == before2
                         && world.getEntities().stream().noneMatch(e -> e.getEntityType() == EntityType.ARROW));
 
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * ProjectileWeaponItem.getHeldProjectile (decompile-verified): a bow/crossbow
+     * checks the OFFHAND for a valid projectile before falling back to scanning the
+     * general inventory. Previously Bow.consumeArrow and Crossbow.hasArrow/
+     * consumeArrow only ever scanned the general inventory — an arrow held in the
+     * offhand (with none anywhere else) was invisible to both, so a bow couldn't
+     * fire at all and a crossbow couldn't even start loading.
+     */
+    private static void scenarioOffhandArrowPriority() {
+        clearEntitiesExceptPlayer();
+        player.teleport(new Pos(0.5, Y + 1, 0.5, 0, 0)).join();
+        player.setItemInMainHand(ItemStack.of(Material.BOW));
+        player.setItemInOffHand(ItemStack.of(Material.ARROW, 3));
+        EventDispatcher.call(new net.minestom.server.event.item.PlayerCancelItemUseEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 20)); // full draw
+        tick(2);
+        boolean fired = world.getEntities().stream().anyMatch(e -> e.getEntityType() == EntityType.ARROW);
+        check("a bow fires using an arrow held only in the offhand", fired);
+        check("firing consumes the offhand arrow (3 -> " + player.getItemInOffHand().amount() + ")",
+                player.getItemInOffHand().amount() == 2);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
