@@ -102,8 +102,10 @@ public final class LootTables {
             case "item" -> {
                 Material mat = Material.fromKey(entry.get("name").getAsString());
                 if (mat == null) return;
-                int count = applyFunctions(entry.getAsJsonArray("functions"), 1, ctx);
-                if (count > 0) out.add(ItemStack.of(mat, count));
+                JsonArray functions = entry.getAsJsonArray("functions");
+                int count = applyFunctions(functions, 1, ctx);
+                if (count <= 0) return;
+                out.add(applyItemFunctions(ItemStack.of(mat, count), functions));
             }
             case "alternatives" -> {
                 for (JsonElement child : entry.getAsJsonArray("children")) {
@@ -136,6 +138,58 @@ public final class LootTables {
             }
             default -> { /* dynamic, empty: no drop */ }
         }
+    }
+
+    /**
+     * Functions that mutate the item itself (identity/components) rather than just its
+     * count — a separate pass from applyFunctions() since that one only threads an int.
+     */
+    private static ItemStack applyItemFunctions(ItemStack stack, JsonArray functions) {
+        if (functions == null) return stack;
+        for (JsonElement fnEl : functions) {
+            JsonObject fn = fnEl.getAsJsonObject();
+            switch (VanillaData.path(fn.get("function").getAsString())) {
+                case "set_potion" -> {
+                    net.minestom.server.potion.PotionType type =
+                            net.minestom.server.potion.PotionType.fromKey(fn.get("id").getAsString());
+                    if (type != null) {
+                        stack = stack.with(b -> b.set(net.minestom.server.component.DataComponents.POTION_CONTENTS,
+                                new net.minestom.server.item.component.PotionContents(type)));
+                    }
+                }
+                case "enchant_randomly" -> stack = enchantRandomly(stack, fn);
+                default -> { /* count-affecting or no-op functions: handled in applyFunctions/no-op */ }
+            }
+        }
+        return stack;
+    }
+
+    /**
+     * EnchantRandomlyFunction (decompile-verified): with a single explicit "options"
+     * enchantment id (the only form loot tables in this project's data actually use —
+     * piglin_bartering's book/iron_boots entries both force soul_speed), rolls a level
+     * uniformly between that enchantment's min (1) and max level and applies it,
+     * swapping a plain book for an enchanted_book first. The broader form — "options"
+     * omitted, meaning "pick any random compatible enchantment from the whole registry"
+     * — isn't modeled (falls through unenchanted); no table this project loads uses that
+     * form today. Per-enchantment max levels aren't tracked as a registry anywhere in
+     * this codebase yet (Enchants.java's enchanting-table pools hardcode them per
+     * item-type the same way), so this hardcodes the one level this function has
+     * actually needed so far, matching data/minecraft/enchantment/soul_speed.json's
+     * max_level: 3.
+     */
+    private static ItemStack enchantRandomly(ItemStack stack, JsonObject fn) {
+        if (!fn.has("options") || !fn.get("options").isJsonPrimitive()) return stack;
+        String enchantId = VanillaData.path(fn.get("options").getAsString());
+        var key = Enchants.byName(enchantId);
+        if (key == null) return stack;
+        int maxLevel = switch (enchantId) {
+            case "soul_speed" -> 3;
+            default -> 1;
+        };
+        int level = 1 + RANDOM.nextInt(maxLevel);
+        if (stack.material() == Material.BOOK) stack = ItemStack.of(Material.ENCHANTED_BOOK, stack.amount());
+        return Enchants.with(stack, key, level);
     }
 
     private static int applyFunctions(JsonArray functions, int count, Ctx ctx) {

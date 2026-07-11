@@ -390,8 +390,10 @@ public final class Combat {
         if (instance == null) return;
         Pos pos = mob.getPosition();
         ItemStack weapon = ItemStack.AIR;
+        Player killer = null;
         if (mob.getLastDamageSource() != null
-                && mob.getLastDamageSource().getAttacker() instanceof Player killer) {
+                && mob.getLastDamageSource().getAttacker() instanceof Player p) {
+            killer = p;
             weapon = killer.getItemInMainHand();
         }
         for (ItemStack drop : LootTables.entityDrops(mob.getEntityType(), weapon)) {
@@ -400,9 +402,52 @@ public final class Combat {
             item.setInstance(instance, pos.add(0, 0.5, 0));
             item.setVelocity(new Vec(RANDOM.nextDouble() - 0.5, 2, RANDOM.nextDouble() - 0.5));
         }
+        if (killer != null) dropEquipment(mob, instance, pos, weapon);
         boolean baby = mob.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.zombie.ZombieMeta zm && zm.isBaby();
         int xp = Experience.mobXp(mob.getEntityType(), baby);
         if (xp > 0) Experience.orb(instance, pos, xp);
+    }
+
+    private static final EquipmentSlot[] DEATH_DROP_SLOTS = {
+            EquipmentSlot.HELMET, EquipmentSlot.CHESTPLATE, EquipmentSlot.LEGGINGS, EquipmentSlot.BOOTS,
+            EquipmentSlot.MAIN_HAND, EquipmentSlot.OFF_HAND};
+
+    /**
+     * Mob.dropCustomDeathLoot's equipment-drop pass (decompile-verified against
+     * Mob.class): every worn/held slot independently rolls DropChances.DEFAULT_EQUIPMENT_
+     * DROP_CHANCE (8.5%), only when killed by a player (the "preserve" guaranteed-drop
+     * path — skeleton pumpkin heads etc. — isn't modeled by any factory in this codebase,
+     * so isPreserved() is always false here). The killer's Looting level raises the chance
+     * additively per data/minecraft/enchantment/looting.json's equipment_drops effect
+     * (base 0.01, +0.01 per level above 1 — i.e. flat +1%/level, max level 3), which is
+     * the one concrete case pulled out of the otherwise-unported generic enchantment-
+     * effect-component system (real EnchantmentHelper.processEquipmentDropChance is
+     * fully data-driven over ALL equipment_drops effects on the killer's gear; porting
+     * that generically is the same "no enchantment system exists" gap already tracked
+     * for loot tables/enchanting). A surviving item's durability is randomized down
+     * toward "well-worn" on drop, matching Mob.class's exact
+     * maxDamage - random.nextInt(1 + random.nextInt(max(maxDamage-3,1))) formula.
+     */
+    private static void dropEquipment(EntityCreature mob, Instance instance, Pos pos, ItemStack killerWeapon) {
+        int lootingLevel = dev.pointofpressure.minecom.data.Enchants.level(killerWeapon, "looting");
+        float dropChance = 0.085f + 0.01f * lootingLevel;
+        for (EquipmentSlot slot : DEATH_DROP_SLOTS) {
+            ItemStack equipped = mob.getEquipment(slot);
+            if (equipped.isAir()) continue;
+            if (RANDOM.nextFloat() >= dropChance) continue;
+            ItemStack drop = equipped;
+            Integer maxDamage = drop.get(net.minestom.server.component.DataComponents.MAX_DAMAGE);
+            if (maxDamage != null && maxDamage > 0) {
+                int damageValue = maxDamage - RANDOM.nextInt(1 + RANDOM.nextInt(Math.max(maxDamage - 3, 1)));
+                int finalDamage = damageValue;
+                drop = drop.with(b -> b.set(net.minestom.server.component.DataComponents.DAMAGE, Math.max(0, finalDamage)));
+            }
+            ItemEntity item = new ItemEntity(drop);
+            item.setPickupDelay(Duration.ofMillis(500));
+            item.setInstance(instance, pos.add(0, 0.5, 0));
+            item.setVelocity(new Vec(RANDOM.nextDouble() - 0.5, 2, RANDOM.nextDouble() - 0.5));
+            mob.setEquipment(slot, ItemStack.AIR);
+        }
     }
 
 }

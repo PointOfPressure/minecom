@@ -104,6 +104,7 @@ public final class PlayTest {
         scenario("door placement + toggle", PlayTest::scenarioDoor);
         scenario("bed sleep skips night", PlayTest::scenarioBed);
         scenario("death drops + respawn", PlayTest::scenarioDeath);
+        scenario("combat: killed mobs sometimes drop their worn equipment", PlayTest::scenarioEquipmentDropChance);
         scenario("redstone: lever-wire-lamp + decay", PlayTest::scenarioRedstoneBasic);
         scenario("redstone: 16th block signal dies", PlayTest::scenarioRedstoneDecay);
         scenario("redstone: torch inversion", PlayTest::scenarioTorch);
@@ -145,6 +146,7 @@ public final class PlayTest {
         scenario("vanilla-ai: creeper swells 30 ticks then explodes", PlayTest::scenarioSwell);
         scenario("lightning charges a creeper; its explosion drops the victim's head", PlayTest::scenarioChargedCreeper);
         scenario("vanilla-ai: enderman angers only when stared at", PlayTest::scenarioEnderman);
+        scenario("enderman: takes real drown-type damage while in water or rain", PlayTest::scenarioEndermanWater);
         scenario("end: dragon spawns, dies, forms the exit portal", PlayTest::scenarioEnderDragon);
         scenario("end: portal travel there and back", PlayTest::scenarioEndPortal);
         scenario("village: villager entity spawns and wanders", PlayTest::scenarioVillager);
@@ -194,6 +196,7 @@ public final class PlayTest {
         scenario("endermite: plain melee AI, real stats", PlayTest::scenarioEndermite);
         scenario("illusioner: real stats + bow attack", PlayTest::scenarioIllusioner);
         scenario("piglin brute: always-hostile elite bastion guard, real stats", PlayTest::scenarioPiglinBrute);
+        scenario("piglin: bartering with a gold ingot rolls the real loot table", PlayTest::scenarioPiglinBartering);
         scenario("zoglin: hoglin's zombified form, real stats", PlayTest::scenarioZoglin);
         scenario("giant: legacy mob, real stats", PlayTest::scenarioGiant);
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
@@ -1442,6 +1445,29 @@ public final class PlayTest {
     }
 
     /**
+     * Piglin bartering: hand a gold ingot to a (non-brute) piglin and it rolls the real
+     * piglin_bartering loot table (exactly one item — the table's own "rolls": 1) and
+     * consumes the ingot. See Bartering.java's javadoc for the real-vanilla throw/admire
+     * trigger this direct hand-off simplifies.
+     */
+    private static void scenarioPiglinBartering() {
+        clearEntitiesExceptPlayer();
+        var piglin = Mobs.spawn("piglin", world, new Pos(2.5, Y + 1, 0.5));
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        player.setItemInMainHand(ItemStack.of(Material.GOLD_INGOT, 3));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, piglin, PlayerHand.MAIN, piglin.getPosition()));
+        tick(2);
+        check("bartering consumes one gold ingot (had 3, now " + player.getItemInMainHand().amount() + ")",
+                player.getItemInMainHand().amount() == 2);
+        long dropped = world.getEntities().stream().filter(en -> en instanceof ItemEntity).count();
+        check("bartering drops exactly one item from the real piglin_bartering table (got " + dropped + ")",
+                dropped == 1);
+        if (piglin != null) piglin.remove();
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
      * Zoglin: decompile-verified stats (40 HP, 0.6 knockback resistance, base 6 attack
      * damage) — hoglin's zombified form, hostile on sight like every other brute in this
      * codebase.
@@ -2041,6 +2067,30 @@ public final class PlayTest {
             angered = brainOf(enderman) != null && brainOf(enderman).target == player;
         }
         check("enderman targets the player once stared at", angered);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Real vanilla (LivingEntity.class aiStep, decompile-verified): isSensitiveToWater()
+     * mobs (Enderman.isSensitiveToWater() returns true) take 1 damage per tick while
+     * isInWaterOrRain() is true. Previously endermen had a hard-coded "teleport away
+     * the instant you're on a water block" special case and never actually took any
+     * water damage at all. The baseline health must be captured immediately at spawn,
+     * before any ticks run: the fix checks wet-ness every tick with a zero-length
+     * initial cooldown, so the very first server tick after spawn already deals the
+     * hit — capturing "before" after a tick(2) warm-up (as an earlier version of this
+     * test did) missed that first hit as the baseline, then timed out waiting for a
+     * second hit that never came once WaterAvoidingRandomStroll walked the enderman
+     * off the single wet tile.
+     */
+    private static void scenarioEndermanWater() {
+        clearEntitiesExceptPlayer();
+        world.setBlock(30, Y + 1, 30, Block.WATER);
+        EntityCreature enderman = Mobs.spawn("enderman", world, new Pos(30.5, Y + 1, 30.5));
+        float before = enderman.getHealth();
+        boolean hurtByWater = waitFor(() -> enderman.getHealth() < before, 3000);
+        check("an enderman standing in water takes damage", hurtByWater);
+        world.setBlock(30, Y + 1, 30, Block.AIR);
         clearEntitiesExceptPlayer();
     }
 
@@ -4168,14 +4218,38 @@ public final class PlayTest {
         clearEntitiesExceptPlayer();
     }
 
+    /**
+     * Real vanilla (Mob.class burnUndead()/isSunBurnTick(), decompile-verified): a worn
+     * helmet blocks the burn entirely, and standing in water or rain also blocks it
+     * (isInWaterOrRain()). Neither check existed before — sunburn used to ignore
+     * equipment and weather completely.
+     */
     private static void scenarioSunburn() {
         world.setTime(1000); // morning sun
+        dev.pointofpressure.minecom.survival.WeatherCycle.setRaining(world, false);
         EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(40.5, Y + 1, 40.5));
         tick(2);
         float before = zombie.getHealth();
         boolean burning = waitFor(() -> zombie.getHealth() < before, 4000);
         check("zombie burns under the open sun", burning);
         clearEntitiesExceptPlayer();
+
+        EntityCreature helmeted = Mobs.spawn("zombie", world, new Pos(40.5, Y + 1, 40.5));
+        helmeted.setEquipment(EquipmentSlot.HELMET, ItemStack.of(Material.IRON_HELMET));
+        tick(2);
+        float beforeHelmet = helmeted.getHealth();
+        boolean protectedByHelmet = !waitFor(() -> helmeted.getHealth() < beforeHelmet, 3000);
+        check("a helmeted zombie does not burn in daylight", protectedByHelmet);
+        clearEntitiesExceptPlayer();
+
+        dev.pointofpressure.minecom.survival.WeatherCycle.setRaining(world, true);
+        EntityCreature rained = Mobs.spawn("zombie", world, new Pos(40.5, Y + 1, 40.5));
+        tick(2);
+        float beforeRain = rained.getHealth();
+        boolean protectedByRain = !waitFor(() -> rained.getHealth() < beforeRain, 3000);
+        check("a bare-headed zombie standing in rain does not burn", protectedByRain);
+        clearEntitiesExceptPlayer();
+        dev.pointofpressure.minecom.survival.WeatherCycle.setRaining(world, false);
     }
 
     private static void scenarioSwell() {
@@ -4294,6 +4368,35 @@ public final class PlayTest {
         tick(3);
         check("respawn restores health and hunger",
                 !player.isDead() && player.getHealth() == 20 && player.getFood() == 20);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Real vanilla (Mob.class dropCustomDeathLoot, decompile-verified): every worn/held
+     * equipment slot independently rolls DropChances.DEFAULT_EQUIPMENT_DROP_CHANCE
+     * (8.5%) when the kill is credited to a player. Mobs never dropped their own gear
+     * at all before this. Statistical: with a fresh (non-enchanted) weapon the roll is
+     * exactly 8.5% per helmet, so a single kill can't reliably assert a drop — 60
+     * independent kills gives a >99% chance of at least one, matching the sampling
+     * convention already used by scenarioMobEquipment for the same kind of roll.
+     */
+    private static void scenarioEquipmentDropChance() {
+        clearEntitiesExceptPlayer();
+        player.setItemInMainHand(ItemStack.of(Material.DIAMOND_SWORD));
+        int helmetDrops = 0;
+        for (int i = 0; i < 60; i++) {
+            EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(50 + i % 10, Y + 1, 50 + i / 10));
+            if (zombie == null) continue;
+            zombie.setEquipment(EquipmentSlot.HELMET, ItemStack.of(Material.IRON_HELMET));
+            zombie.setHealth(0.5f);
+            EventDispatcher.call(new EntityAttackEvent(player, zombie));
+        }
+        tick(3);
+        long dropped = world.getEntities().stream()
+                .filter(e -> e instanceof ItemEntity ie && ie.getItemStack().material() == Material.IRON_HELMET)
+                .count();
+        check("killed mobs sometimes drop their worn equipment (8.5%/kill; " + dropped + "/60 kills dropped a helmet)",
+                dropped >= 1);
         clearEntitiesExceptPlayer();
     }
 }

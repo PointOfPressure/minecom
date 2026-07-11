@@ -1101,8 +1101,24 @@ public final class VanillaMobs {
 
     /**
      * Enderman: neutral until a player stares at it (crosshair within a narrow cone,
-     * &lt;64 blocks, line of sight), then melee-hostile. Blinks away when hurt and
-     * flees water. 40 HP, fast, high reach.
+     * &lt;64 blocks, line of sight), then melee-hostile. Takes real drown-type damage
+     * while standing in water or rain (decompile-verified: EnderMan.isSensitiveToWater()
+     * returns true, and LivingEntity.aiStep applies 1 damage/tick whenever
+     * isSensitiveToWater() && isInWaterOrRain() — checked every tick like real vanilla
+     * (a WaterAvoidingRandomStroll goal can walk an enderman off a single wet tile in
+     * well under a second, so a throttled/periodic check risks missing brief contact
+     * entirely; only the actual damage APPLICATION is throttled, to once per second
+     * once wet, like every other periodic environmental tick in this codebase —
+     * sunburn, drowning — since Minestom's damage() has no built-in per-hit
+     * invulnerability window to do that throttling for us the way vanilla's
+     * hurtServer implicitly does). Blinks away
+     * on any health loss (real vanilla's hurtServer rerolls teleport() on ~90% of
+     * non-projectile, non-mob-dealt hits — including its own water damage — so this
+     * project's existing "teleport whenever health drops" hook already reproduces the
+     * water-flee behavior once the real water damage exists, without needing a
+     * separate hard-coded "standing on a water block" special case; that hard-coded
+     * check has been removed as redundant/less accurate now that the real mechanic
+     * drives it). 40 HP, fast, high reach.
      */
     public static EntityCreature enderman(Instance instance, Pos pos) {
         EntityCreature mob = new EntityCreature(EntityType.ENDERMAN);
@@ -1114,13 +1130,19 @@ public final class VanillaMobs {
         brain.addTargetGoal(1, new Goals.HurtByTarget(brain, false));
         brain.addTargetGoal(2, new EndermanStareTarget(brain));
         float[] lastHealth = {40};
+        int[] waterDamageCooldown = {0};
         mob.scheduler().buildTask(() -> {
             if (mob.isDead() || mob.getInstance() == null) return;
-            // flee water; blink away when hurt
-            if (mob.getInstance().getBlock(mob.getPosition()).compare(Block.WATER)) endermanTeleport(mob);
             float h = mob.getHealth();
             if (h < lastHealth[0]) endermanTeleport(mob);
             lastHealth[0] = mob.getHealth();
+            boolean wet = mob.getInstance().getBlock(mob.getPosition()).compare(Block.WATER)
+                    || dev.pointofpressure.minecom.survival.WeatherCycle.isRaining(mob.getInstance());
+            if (waterDamageCooldown[0] > 0) waterDamageCooldown[0]--;
+            if (wet && waterDamageCooldown[0] <= 0) {
+                mob.damage(DamageType.DROWN, 1f);
+                waterDamageCooldown[0] = 20;
+            }
         }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);
         return mob;
@@ -1505,11 +1527,24 @@ public final class VanillaMobs {
         return true;
     }
 
-    /** Zombie/Skeleton aiStep: burn in direct daylight (1 fire damage per second). */
+    /**
+     * Zombie/Skeleton aiStep: burn in direct daylight (1 fire damage per second).
+     * Decompile-verified against Mob.class's burnUndead()/isSunBurnTick(): a worn
+     * helmet fully blocks the burn (real vanilla instead chips 0-1 durability off
+     * the helmet per tick and only starts igniting once it breaks — this project
+     * doesn't track mob-armor durability loss over time anywhere else either, so a
+     * worn helmet is treated as permanent sun protection, a documented
+     * simplification). Also skipped while standing in water or rain
+     * (isInWaterOrRain(), also decompile-verified, this time from isSunBurnTick()
+     * directly) — previously sunburn ignored weather/water entirely.
+     */
     private static void sunburn(EntityCreature mob, Instance instance) {
         mob.scheduler().buildTask(() -> {
             if (mob.isDead() || mob.getInstance() == null) return;
-            if (isDaySurface(mob)) {
+            boolean helmeted = !mob.getEquipment(EquipmentSlot.HELMET).isAir();
+            boolean wet = mob.getInstance().getBlock(mob.getPosition()).compare(Block.WATER)
+                    || dev.pointofpressure.minecom.survival.WeatherCycle.isRaining(mob.getInstance());
+            if (isDaySurface(mob) && !helmeted && !wet) {
                 mob.getEntityMeta().setOnFire(true);
                 mob.damage(DamageType.ON_FIRE, 1f);
             } else if (mob.getEntityMeta().isOnFire()) {
