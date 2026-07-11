@@ -12,6 +12,7 @@ import net.minestom.server.entity.Player;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.player.PlayerUseItemEvent;
 import net.minestom.server.instance.Instance;
+import net.minestom.server.instance.block.Block;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import net.minestom.server.sound.SoundEvent;
@@ -103,7 +104,8 @@ public final class Fishing {
         if (!caught) return;
 
         Instance instance = player.getInstance();
-        for (ItemStack loot : LootTables.gameplay("fishing", player.getItemInMainHand())) {
+        boolean openWater = isOpenWater(instance, bobberPos);
+        for (ItemStack loot : LootTables.gameplay("fishing", player.getItemInMainHand(), openWater)) {
             ItemEntity item = new ItemEntity(loot);
             item.setPickupDelay(Duration.ofMillis(200));
             item.setInstance(instance, bobberPos.add(0, 0.5, 0));
@@ -113,6 +115,65 @@ public final class Fishing {
         }
         Experience.orb(instance, player.getPosition(), 1 + RANDOM.nextInt(6));
         player.setItemInMainHand(Items.damageItem(player, player.getItemInMainHand(), 1));
+    }
+
+    private enum WaterLayer { ABOVE, INSIDE, INVALID }
+
+    /**
+     * FishingHook.calculateOpenWater (decompile-verified): four horizontal layers,
+     * y-offsets -1..2 from the bobber's block, each a 5x5 area (x/z -2..2). A layer is
+     * ABOVE only if every block in it is air or a lily pad; INSIDE only if every block
+     * is a water source block with no collision shape; any mix within a layer, or any
+     * non-water/non-air block, makes that layer INVALID and fails the whole check
+     * immediately. The valid sequence is INSIDE layers first, optionally transitioning
+     * to ABOVE layers once (never back to INSIDE) — i.e. clear water with clear air
+     * above it, gated on ALL four layers agreeing. Real vanilla also requires the
+     * water be a source (not flowing); this project's water blocks track that via the
+     * same "level" property Fluids.java's own flow engine uses (absent/0 = source).
+     * Only the treasure pool of the real fishing loot table is gated on this
+     * (data/minecraft/loot_table/gameplay/fishing.json's is_open_water predicate,
+     * which the generic LootTables condition evaluator now reads off this flag) —
+     * previously that predicate was silently ignored, so treasure could drop from any
+     * fishable puddle, not just real open water.
+     */
+    private static boolean isOpenWater(Instance instance, Pos bobberPos) {
+        int bx = bobberPos.blockX(), by = bobberPos.blockY(), bz = bobberPos.blockZ();
+        WaterLayer previous = WaterLayer.INVALID;
+        for (int dy = -1; dy <= 2; dy++) {
+            WaterLayer layer = layerType(instance, bx, by + dy, bz);
+            switch (layer) {
+                case ABOVE -> { if (previous == WaterLayer.INVALID) return false; }
+                case INSIDE -> { if (previous == WaterLayer.ABOVE) return false; }
+                case INVALID -> { return false; }
+            }
+            previous = layer;
+        }
+        return true;
+    }
+
+    private static WaterLayer layerType(Instance instance, int cx, int cy, int cz) {
+        WaterLayer result = null;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                WaterLayer t = blockType(instance, cx + dx, cy, cz + dz);
+                if (result == null) result = t;
+                else if (result != t) return WaterLayer.INVALID;
+            }
+        }
+        return result == null ? WaterLayer.INVALID : result;
+    }
+
+    private static WaterLayer blockType(Instance instance, int x, int y, int z) {
+        Block b = instance.getBlock(x, y, z);
+        if (b.isAir() || b.key().value().equals("lily_pad")) return WaterLayer.ABOVE;
+        if (!b.key().value().equals("water")) return WaterLayer.INVALID;
+        String level = b.getProperty("level");
+        return level == null || level.equals("0") ? WaterLayer.INSIDE : WaterLayer.INVALID;
+    }
+
+    /** Test hook: exposes isOpenWater directly, without needing a real cast/bite cycle. */
+    public static boolean debugIsOpenWater(Instance instance, Pos pos) {
+        return isOpenWater(instance, pos);
     }
 
     /** Test hook: is a cast active with a bite ready to reel? */

@@ -138,6 +138,7 @@ public final class PlayTest {
         scenario("piston pushes entities", PlayTest::scenarioPistonPush);
         scenario("anvil combines durability + enchants", PlayTest::scenarioAnvil);
         scenario("fishing loot from real tables", PlayTest::scenarioFishing);
+        scenario("fishing: treasure requires real open water, not just any fishable puddle", PlayTest::scenarioFishingOpenWater);
         scenario("vanilla-ai: hurt zombie alerts the pack", PlayTest::scenarioZombieAlert);
         scenario("vanilla-ai: melee has 20-tick cadence", PlayTest::scenarioMeleeCadence);
         scenario("vanilla-ai: tempt draws cow to wheat", PlayTest::scenarioTemptAI);
@@ -4295,6 +4296,47 @@ public final class PlayTest {
         check("lure III shortens the bite-wait ceiling (" + rangeNoLure + " -> " + rangeLureIII + ")",
                 rangeLureIII == rangeNoLure - 300);
         resetPlayer();
+    }
+
+    /**
+     * FishingHook.calculateOpenWater (decompile-verified — see Fishing.isOpenWater's
+     * own javadoc): only real open water (a clear 5x5 water surface with clear air
+     * above) lets the treasure pool of the real fishing loot table become eligible.
+     * Previously the fishing table's is_open_water predicate was silently ignored by
+     * the generic loot-table condition evaluator, so treasure could drop from any
+     * fishable puddle at all, including a tiny covered one.
+     */
+    private static void scenarioFishingOpenWater() {
+        clearEntitiesExceptPlayer();
+        // The bobber's own block position is the anchor, and the layer BELOW it is
+        // also sampled — a 1-block-deep puddle sitting directly on the flat world's
+        // solid ground fails immediately (that layer is solid, not water), matching
+        // real vanilla requiring actual pond depth, not just a fishable surface. Two
+        // full water layers (Y and Y+1) give the bobber (resting at Y+1) real water
+        // both at and below it.
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                world.setBlock(60 + dx, Y, 60 + dz, Block.WATER);
+                world.setBlock(60 + dx, Y + 1, 60 + dz, Block.WATER);
+            }
+        }
+        check("a clear, deep 5x5 water pool with open sky above counts as open water",
+                dev.pointofpressure.minecom.survival.Fishing.debugIsOpenWater(world, new Pos(60.5, Y + 1, 60.5)));
+
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) world.setBlock(60 + dx, Y + 3, 60 + dz, Block.STONE); // ceiling (within the 4 sampled layers: Y..Y+3)
+        }
+        check("the same pool under a solid ceiling no longer counts as open water",
+                !dev.pointofpressure.minecom.survival.Fishing.debugIsOpenWater(world, new Pos(60.5, Y + 1, 60.5)));
+
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                world.setBlock(60 + dx, Y, 60 + dz, Block.AIR);
+                world.setBlock(60 + dx, Y + 1, 60 + dz, Block.AIR);
+                world.setBlock(60 + dx, Y + 3, 60 + dz, Block.AIR);
+            }
+        }
+        clearEntitiesExceptPlayer();
     }
 
     private static dev.pointofpressure.minecom.mobs.ai.VBrain brainOf(Entity e) {

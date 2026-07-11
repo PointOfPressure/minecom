@@ -24,8 +24,15 @@ public final class LootTables {
 
     private static final Random RANDOM = new Random();
 
-    /** Evaluation context: the tool used and (for block tables) the actual block state. */
-    record Ctx(ItemStack tool, Block block) {}
+    /**
+     * Evaluation context: the tool used, (for block tables) the actual block state,
+     * and (fishing only) whether the cast is in real open water — FishingHook.
+     * calculateOpenWater's own is_open_water entity_properties predicate, which the
+     * generic entity_properties condition handler below reads off this flag.
+     */
+    record Ctx(ItemStack tool, Block block, boolean openWater) {
+        Ctx(ItemStack tool, Block block) { this(tool, block, false); }
+    }
 
     public static List<ItemStack> blockDrops(Block block, ItemStack tool) {
         JsonElement table = VanillaData.lootBlocks.get(block.key().value());
@@ -49,6 +56,13 @@ public final class LootTables {
         JsonElement table = VanillaData.lootGameplay.get(name);
         if (table == null) return List.of();
         return evaluate(table.getAsJsonObject(), new Ctx(tool == null ? ItemStack.AIR : tool, null));
+    }
+
+    /** Fishing specifically: openWater gates the treasure pool (real vanilla only). */
+    public static List<ItemStack> gameplay(String name, ItemStack tool, boolean openWater) {
+        JsonElement table = VanillaData.lootGameplay.get(name);
+        if (table == null) return List.of();
+        return evaluate(table.getAsJsonObject(), new Ctx(tool == null ? ItemStack.AIR : tool, null, openWater));
     }
 
     /** Trial-chamber tables by id path, e.g. "spawners/trial_chamber/consumables". */
@@ -306,7 +320,14 @@ public final class LootTables {
             }
             case "entity_properties" -> {
                 JsonObject predicate = cond.getAsJsonObject("predicate");
-                yield predicate == null || !predicate.has("vehicle");
+                if (predicate == null) yield true;
+                if (predicate.has("type_specific")) {
+                    JsonObject typeSpecific = predicate.getAsJsonObject("type_specific");
+                    if (typeSpecific.has("in_open_water")) {
+                        yield typeSpecific.get("in_open_water").getAsBoolean() == ctx.openWater();
+                    }
+                }
+                yield !predicate.has("vehicle");
             }
             default -> false; // unknown (incl. enchantment-based): behave like unenchanted vanilla
         };
