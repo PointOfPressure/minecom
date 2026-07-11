@@ -176,6 +176,7 @@ public final class PlayTest {
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
         scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
         scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
+        scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -523,6 +524,69 @@ public final class PlayTest {
                         && s.get(DataComponents.LODESTONE_TRACKER) != null
                         && s.get(DataComponents.LODESTONE_TRACKER).tracked());
         check("splitting off a bound compass adds exactly one new bound copy to the inventory", gotBoundCopy);
+        resetPlayer();
+    }
+
+    /**
+     * ItemFrame.interact/hurtServer: an empty frame right-clicked with a held item mounts it;
+     * right-clicking a filled frame rotates its display instead of replacing the item; attacking
+     * a filled frame ejects the item without destroying the frame, attacking an empty one breaks it.
+     */
+    private static void scenarioItemFrame() {
+        clearEntitiesExceptPlayer();
+        BlockVec support = new BlockVec(0, Y + 1, 0);
+        world.setBlock(support, Block.STONE);
+        useItemOnBlock(ItemStack.of(Material.ITEM_FRAME), support, BlockFace.NORTH);
+        tick(2);
+        net.minestom.server.entity.Entity frame = world.getEntities().stream()
+                .filter(en -> en.getEntityType() == EntityType.ITEM_FRAME).findFirst().orElse(null);
+        check("using an item_frame on a solid block's north face spawns a frame entity", frame != null);
+
+        net.minestom.server.entity.metadata.other.ItemFrameMeta meta =
+                (net.minestom.server.entity.metadata.other.ItemFrameMeta) frame.getEntityMeta();
+        check("a freshly-placed frame starts empty", meta.getItem().isAir());
+
+        player.setItemInMainHand(ItemStack.of(Material.DIAMOND, 5));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, frame, net.minestom.server.entity.PlayerHand.MAIN, frame.getPosition()));
+        tick(2);
+        check("right-clicking an empty frame with a held item mounts exactly 1 of it",
+                meta.getItem().material() == Material.DIAMOND && meta.getItem().amount() == 1);
+        check("mounting the item consumes 1 from the player's stack (had 5, now 4)",
+                player.getItemInMainHand().amount() == 4);
+
+        net.minestom.server.utils.Rotation before = meta.getRotation();
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, frame, net.minestom.server.entity.PlayerHand.MAIN, frame.getPosition()));
+        tick(2);
+        check("right-clicking a filled frame rotates its display instead of swapping the item",
+                meta.getItem().material() == Material.DIAMOND && meta.getRotation() != before);
+
+        clearEntitiesExceptPlayer();
+        world.setBlock(support, Block.STONE);
+        useItemOnBlock(ItemStack.of(Material.ITEM_FRAME), support, BlockFace.NORTH);
+        tick(2);
+        frame = world.getEntities().stream()
+                .filter(en -> en.getEntityType() == EntityType.ITEM_FRAME).findFirst().orElse(null);
+        meta = (net.minestom.server.entity.metadata.other.ItemFrameMeta) frame.getEntityMeta();
+        meta.setItem(ItemStack.of(Material.EMERALD));
+        EventDispatcher.call(new EntityAttackEvent(player, frame));
+        tick(2);
+        boolean emeraldDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.EMERALD), 1000);
+        check("attacking a filled frame ejects its item into the world", emeraldDropped
+                && world.getEntities().contains(frame) && meta.getItem().isAir());
+
+        EventDispatcher.call(new EntityAttackEvent(player, frame));
+        tick(2);
+        boolean frameItemDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof net.minestom.server.entity.ItemEntity ie
+                        && ie.getItemStack().material() == Material.ITEM_FRAME), 1000);
+        check("attacking an already-empty frame breaks it and drops the item_frame item",
+                frameItemDropped && !world.getEntities().contains(frame));
+
+        clearEntitiesExceptPlayer();
         resetPlayer();
     }
 
