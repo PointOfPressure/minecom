@@ -48,10 +48,18 @@ leftovers.
   (Farming.boneMeal), flint&steel (fire/campfire/candle relight/TNT prime; no
   tool durability inside containers), powder snow bucket, shulker box
   placement, plus the pre-existing water/lava/empty buckets, TNT, boats.
-  Still missing: splash/lingering potions (no thrown-potion system at all),
-  armor equipping onto entities, armor stands (no armor-stand system), XP
-  bottle, firework rocket, shears, honeycomb, brush, chest-onto-donkey,
-  candle placement, glass bottle filling. (S each once their base systems exist)
+  Second expansion same day: splash/lingering potions (full thrown-potion
+  system, `survival/ThrownPotions.java` — splash distance scaling is
+  center-to-center rather than vanilla's AABB-to-AABB), XP bottles (3-11
+  orbs on landing), glass-bottle water fill, shears via `Shearing.shear`
+  (no tool durability in containers), armor equipping onto living entities
+  with empty slots, firework rockets (cosmetic flight only — no explosion
+  or elytra boost). Still missing: armor stands (no armor-stand system),
+  honeycomb/waxing (no oxidation), brush (no archaeology), candle
+  placement, chest-onto-donkey (no chested-horse inventory). Sculk
+  shriekers landed too (Vibrations.java): player-caused shrieks, Darkness,
+  warning levels; the warden itself is a HANDOFF item. (each S once its
+  base system exists)
 - Redstone.java `containerSignal` — **expanded 2026-07-11 (Fable)**: added
   copper bulb (LIT=15), crafter (filled+locked slots), sculk sensors (last
   vibration frequency while active). Still missing: beehive honey level (no

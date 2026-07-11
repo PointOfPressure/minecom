@@ -25,15 +25,28 @@ activator rail line propagation, target-block emission wiring (pre-existing),
 and the dispenser behavior table (projectiles, spawn eggs, minecarts, bone
 meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
 
-1. **Thrown potions** (Opus) — splash/lingering dispensing AND player throwing
-   are both blocked on a thrown-potion entity system; Potions.java has the
-   effect machinery, nothing models the projectile + area cloud.
-2. **Sculk shrieker → warden chain** (Fable) — shrieker warning levels,
-   darkness pulses, warden spawn/AI. Own feature, not a sensor patch.
-3. **Dispenser exotics** (Sonnet, batch) — armor equip, armor stands, XP
-   bottle, firework, shears, honeycomb, brush, candles, glass-bottle fill,
-   chest-onto-donkey: each blocked on (or trivial once) its base system
-   exists. List with details in AUDIT.md.
+1. ~~Thrown potions~~ **Done 2026-07-11 (Fable, same session):**
+   `survival/ThrownPotions.java` — splash (4-block reach, 1 - dist/4 scaling,
+   sub-20gt drops) and lingering clouds (3.0 radius, -0.5 per use +
+   radius/duration per tick, 10gt arm, 600gt life, 1/4 duration, 20gt
+   per-entity cooldown) for player throws AND dispensers, through a new
+   scaled `Potions.apply` overload. Approximation noted in AUDIT: impact
+   distance is center-to-center, not vanilla's AABB-to-AABB.
+2. **Warden mob** (Fable — the ONLY summit item left): shrieker mechanics
+   landed this session inside `Vibrations.java` (player-caused vibrations
+   within 8 → SHRIEKING 90gt, Darkness 260gt to players within 40,
+   per-player warning levels capped at 4 with 10-minute reset). What
+   remains is exactly the warning-4 consequence: the warden itself —
+   burrow-up spawn, anger management, sniffing, sonic boom, darkness pulses.
+   Creaking-scale mob-AI work; decompile Warden.java + WardenSpawnTracker
+   first. The `WARNINGS` map in Vibrations already holds the trigger state.
+3. ~~Dispenser exotics~~ **Mostly done 2026-07-11 (Fable, same session):**
+   XP bottle (orbs 3-11 on land), glass-bottle water fill, shears (shared
+   `Shearing.shear`), armor equipping onto empty-slotted living entities,
+   firework (cosmetic flight), splash/lingering potions (via #1). Still
+   blocked on missing base systems: armor stands, brush/archaeology,
+   honeycomb/waxing, candles, chest-onto-donkey (no chested-horse
+   inventory). AUDIT.md updated.
 4. **Update-order semantics** (DESIGN DECISION, not a task yet) — minecom
    batches dirty positions per tick instead of vanilla's depth-first
    neighbor-update recursion, so update-order-dependent contraptions
@@ -80,7 +93,13 @@ test-logs/playtest_piston_chains.log (5 fails),
 test-logs/playtest_piston_rerun.log (2 fails).
 Also observed once (playtest_redstone_batch2.log): "the enderman later
 places the carried block back down" — same class of AI-timing flake; fold it
-into the same determinism pass.
+into the same determinism pass. Second enderman flake + one trident-loyalty
+flake ("free slots at throw time=45") in playtest_summit.log (2026-07-12).
+
+While in here: add a **section filter to the harness** (`--playtest redstone`
+runs only matching scenario names). The suite is now 500+ checks with
+real-time waits (~7 min per full run on this box); focused iteration needs
+sub-minute cycles. Trivial change in PlayTest's scenario runner.
 
 ### Unification-pass mechanical cleanups — Sonnet (BLOCKED until first pass done)
 

@@ -129,6 +129,8 @@ public final class PlayTest {
         scenario("redstone: calibrated sculk sensor filters frequencies", PlayTest::scenarioSculkCalibrated);
         scenario("redstone: dispenser spawn egg + minecart placement", PlayTest::scenarioDispenserBehaviors);
         scenario("redstone: powered rails carry power 8 rails down the line", PlayTest::scenarioPoweredRails);
+        scenario("thrown potions: splash scales with distance, lingering leaves a cloud", PlayTest::scenarioThrownPotions);
+        scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -4666,6 +4668,62 @@ public final class PlayTest {
                 && "false".equals(prop(58, Y + 1, z, "powered")), 3000);
         check("removing the source darkens the whole line", dark);
         for (int x = 50; x <= 59; x++) rs(x, Y + 1, z, Block.AIR);
+    }
+
+    /** Splash: poison a pig near the impact; lingering: cloud entity + delayed effect. */
+    private static void scenarioThrownPotions() {
+        int z = 225;
+        var poisonSplash = ItemStack.of(Material.SPLASH_POTION).with(b ->
+                b.set(net.minestom.server.component.DataComponents.POTION_CONTENTS,
+                        new net.minestom.server.item.component.PotionContents(
+                                net.minestom.server.potion.PotionType.POISON)));
+        EntityCreature pig = Mobs.spawn("pig", world, new Pos(52.5, Y + 1, z + 0.5));
+        var thrown = dev.pointofpressure.minecom.survival.ThrownPotions.launch(
+                world, player, new Vec(52.5, Y + 3, z + 0.5), new Vec(0, -1, 0), poisonSplash);
+        tick(2);
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent(
+                thrown, new Pos(52.5, Y + 1, z + 0.5), world.getBlock(52, Y, z)));
+        boolean poisoned = waitFor(() -> pig.getActiveEffects().stream().anyMatch(t ->
+                t.potion().effect() == net.minestom.server.potion.PotionEffect.POISON), 3000);
+        check("splash poison hits the pig next to the impact", poisoned);
+        clearEntitiesExceptPlayer();
+
+        var poisonLingering = ItemStack.of(Material.LINGERING_POTION).with(b ->
+                b.set(net.minestom.server.component.DataComponents.POTION_CONTENTS,
+                        new net.minestom.server.item.component.PotionContents(
+                                net.minestom.server.potion.PotionType.POISON)));
+        var thrown2 = dev.pointofpressure.minecom.survival.ThrownPotions.launch(
+                world, player, new Vec(55.5, Y + 3, z + 0.5), new Vec(0, -1, 0), poisonLingering);
+        tick(2);
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent(
+                thrown2, new Pos(55.5, Y + 1, z + 0.5), world.getBlock(55, Y, z)));
+        boolean cloud = waitFor(() -> world.getEntities().stream().anyMatch(en ->
+                en.getEntityType() == EntityType.AREA_EFFECT_CLOUD), 3000);
+        check("lingering impact leaves an area effect cloud", cloud);
+        EntityCreature pig2 = Mobs.spawn("pig", world, new Pos(55.5, Y + 1, z + 0.5));
+        boolean cloudPoison = waitFor(() -> pig2.getActiveEffects().stream().anyMatch(t ->
+                t.potion().effect() == net.minestom.server.potion.PotionEffect.POISON), 4000);
+        check("a pig walking into the cloud gets the 1/4-duration effect", cloudPoison);
+        clearEntitiesExceptPlayer();
+    }
+
+    /** Shrieker: a player-caused vibration within 8 blocks shrieks 90gt + Darkness. */
+    private static void scenarioShrieker() {
+        int z = 230;
+        rs(50, Y + 1, z, Block.SCULK_SHRIEKER);
+        dev.pointofpressure.minecom.redstone.Vibrations.trackShrieker(new Vec(50, Y + 1, z));
+        player.teleport(new Pos(52.5, Y + 1, z + 0.5)).join();
+        tick(2);
+        player.teleport(new Pos(53.5, Y + 1, z + 0.5)).join(); // movement -> step vibration
+        boolean shrieked = waitFor(() -> "true".equals(prop(50, Y + 1, z, "shrieking")), 3000);
+        check("player step vibration makes the shrieker shriek", shrieked);
+        boolean darkness = player.getActiveEffects().stream().anyMatch(t ->
+                t.potion().effect() == net.minestom.server.potion.PotionEffect.DARKNESS);
+        check("shriek applies Darkness to the nearby player", darkness);
+        boolean quiet = waitFor(() -> "false".equals(prop(50, Y + 1, z, "shrieking")), 6000);
+        check("shrieking state clears after 90gt", quiet);
+        rs(50, Y + 1, z, Block.AIR);
+        resetPlayer();
     }
 
     private static void scenarioButton() {

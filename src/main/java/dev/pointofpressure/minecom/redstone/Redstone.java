@@ -903,6 +903,56 @@ public final class Redstone {
             EntityProjectile projectile = new EntityProjectile(null, type);
             projectile.setInstance(instance, spawnAt);
             projectile.setVelocity(facing.mul(20).add(0, 1, 0));
+        } else if (!dropper && (mat == Material.SPLASH_POTION || mat == Material.LINGERING_POTION)) {
+            // ProjectileDispenseBehavior for potions: power 1.375 shoot units
+            dev.pointofpressure.minecom.survival.ThrownPotions.launch(
+                    instance, null, spawnAt, facing.mul(1.375f * (32f / 3.0f)).add(0, 1, 0), stack);
+        } else if (!dropper && mat == Material.EXPERIENCE_BOTTLE) {
+            EntityProjectile bottle = new EntityProjectile(null, EntityType.EXPERIENCE_BOTTLE);
+            bottle.setInstance(instance, spawnAt);
+            bottle.setVelocity(facing.mul(10).add(0, 1, 0));
+        } else if (!dropper && mat == Material.GLASS_BOTTLE) {
+            // fills into a water bottle from a water source in front (block kept)
+            if (!instance.getBlock(front).key().value().equals("water")) return;
+            inv.setItemStack(slot, ItemStack.of(Material.POTION).with(b ->
+                    b.set(net.minestom.server.component.DataComponents.POTION_CONTENTS,
+                            new net.minestom.server.item.component.PotionContents(
+                                    net.minestom.server.potion.PotionType.WATER))));
+            return;
+        } else if (!dropper && mat == Material.SHEARS) {
+            // ShearsDispenseItemBehavior: shear the first shearable in front (no durability, AUDIT)
+            for (var entity : instance.getNearbyEntities(spawnAt, 1.0)) {
+                if (dev.pointofpressure.minecom.mobs.Shearing.shear(entity)) return;
+            }
+            return; // nothing shearable: fizzle without consuming
+        } else if (!dropper && mat == Material.FIREWORK_ROCKET) {
+            // cosmetic flight only — no explosion/boost model (AUDIT)
+            var rocket = new net.minestom.server.entity.Entity(EntityType.FIREWORK_ROCKET);
+            rocket.setInstance(instance, spawnAt);
+            rocket.setVelocity(facing.mul(10).add(0, 4, 0));
+            rocket.scheduler().buildTask(rocket::remove)
+                    .delay(net.minestom.server.timer.TaskSchedule.tick(30)).schedule();
+        } else if (!dropper && (mat.key().value().endsWith("_helmet")
+                || mat.key().value().endsWith("_chestplate")
+                || mat.key().value().endsWith("_leggings")
+                || mat.key().value().endsWith("_boots"))) {
+            // EquipmentDispenseItemBehavior: equip a living entity in front with an empty slot
+            var eqSlot = mat.key().value().endsWith("_helmet")
+                    ? net.minestom.server.entity.EquipmentSlot.HELMET
+                    : mat.key().value().endsWith("_chestplate")
+                    ? net.minestom.server.entity.EquipmentSlot.CHESTPLATE
+                    : mat.key().value().endsWith("_leggings")
+                    ? net.minestom.server.entity.EquipmentSlot.LEGGINGS
+                    : net.minestom.server.entity.EquipmentSlot.BOOTS;
+            for (var entity : instance.getNearbyEntities(spawnAt, 1.0)) {
+                if (entity instanceof LivingEntity le && !le.isDead()
+                        && le.getEquipment(eqSlot).isAir()) {
+                    le.setEquipment(eqSlot, stack.withAmount(1));
+                    inv.setItemStack(slot, stack.consume(1));
+                    return;
+                }
+            }
+            return; // no wearer: fizzle without consuming
         } else if (!dropper && mat == Material.FIRE_CHARGE) {
             // fire charge shoots a small fireball that ignites what it hits
             EntityProjectile fireball = new EntityProjectile(null, EntityType.SMALL_FIREBALL);

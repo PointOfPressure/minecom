@@ -29,16 +29,25 @@ import java.util.concurrent.ConcurrentHashMap;
  * event: block place/break, note blocks, doors, TNT fuses, explosions,
  * lightning, projectiles landing, and a 5gt movement sweep for steps
  * (sneaking players emit nothing).
- * Not modeled (AUDIT.md): sculk shriekers/warden, resonance via amethyst
- * blocks, container open/close and eat/drink/equip-class entity events,
- * waterlogged silencing, per-event Context entity checks.
+ * Sculk shriekers are vibration listeners too (radius 8, player-caused events
+ * only): a heard vibration shrieks for 90gt, applies Darkness (260gt) to
+ * players within 40 blocks and raises the causing player's warning level
+ * (cap 4, resetting after 10 quiet minutes). The warden summon at warning 4
+ * is NOT modeled — the warden is its own feature (docs/HANDOFF.md).
+ * Not modeled (AUDIT.md): amethyst resonance, container open/close and
+ * eat/drink/equip-class entity events, waterlogged silencing, per-event
+ * Context entity checks, shrieker warning-level advancement triggers.
  */
 public final class Vibrations {
     private Vibrations() {}
 
     private static final Set<Long> SENSORS = ConcurrentHashMap.newKeySet();
+    private static final Set<Long> SHRIEKERS = ConcurrentHashMap.newKeySet();
     private static final Map<Long, Integer> LAST_FREQUENCY = new ConcurrentHashMap<>();
     private static final Map<Integer, Point> LAST_POSITIONS = new ConcurrentHashMap<>();
+    /** Per-player warden warning: [level, lastShriekAge]; resets after 10 quiet minutes. */
+    private static final Map<java.util.UUID, int[]> WARNINGS = new ConcurrentHashMap<>();
+    private static int age;
 
     /** VibrationSystem.VIBRATION_FREQUENCY_FOR_EVENT, keyed by event name. */
     private static final Map<String, Integer> FREQ = Map.ofEntries(
@@ -67,6 +76,7 @@ public final class Vibrations {
         events.addListener(PlayerBlockPlaceEvent.class, e -> {
             String key = e.getBlock().key().value();
             if (key.endsWith("sculk_sensor")) SENSORS.add(pack(e.getBlockPosition()));
+            if (key.equals("sculk_shrieker")) SHRIEKERS.add(pack(e.getBlockPosition()));
             emit("block_place", e.getBlockPosition(), e.getPlayer());
         });
         events.addListener(PlayerBlockBreakEvent.class,
@@ -78,13 +88,18 @@ public final class Vibrations {
         SENSORS.add(pack(pos));
     }
 
+    /** Track shriekers loaded from a saved world (or placed by tests). */
+    public static void trackShrieker(Point pos) {
+        SHRIEKERS.add(pack(pos));
+    }
+
     /**
      * Emit a game event at a position. Sensors in range and inactive schedule
      * an activation after the vibration's 1-block-per-gt travel time.
      */
     public static void emit(String event, Point sourcePos, Entity source) {
         Instance instance = Redstone.instance();
-        if (instance == null || SENSORS.isEmpty()) return;
+        if (instance == null || (SENSORS.isEmpty() && SHRIEKERS.isEmpty())) return;
         int frequency = FREQ.getOrDefault(event, 0);
         if (frequency == 0) return;
         if (source instanceof Player p && p.isSneaking() && frequency == 1) return; // silent steps
@@ -118,6 +133,56 @@ public final class Vibrations {
             int activeTicks = calibrated ? 10 : 30;
             Redstone.schedule(delay, () -> activate(instance, pos, power, frequency, activeTicks));
         }
+
+        // shriekers listen too, but only to player-caused vibrations
+        if (source instanceof Player player && !SHRIEKERS.isEmpty()) {
+            for (long key : SHRIEKERS) {
+                Point pos = unpack(key);
+                if (!instance.isChunkLoaded(pos.blockX() >> 4, pos.blockZ() >> 4)) continue;
+                Block shrieker = instance.getBlock(pos);
+                if (!shrieker.key().value().equals("sculk_shrieker")) {
+                    SHRIEKERS.remove(key);
+                    continue;
+                }
+                if ("true".equals(shrieker.getProperty("shrieking"))) continue;
+                Vec center = new Vec(pos.blockX() + 0.5, pos.blockY() + 0.5, pos.blockZ() + 0.5);
+                double distance = center.distance(origin);
+                if (distance > 8 || woolOccludes(instance, center, origin)) continue;
+                int delay = (int) Math.max(1, Math.ceil(distance));
+                Redstone.schedule(delay, () -> shriek(instance, pos, player));
+            }
+        }
+    }
+
+    /**
+     * SculkShriekerBlockEntity.tryShriek/tryRespond: SHRIEKING for 90gt,
+     * Darkness (260gt) to players within 40, warning level +1 for the causing
+     * player (cap 4, reset after 10 quiet minutes). Warning 4 would summon a
+     * warden — not modeled, see docs/HANDOFF.md.
+     */
+    private static void shriek(Instance instance, Point pos, Player cause) {
+        Block shrieker = instance.getBlock(pos);
+        if (!shrieker.key().value().equals("sculk_shrieker")) return;
+        if ("true".equals(shrieker.getProperty("shrieking"))) return;
+        instance.setBlock(pos, shrieker.withProperty("shrieking", "true"));
+        int[] warning = WARNINGS.computeIfAbsent(cause.getUuid(), k -> new int[]{0, age});
+        if (age - warning[1] > 12000) warning[0] = 0; // 10 quiet minutes reset
+        warning[0] = Math.min(4, warning[0] + 1);
+        warning[1] = age;
+        Vec center = new Vec(pos.blockX() + 0.5, pos.blockY() + 0.5, pos.blockZ() + 0.5);
+        for (Player player : instance.getPlayers()) {
+            if (player.getPosition().distance(center) <= 40) {
+                player.addEffect(new net.minestom.server.potion.Potion(
+                        net.minestom.server.potion.PotionEffect.DARKNESS, (byte) 0, 260));
+            }
+        }
+        Redstone.schedule(90, () -> {
+            Block now = instance.getBlock(pos);
+            if (now.key().value().equals("sculk_shrieker")
+                    && "true".equals(now.getProperty("shrieking"))) {
+                instance.setBlock(pos, now.withProperty("shrieking", "false"));
+            }
+        });
     }
 
     private static void activate(Instance instance, Point pos, int power, int frequency, int activeTicks) {
@@ -160,7 +225,8 @@ public final class Vibrations {
     /** 5gt sweep: entities that moved since the last sweep emit STEP vibrations. */
     static void tickSteps() {
         Instance instance = Redstone.instance();
-        if (instance == null || SENSORS.isEmpty()) return;
+        age += 5;
+        if (instance == null || (SENSORS.isEmpty() && SHRIEKERS.isEmpty())) return;
         for (Entity entity : instance.getEntities()) {
             if (entity instanceof ItemEntity || entity.isRemoved()) continue;
             Point now = entity.getPosition();

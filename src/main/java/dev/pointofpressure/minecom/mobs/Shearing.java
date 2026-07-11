@@ -36,16 +36,24 @@ public final class Shearing {
 
     private static void interact(PlayerEntityInteractEvent e) {
         if (e.getHand() != PlayerHand.MAIN) return;
-        if (!(e.getTarget() instanceof EntityCreature sheep) || sheep.isDead()) return;
-        if (sheep.getEntityType() != EntityType.SHEEP) return;
-        if (!(sheep.getEntityMeta() instanceof SheepMeta meta)) return;
-        if (meta.isSheared() || meta.isBaby()) return;
         ItemStack held = e.getPlayer().getItemInHand(PlayerHand.MAIN);
         if (held.material() != Material.SHEARS) return;
+        if (shear(e.getTarget())) {
+            e.getPlayer().setItemInHand(PlayerHand.MAIN,
+                    dev.pointofpressure.minecom.data.Items.damageItem(e.getPlayer(), held, 1));
+        }
+    }
+
+    /** Shear a sheep (wool drops, marked sheared). Shared with the dispenser SHEARS behavior. */
+    public static boolean shear(net.minestom.server.entity.Entity target) {
+        if (!(target instanceof EntityCreature sheep) || sheep.isDead()) return false;
+        if (sheep.getEntityType() != EntityType.SHEEP) return false;
+        if (!(sheep.getEntityMeta() instanceof SheepMeta meta)) return false;
+        if (meta.isSheared() || meta.isBaby()) return false;
 
         Random random = ThreadLocalRandom.current();
         Material wool = WOOL_BY_COLOR.get(meta.getColor());
-        if (wool == null) return;
+        if (wool == null) return false;
         int rolls = Math.round(1 + random.nextFloat() * 2); // uniform(1.0,3.0) rounded, per the real loot table
         Instance instance = sheep.getInstance();
         Pos at = sheep.getPosition();
@@ -58,8 +66,7 @@ public final class Shearing {
                     (random.nextFloat() - random.nextFloat()) * 0.1));
         }
         meta.setSheared(true);
-        e.getPlayer().setItemInHand(PlayerHand.MAIN,
-                dev.pointofpressure.minecom.data.Items.damageItem(e.getPlayer(), held, 1));
+        return true;
     }
 
     private static final Map<DyeColor, Material> WOOL_BY_COLOR = Map.ofEntries(

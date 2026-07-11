@@ -319,6 +319,16 @@ public final class Combat {
     private static void projectileHitBlock(ProjectileCollideWithBlockEvent e) {
         dev.pointofpressure.minecom.redstone.Vibrations.emit("projectile_land",
                 e.getCollisionPosition(), e.getEntity());
+        if (e.getEntity().getEntityType() == EntityType.EXPERIENCE_BOTTLE) {
+            // ThrownExperienceBottle.onHit: 3-11 experience where it lands
+            Instance in = e.getEntity().getInstance();
+            if (in != null) {
+                dev.pointofpressure.minecom.survival.Experience.orb(in, e.getCollisionPosition(),
+                        3 + java.util.concurrent.ThreadLocalRandom.current().nextInt(9));
+            }
+            e.getEntity().remove();
+            return;
+        }
         if (e.getEntity().getEntityType() == EntityType.SMALL_FIREBALL) {
             // SmallFireball.onHitBlock: start a fire on the struck face (dispenser fire charges)
             Instance instance = e.getEntity().getInstance();

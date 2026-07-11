@@ -46,6 +46,16 @@ public final class Potions {
      *  (not just players) can drink one — reused by VanillaMobs.witch() for its own
      *  self-potion-drinking AI, which needs the exact same duration table. */
     public static void apply(LivingEntity player, PotionType type) {
+        apply(player, type, 1.0);
+    }
+
+    /**
+     * Scaled variant for splash potions (strength falls off with distance) and
+     * lingering clouds (1/4 duration). Timed effects scale their duration —
+     * scaled results under 20 ticks are dropped (AbstractThrownPotion's
+     * endsWithin(20) rule) — instant health/harming scale their magnitude.
+     */
+    public static void apply(LivingEntity player, PotionType type, double scale) {
         String key = type.key().value();
         boolean strong = key.startsWith("strong_");
         boolean isLong = key.startsWith("long_");
@@ -53,37 +63,45 @@ public final class Potions {
         int amp = strong ? 1 : 0;
 
         switch (base) {
-            case "swiftness" -> player.addEffect(new Potion(PotionEffect.SPEED, (byte) amp,
-                    isLong ? 9600 : strong ? 1800 : 3600));
-            case "slowness" -> player.addEffect(new Potion(PotionEffect.SLOWNESS, (byte) (strong ? 3 : 0),
-                    isLong ? 4800 : strong ? 400 : 1800));
-            case "strength" -> player.addEffect(new Potion(PotionEffect.STRENGTH, (byte) amp,
-                    isLong ? 9600 : strong ? 1800 : 3600));
-            case "weakness" -> player.addEffect(new Potion(PotionEffect.WEAKNESS, (byte) 0,
-                    isLong ? 4800 : 1800));
-            case "regeneration" -> player.addEffect(new Potion(PotionEffect.REGENERATION, (byte) amp,
-                    isLong ? 1800 : strong ? 450 : 900));
-            case "poison" -> player.addEffect(new Potion(PotionEffect.POISON, (byte) amp,
-                    isLong ? 1800 : strong ? 420 : 900));
-            case "fire_resistance" -> player.addEffect(new Potion(PotionEffect.FIRE_RESISTANCE, (byte) 0,
-                    isLong ? 9600 : 3600));
-            case "leaping" -> player.addEffect(new Potion(PotionEffect.JUMP_BOOST, (byte) amp,
-                    isLong ? 9600 : strong ? 1800 : 3600));
-            case "night_vision" -> player.addEffect(new Potion(PotionEffect.NIGHT_VISION, (byte) 0,
-                    isLong ? 9600 : 3600));
-            case "invisibility" -> player.addEffect(new Potion(PotionEffect.INVISIBILITY, (byte) 0,
-                    isLong ? 9600 : 3600));
-            case "water_breathing" -> player.addEffect(new Potion(PotionEffect.WATER_BREATHING, (byte) 0,
-                    isLong ? 9600 : 3600));
+            case "swiftness" -> timed(player, PotionEffect.SPEED, amp,
+                    isLong ? 9600 : strong ? 1800 : 3600, scale);
+            case "slowness" -> timed(player, PotionEffect.SLOWNESS, strong ? 3 : 0,
+                    isLong ? 4800 : strong ? 400 : 1800, scale);
+            case "strength" -> timed(player, PotionEffect.STRENGTH, amp,
+                    isLong ? 9600 : strong ? 1800 : 3600, scale);
+            case "weakness" -> timed(player, PotionEffect.WEAKNESS, 0,
+                    isLong ? 4800 : 1800, scale);
+            case "regeneration" -> timed(player, PotionEffect.REGENERATION, amp,
+                    isLong ? 1800 : strong ? 450 : 900, scale);
+            case "poison" -> timed(player, PotionEffect.POISON, amp,
+                    isLong ? 1800 : strong ? 420 : 900, scale);
+            case "fire_resistance" -> timed(player, PotionEffect.FIRE_RESISTANCE, 0,
+                    isLong ? 9600 : 3600, scale);
+            case "leaping" -> timed(player, PotionEffect.JUMP_BOOST, amp,
+                    isLong ? 9600 : strong ? 1800 : 3600, scale);
+            case "night_vision" -> timed(player, PotionEffect.NIGHT_VISION, 0,
+                    isLong ? 9600 : 3600, scale);
+            case "invisibility" -> timed(player, PotionEffect.INVISIBILITY, 0,
+                    isLong ? 9600 : 3600, scale);
+            case "water_breathing" -> timed(player, PotionEffect.WATER_BREATHING, 0,
+                    isLong ? 9600 : 3600, scale);
             case "healing" -> {
                 float maxHealth = (float) player.getAttributeValue(
                         net.minestom.server.entity.attribute.Attribute.MAX_HEALTH);
-                player.setHealth(Math.min(maxHealth, player.getHealth() + (4 << (strong ? 1 : 0))));
+                player.setHealth(Math.min(maxHealth,
+                        player.getHealth() + (float) ((4 << (strong ? 1 : 0)) * scale)));
             }
             case "harming" -> player.damage(net.minestom.server.entity.damage.DamageType.MAGIC,
-                    6 << (strong ? 1 : 0));
+                    (float) ((6 << (strong ? 1 : 0)) * scale));
             default -> { }
         }
+    }
+
+    private static void timed(LivingEntity player, PotionEffect effect, int amp,
+                              int baseDuration, double scale) {
+        int duration = (int) (baseDuration * scale + 0.5);
+        if (duration < 20) return;
+        player.addEffect(new Potion(effect, (byte) amp, duration));
     }
 
     public static int effectLevel(Player player, PotionEffect effect) {
