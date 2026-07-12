@@ -100,11 +100,32 @@ valid (always-solid) target directly below the silverfish, but the
 verification loop only ever scanned the 4 explicitly-built side walls —
 confirmed via direct instrumentation (mergePos landed on the untested floor
 tile in the failing runs), not a race. Fixed by adding the floor position
-to the check; 8/8 clean afterward. Still open: per-mob extras
-(sheep color/sheared, breeding cooldowns, baby state) in
-RegionStore.collectMobs/restoreMob. Trial chambers and position-anchored
-scheduled ticks are the two non-trivial stragglers — scope them before
-starting.
+to the check; 8/8 clean afterward.
+
+~~Per-mob extras~~ **done 2026-07-12 (Sonnet)**: sheep color/sheared
+(`SheepMeta`), baby state (`AgeableMobMeta` — any baby-capable mob, not
+just animals), breeding cooldown (`Breeding.cooldownTicksRemaining`/
+`setCooldownTicks`, two new public accessors), and — noticed while in here,
+HANDOFF's own note said "once sizes exist" and they now do — slime/magma
+cube size, restored via the same explicit-size factory `Combat.death`'s
+split-on-death already uses (`Mobs.spawn`'s plain path rolls a fresh random
+size, so a saved size bypasses it) in RegionStore.collectMobs/restoreMob.
+The cooldown is the trickiest of these: `Breeding.java`'s internal
+`COOLDOWN` map is keyed by the entity's ephemeral runtime id, which is
+reassigned on every respawn — so it's persisted as a relative "ticks
+remaining" delta (computed against Breeding's own tick counter at collect
+time, re-armed against the same counter at restore time) rather than the
+raw absolute value, so it survives the id change and doesn't care that
+Breeding's tick counter itself resets on restart. IN_LOVE (30s) is
+deliberately NOT persisted — too short-lived to be worth it, same
+"acceptable loss" precedent as in-flight item entities. Also not modeled: a
+baby's remaining grow-up time (the 20-minute timer is a one-shot scheduled
+task, not tracked state, so a restored baby gets a fresh 24000-tick timer)
+— noted in AUDIT.md. 4 new scenarioPersistence checks, 17/17 clean across
+reruns.
+
+Still open: trial chambers and position-anchored scheduled ticks, the two
+non-trivial stragglers — scope them before starting.
 
 ### Redstone parity — remaining summit after the 2026-07-11 pass — mixed
 ### (summit COMPLETE 2026-07-12: items 1-3 done; 4 is a design decision, 5 is cleanup)

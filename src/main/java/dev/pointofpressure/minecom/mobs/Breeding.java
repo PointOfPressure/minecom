@@ -100,4 +100,20 @@ public final class Breeding {
             }
         }
     }
+
+    /**
+     * Ticks left on this mob's post-breed cooldown, for RegionStore's mob-snapshot persistence
+     * — 0 if none. IN_LOVE (30s) isn't persisted alongside it: too short-lived to be worth the
+     * same treatment, matching this project's existing "item entities in flight" acceptable-loss
+     * precedent (AUDIT.md).
+     */
+    public static long cooldownTicksRemaining(EntityCreature mob) {
+        Long until = COOLDOWN.get(mob.getEntityId());
+        return until == null ? 0 : Math.max(0, until - tick);
+    }
+
+    /** Re-arms a restored mob's cooldown, keyed on its freshly-assigned entity id. */
+    public static void setCooldownTicks(EntityCreature mob, long ticksRemaining) {
+        if (ticksRemaining > 0) COOLDOWN.put(mob.getEntityId(), tick + ticksRemaining);
+    }
 }

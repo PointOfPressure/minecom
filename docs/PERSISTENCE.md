@@ -169,12 +169,16 @@ same `StateAdapter` shape as the reference implementations. Composter,
 bells, and note blocks needed no adapter (fill level/pitch already live in
 Anvil-persisted block state; bells have no real persistent state).
 
+DONE 2026-07-12 (Sonnet), per-mob extras: sheep color/sheared, baby state,
+breeding cooldown (as a relative ticks-remaining delta — Breeding.java's
+COOLDOWN map keys on the entity's ephemeral runtime id), and slime/magma
+cube size (via the explicit-size factory, bypassing Mobs.spawn's
+fresh-random-roll path).
+
 REMAINING (Sonnet-sized now the SPI exists — see HANDOFF):
 - Trial chambers (defs + runtime state) — larger, has its own session-scoped
   caveat in AUDIT.
 - Position-anchored scheduled ticks (shrieker reset et al).
-- Per-mob extras: sheep color/sheared, slime size (once sizes exist),
-  breeding cooldowns, baby state.
 
 ## Non-goals (this pass)
 

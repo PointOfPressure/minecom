@@ -4,15 +4,19 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.mobs.Breeding;
 import dev.pointofpressure.minecom.mobs.Mobs;
 import dev.pointofpressure.minecom.mobs.VillagerFood;
 import dev.pointofpressure.minecom.mobs.VillagerTrades;
+import net.minestom.server.color.DyeColor;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.EntityCreature;
 import net.minestom.server.entity.EquipmentSlot;
 import net.minestom.server.entity.EntityType;
+import net.minestom.server.entity.metadata.AgeableMobMeta;
+import net.minestom.server.entity.metadata.animal.SheepMeta;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.item.ItemStack;
 import org.slf4j.Logger;
@@ -144,6 +148,17 @@ public final class RegionStore {
                 m.addProperty("food", mob.getTag(VillagerFood.FOOD_LEVEL));
                 m.add("inv", Persist.writeItems(VillagerFood.inventory(mob)));
             }
+            Integer slimeSize = mob.getTag(dev.pointofpressure.minecom.mobs.ai.VanillaMobs.SLIME_SIZE);
+            if (slimeSize != null) m.addProperty("slimeSize", slimeSize);
+            if (mob.getEntityMeta() instanceof AgeableMobMeta ageable && ageable.isBaby()) {
+                m.addProperty("baby", true);
+            }
+            if (mob.getEntityMeta() instanceof SheepMeta sheep) {
+                m.addProperty("sheared", sheep.isSheared());
+                m.addProperty("color", sheep.getColor().name());
+            }
+            long cooldown = Breeding.cooldownTicksRemaining(mob);
+            if (cooldown > 0) m.addProperty("breedCooldown", cooldown);
             chunkOf(regions, pos.blockX() >> 4, pos.blockZ() >> 4).getAsJsonArray("mobs").add(m);
         }
     }
@@ -198,7 +213,14 @@ public final class RegionStore {
         Pos pos = new Pos(at.get(0).getAsDouble(), at.get(1).getAsDouble(), at.get(2).getAsDouble(),
                 at.get(3).getAsFloat(), at.get(4).getAsFloat());
         String kind = m.get("kind").getAsString();
-        EntityCreature mob = Mobs.spawn(kind, instance, pos);
+        // slime/magma_cube: Mobs.spawn's plain path rolls a fresh random size (Slime.
+        // finalizeSpawn), so a saved size needs the explicit-size factory instead — same
+        // one Combat.death's split-on-death already uses.
+        EntityCreature mob = m.has("slimeSize") && kind.equals("slime")
+                ? dev.pointofpressure.minecom.mobs.ai.VanillaMobs.slime(instance, pos, m.get("slimeSize").getAsInt())
+                : m.has("slimeSize") && kind.equals("magma_cube")
+                ? dev.pointofpressure.minecom.mobs.ai.VanillaMobs.magmaCube(instance, pos, m.get("slimeSize").getAsInt())
+                : Mobs.spawn(kind, instance, pos);
         if (mob == null) {
             LOGGER.warn("Unknown mob kind {} — not restored", kind);
             return false;
@@ -217,6 +239,14 @@ public final class RegionStore {
         if (m.has("profession")) mob.setTag(VillagerTrades.PROFESSION, m.get("profession").getAsString());
         if (m.has("food")) mob.setTag(VillagerFood.FOOD_LEVEL, m.get("food").getAsInt());
         if (m.has("inv")) Persist.readItems(m.getAsJsonArray("inv"), VillagerFood.inventory(mob));
+        if (m.has("baby") && mob.getEntityMeta() instanceof AgeableMobMeta ageable) {
+            ageable.setBaby(true);
+        }
+        if (mob.getEntityMeta() instanceof SheepMeta sheep) {
+            if (m.has("sheared")) sheep.setSheared(m.get("sheared").getAsBoolean());
+            if (m.has("color")) sheep.setColor(DyeColor.valueOf(m.get("color").getAsString()));
+        }
+        if (m.has("breedCooldown")) Breeding.setCooldownTicks(mob, m.get("breedCooldown").getAsLong());
         return true;
     }
 }

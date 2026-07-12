@@ -20,10 +20,18 @@ leftovers.
   profession/food/inventory), chunk inhabited time, and — 2026-07-12,
   Sonnet — campfire/jukebox/lectern/decorated-pot/chiseled-bookshelf/
   shulker-box state (composter/bells/note-blocks needed no adapter: no
-  separate persistent state beyond Anvil-saved block properties). Still
-  session-scoped (HANDOFF "Persistence adapter tail"): trial chambers,
-  scheduled ticks, per-mob extras (sheep color, baby state, breeding
-  cooldowns), warden anger (deliberate), item entities in flight, and the
+  separate persistent state beyond Anvil-saved block properties) plus
+  per-mob extras (sheep color/sheared, baby state, breeding cooldown —
+  the cooldown persisted as a relative "ticks remaining" delta since
+  Breeding.java keys it by the entity's ephemeral runtime id, not
+  something that survives a respawn — and slime/magma-cube size, restored
+  via the explicit-size factory instead of Mobs.spawn's plain path which
+  would otherwise roll a fresh random size). A restored baby's remaining
+  grow-up time isn't modeled (the 20-minute timer is a one-shot scheduled
+  task, not tracked state — gets a fresh timer on restore). Still session-scoped
+  (HANDOFF "Persistence adapter tail"): trial chambers, scheduled ticks,
+  warden anger (deliberate), item entities in flight, breeding's own
+  30-second IN_LOVE window (too short-lived to be worth it), and the
   registries are overworld-only (position keys would collide across
   dimensions — pre-existing limitation).
 - ~~No random-tick engine~~ **Core landed 2026-07-12 (Fable)** —

@@ -137,7 +137,7 @@ public final class PlayTest {
         scenario("thrown potions: splash scales with distance, lingering leaves a cloud", PlayTest::scenarioThrownPotions);
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
-        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, and the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker)", PlayTest::scenarioPersistence);
+        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), and per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size)", PlayTest::scenarioPersistence);
         scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread", PlayTest::scenarioRandomTicks);
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
@@ -5003,6 +5003,23 @@ public final class PlayTest {
         dev.pointofpressure.minecom.blocks.ShulkerBoxes.inventoryAt(new Vec(70, Y + 1, z))
                 .setItemStack(5, ItemStack.of(Material.GOLD_INGOT, 9));
 
+        // per-mob extras (HANDOFF "Persistence adapter tail"): sheep color/sheared, breeding
+        // cooldown, baby state
+        var persistSheep = Mobs.spawn("sheep", world, new Pos(72.5, Y + 1, z + 0.5));
+        var sheepMeta = (net.minestom.server.entity.metadata.animal.SheepMeta) persistSheep.getEntityMeta();
+        sheepMeta.setColor(net.minestom.server.color.DyeColor.RED);
+        dev.pointofpressure.minecom.mobs.Shearing.shear(persistSheep);
+
+        var persistCow = Mobs.spawn("cow", world, new Pos(74.5, Y + 1, z + 0.5));
+        dev.pointofpressure.minecom.mobs.Breeding.setCooldownTicks(persistCow, 6000);
+
+        var persistChick = Mobs.spawn("chicken", world, new Pos(76.5, Y + 1, z + 0.5));
+        if (persistChick.getEntityMeta() instanceof net.minestom.server.entity.metadata.AgeableMobMeta babyMeta) {
+            babyMeta.setBaby(true);
+        }
+
+        dev.pointofpressure.minecom.mobs.ai.VanillaMobs.slime(world, new Pos(78.5, Y + 1, z + 0.5), 4);
+
         dev.pointofpressure.minecom.Persist.save();
         dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
         clearEntitiesExceptPlayer();
@@ -5025,6 +5042,30 @@ public final class PlayTest {
                 e.getEntityType() == EntityType.ZOMBIE
                         && e instanceof EntityCreature c && Math.abs(c.getHealth() - 13f) < 0.01f);
         check("mob snapshot respawns the zombie with its health", zombieBack);
+        var restoredSheep = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SHEEP)
+                .map(e -> (net.minestom.server.entity.metadata.animal.SheepMeta) ((EntityCreature) e).getEntityMeta())
+                .findFirst().orElse(null);
+        check("sheep color + sheared state survive the round trip",
+                restoredSheep != null && restoredSheep.isSheared()
+                        && restoredSheep.getColor() == net.minestom.server.color.DyeColor.RED);
+        var restoredCow = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.COW).map(e -> (EntityCreature) e)
+                .findFirst().orElse(null);
+        check("breeding cooldown survives the round trip",
+                restoredCow != null
+                        && dev.pointofpressure.minecom.mobs.Breeding.cooldownTicksRemaining(restoredCow) > 0);
+        boolean restoredBabyChicken = world.getEntities().stream().anyMatch(e ->
+                e.getEntityType() == EntityType.CHICKEN
+                        && e.getEntityMeta() instanceof net.minestom.server.entity.metadata.AgeableMobMeta m
+                        && m.isBaby());
+        check("baby state survives the round trip", restoredBabyChicken);
+        boolean restoredSlimeSize = world.getEntities().stream().anyMatch(e ->
+                e.getEntityType() == EntityType.SLIME
+                        && java.util.Objects.equals(e.getTag(
+                                dev.pointofpressure.minecom.mobs.ai.VanillaMobs.SLIME_SIZE), 4));
+        check("slime size survives the round trip (spawns via the sized factory, not a fresh roll)",
+                restoredSlimeSize);
         check("chunk inhabited time survives",
                 dev.pointofpressure.minecom.Difficulty.inhabitedTicks(world, new Pos(50, Y, z)) == 123456L);
         // behavior, not just data: the restored sensor still hears vibrations
