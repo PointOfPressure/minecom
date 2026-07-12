@@ -20,7 +20,19 @@
    compile error can be another agent mid-save — wait and retry before
    "fixing" a half-written file, and never run `mvn compile` while a
    verify run is executing (shared `target/classes`).
-6. **Decompiling new reference classes** (26.x is unobfuscated): extract
+6. **Every change is auto-backed-up before it lands — don't hand-roll your
+   own.** `.claude/settings.json` runs `scripts/backup-changed-file.sh` as a
+   PreToolUse hook on every Edit/Write/NotebookEdit, snapshotting the file's
+   **pre-change** contents (the restore point) to
+   `~/minecom-backups/YYYY-MM-DD/HHMMSS__<flattened-path>`. Backups live
+   OUTSIDE the repo so they never touch git or a build; only the affected
+   files are copied, never the whole project. `target/`, `vanilla-src/`,
+   `world*/`, `logs/`, `test-logs/` are skipped. The hook never blocks a tool
+   call (it always exits 0), so a failed backup will not stop your work —
+   but do not disable it, and do not add ad-hoc `cp file file.bak` clutter to
+   the tree, that is what this exists to replace. Restore is a plain `cp`
+   back from the dated directory.
+7. **Decompiling new reference classes** (26.x is unobfuscated): extract
    the `.class` files from `~/versions/26.1.2/server-26.1.2.jar` into a
    temp dir, run `java -jar vanilla-src/tools/vineflower.jar <classdir>
    <outdir>`, and cache the resulting `.java` under the matching

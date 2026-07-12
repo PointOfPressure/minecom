@@ -10,6 +10,25 @@ leftovers.
 
 ## Cross-cutting
 
+- **`setInstance` without `.join()` is NOT a bug wherever the target chunk is
+  already loaded — stop pattern-matching it (2026-07-13, Opus).** Most mob
+  factories in `VanillaMobs` call `mob.setInstance(instance, pos)` without
+  joining the returned `CompletableFuture<Void>`, and this shape has now been
+  blamed for two separate flakes (zombie melee damage; dispensed animal spawn)
+  and been **wrong both times** (real causes: sunburn, and an AI-stroll race in
+  the test). Verified against the decompiled 26.1.2 Minestom: an entity is
+  registered into `world.getEntities()` inside `setInstance`'s
+  `loadOptionalChunk(...).thenAccept(...)`, and `InstanceContainer.loadOrRetrieve`
+  returns `CompletableFuture.completedFuture(chunk)` for an already-loaded
+  chunk — so the continuation runs **inline on the calling thread** and
+  registration is fully synchronous. (`InstanceContainer.setBlock` also
+  `join()`s a chunk load on a miss, so merely having placed a block nearby is
+  enough to guarantee this.) The future is only genuinely async when spawning
+  into an **unloaded** chunk. `silverfish()` is the one factory that joins, and
+  says so in-source. Fix the pattern elsewhere only with evidence that a
+  specific call site both spawns into an unloaded chunk and reads the entity
+  back immediately — not on sight.
+
 - **Session-scoped block-entity/mob state — largely CLOSED 2026-07-12
   (Fable).** The persistence design pass landed: docs/PERSISTENCE.md +
   `StateAdapter` SPI + `RegionStore` region shards (multi-core-ready

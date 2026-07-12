@@ -5063,11 +5063,31 @@ public final class PlayTest {
         var inv = dev.pointofpressure.minecom.redstone.Redstone.dispenserInventory(new Vec(50, Y + 1, z));
         inv.setItemStack(0, ItemStack.of(Material.PIG_SPAWN_EGG));
         tick(2);
+        // A dispensed animal is a live mob, and VanillaMobs.animal wires it a
+        // WaterAvoidingRandomStroll goal that can start walking within a tick or two of the
+        // spawn. Polling for the pig's CURRENT position therefore races its own AI: measured,
+        // a dispensed pig leaves the block in front after as little as 161ms — inside waitFor's
+        // own 200ms poll gap — and then keeps wandering, so the whole 3s window fails. (That
+        // race, not an unjoined setInstance future, is the dispensed-animal-spawn flake: the
+        // pig is confirmed present in world.getEntities() synchronously at spawn, because the
+        // dispenser's own rs() has already force-loaded the target chunk.) Latch where the pig
+        // was SPAWNED instead — that is what "places a pig in front" actually asserts, it is
+        // exact rather than a +/-1 box, and unlike a live position it cannot decay.
+        var pigSpawn = new java.util.concurrent.atomic.AtomicReference<Pos>();
+        var pigListener = net.minestom.server.event.EventListener.of(
+                net.minestom.server.event.entity.EntitySpawnEvent.class,
+                ev -> {
+                    if (ev.getEntity().getEntityType() == EntityType.PIG) {
+                        pigSpawn.compareAndSet(null, ev.getEntity().getPosition());
+                    }
+                });
+        MinecraftServer.getGlobalEventHandler().addListener(pigListener);
         rs(50, Y + 2, z, Block.REDSTONE_BLOCK);
-        boolean pig = waitFor(() -> world.getEntities().stream().anyMatch(en ->
-                en.getEntityType() == EntityType.PIG && en.getPosition().blockZ() == z
-                        && Math.abs(en.getPosition().blockX() - 51) <= 1), 3000);
-        check("dispensed spawn egg places a pig in front", pig);
+        boolean pig = waitFor(() -> pigSpawn.get() != null, 3000);
+        MinecraftServer.getGlobalEventHandler().removeListener(pigListener);
+        Pos pigAt = pigSpawn.get();
+        check("dispensed spawn egg places a pig in front",
+                pig && pigAt.blockX() == 51 && pigAt.blockY() == Y + 1 && pigAt.blockZ() == z);
         check("spawn egg was consumed", inv.getItemStack(0).isAir());
         rs(50, Y + 2, z, Block.AIR);
         clearEntitiesExceptPlayer();
@@ -5820,6 +5840,32 @@ public final class PlayTest {
                 world.getEntities().stream().filter(e -> e instanceof ItemEntity).count() == itemsBefore);
         clearEntitiesExceptPlayer();
 
+        // Standing diagnostic for the silk-touch-ambush-contamination flake (HANDOFF): a stray
+        // silverfish shows up here roughly once in several hundred runs, far too rarely to catch
+        // on demand — 500+ deliberate reruns have never reproduced it. So instead of hunting it,
+        // this arms the check to explain ITSELF the next time it fires, in whoever's run that is.
+        // The one question that splits the remaining hypotheses is whether the stray is a FRESH
+        // spawn during the silk window (something really did call spawnInfestation, so the
+        // silk-touch early-return leaked, or wakeFriends fired unbidden) or a SURVIVOR of
+        // clearEntitiesExceptPlayer (an entity-removal problem, not an infestation one). The
+        // spawn listener answers exactly that, and the floor dump catches the third case: a
+        // silverfish from the prior sub-test having merged into the flat world's own stone floor
+        // (SilverfishMergeWithStone treats it as a valid host), leaving a live infested block
+        // inside wakeFriends' +/-10 scan radius. Costs nothing unless the check actually fails.
+        var freshFish = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var fishListener = net.minestom.server.event.EventListener.of(
+                net.minestom.server.event.entity.EntitySpawnEvent.class,
+                ev -> {
+                    if (ev.getEntity().getEntityType() == EntityType.SILVERFISH) {
+                        freshFish.add(ev.getEntity().getUuid() + "@" + ev.getEntity().getPosition());
+                    }
+                });
+        MinecraftServer.getGlobalEventHandler().addListener(fishListener);
+        var preExisting = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SILVERFISH)
+                .map(e -> e.getUuid() + "@" + e.getPosition() + " removed=" + e.isRemoved())
+                .toList();
+
         // silk touch: host item drops, no ambush
         ItemStack silkPick = dev.pointofpressure.minecom.data.Enchants.with(
                 ItemStack.of(Material.IRON_PICKAXE),
@@ -5831,8 +5877,23 @@ public final class PlayTest {
                 .anyMatch(e -> e instanceof ItemEntity item
                         && item.getItemStack().material() == Material.STONE_BRICKS), 2000);
         check("silk touch takes the host block item instead", hostDropped);
-        check("silk touch never springs the ambush", world.getEntities().stream()
-                .noneMatch(e -> e.getEntityType() == EntityType.SILVERFISH));
+        boolean noAmbush = world.getEntities().stream()
+                .noneMatch(e -> e.getEntityType() == EntityType.SILVERFISH);
+        if (!noAmbush) {
+            System.out.println("DIAG silk: preExistingAtWindowStart=" + preExisting);
+            System.out.println("DIAG silk: freshSpawnsDuringWindow=" + freshFish);
+            world.getEntities().stream()
+                    .filter(e -> e.getEntityType() == EntityType.SILVERFISH)
+                    .forEach(e -> System.out.println("DIAG silk: stray " + e.getUuid()
+                            + " @" + e.getPosition() + " fresh=" + freshFish.stream()
+                            .anyMatch(f -> f.startsWith(e.getUuid().toString()))));
+            for (int bx = 50; bx <= 56; bx++) {
+                System.out.println("DIAG silk: floor " + bx + "," + Y + "," + z + " = "
+                        + blockKey(bx, Y, z) + " | above = " + blockKey(bx, Y + 1, z));
+            }
+        }
+        MinecraftServer.getGlobalEventHandler().removeListener(fishListener);
+        check("silk touch never springs the ambush", noAmbush);
         player.setItemInMainHand(ItemStack.AIR);
         clearEntitiesExceptPlayer();
 
