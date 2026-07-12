@@ -343,7 +343,7 @@ trigger/pacing around it. New coverage folded into `scenarioRandomTicks`
 (stage-1 climb, tree growth, light gate) and `scenarioFarming` (the
 bonemeal two-application behavior), 5/5 clean reruns.
 
-### Persistence adapter tail — Sonnet
+### ~~Persistence adapter tail~~ — ALL DONE 2026-07-12 (Sonnet)
 
 The persistence core landed 2026-07-12 (Fable): `StateAdapter` SPI +
 `RegionStore` region shards + 9 adapters + mob snapshots + inhabited time
@@ -417,13 +417,18 @@ itself was already persisted as ordinary chunk data regardless. 2 new
 scenarioPersistence checks (wipe drops the tracking, reload re-arms it),
 19/19 clean reruns.
 
-Still open: trial chambers persistence (a bigger, separate concern —
-already documented as deliberately session-scoped in AUDIT.md, needs
-persisting per-chamber config assignments and wave/vault state, not a
-quick addition — scope it as its own task before starting).
+~~Trial chambers persistence~~ **done 2026-07-12 (Sonnet)** — turned out
+to need both the runtime progress AND the per-position config persisted
+(not just progress, as first assumed): production uses a real
+`AnvilLoader`, so an already-visited chunk restores from its saved block
+data on restart rather than regenerating, meaning the structure-placement
+hook that derives the config never fires again for it. See
+`TrialChambers.java`'s adapter Javadocs and AUDIT.md for the full writeup.
+This closes out the persistence adapter tail entirely — nothing left open
+in this entry.
 
-### Redstone parity — remaining summit after the 2026-07-11 pass — mixed
-### (summit COMPLETE 2026-07-12: items 1-3 done; 4 is a design decision, 5 is cleanup)
+### ~~Redstone parity — remaining summit after the 2026-07-11 pass~~ — ALL SONNET-TIER WORK DONE 2026-07-12
+### (items 1-3 done 2026-07-11/12; 4 is a design decision, not a task — deliberately not attempted; 5's 3 sub-items all resolved 2026-07-12: vibration-tap gaps done, the other two confirmed non-issues)
 
 The redstone-parity pass (see Done entries + AUDIT.md updates of this date)
 landed: piston slime/honey chains, copper bulbs, weighted plates, lightning
