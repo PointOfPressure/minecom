@@ -131,6 +131,8 @@ public final class PlayTest {
         scenario("redstone: powered rails carry power 8 rails down the line", PlayTest::scenarioPoweredRails);
         scenario("thrown potions: splash scales with distance, lingering leaves a cloud", PlayTest::scenarioThrownPotions);
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
+        scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
+        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, and a live sensor", PlayTest::scenarioPersistence);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -4710,20 +4712,241 @@ public final class PlayTest {
     /** Shrieker: a player-caused vibration within 8 blocks shrieks 90gt + Darkness. */
     private static void scenarioShrieker() {
         int z = 230;
-        rs(50, Y + 1, z, Block.SCULK_SHRIEKER);
+        // can_summon=true: only warning-capable shriekers respond with Darkness
+        rs(50, Y + 1, z, Block.SCULK_SHRIEKER.withProperty("can_summon", "true"));
         dev.pointofpressure.minecom.redstone.Vibrations.trackShrieker(new Vec(50, Y + 1, z));
         player.teleport(new Pos(52.5, Y + 1, z + 0.5)).join();
         tick(2);
         player.teleport(new Pos(53.5, Y + 1, z + 0.5)).join(); // movement -> step vibration
         boolean shrieked = waitFor(() -> "true".equals(prop(50, Y + 1, z, "shrieking")), 3000);
         check("player step vibration makes the shrieker shriek", shrieked);
-        boolean darkness = player.getActiveEffects().stream().anyMatch(t ->
-                t.potion().effect() == net.minestom.server.potion.PotionEffect.DARKNESS);
-        check("shriek applies Darkness to the nearby player", darkness);
         boolean quiet = waitFor(() -> "false".equals(prop(50, Y + 1, z, "shrieking")), 6000);
         check("shrieking state clears after 90gt", quiet);
+        boolean darkness = player.getActiveEffects().stream().anyMatch(t ->
+                t.potion().effect() == net.minestom.server.potion.PotionEffect.DARKNESS);
+        check("finished warning shriek applies Darkness to the nearby player", darkness);
         rs(50, Y + 1, z, Block.AIR);
         resetPlayer();
+    }
+
+    /**
+     * The warning-4 consequence: a warden burrows up out of the ground, gets
+     * angry, and sonic-booms an unreachable target (docs/HANDOFF.md summit item).
+     */
+    private static void scenarioWarden() {
+        int z = 235;
+        rs(50, Y + 1, z, Block.SCULK_SHRIEKER.withProperty("can_summon", "true"));
+        dev.pointofpressure.minecom.redstone.Vibrations.trackShrieker(new Vec(50, Y + 1, z));
+        // out-of-reach perch: the sonic boom must be the warden's only option
+        for (int dy = 1; dy <= 4; dy++) rs(60, Y + dy, z, Block.STONE);
+        dev.pointofpressure.minecom.redstone.Vibrations.setWarningLevel(player.getUuid(), 3);
+        player.teleport(new Pos(52.5, Y + 1, z + 0.5)).join();
+        tick(2);
+        player.teleport(new Pos(53.5, Y + 1, z + 0.5)).join(); // step vibration -> 4th warning
+        check("warning-3 player's vibration shrieks the can_summon shrieker",
+                waitFor(() -> "true".equals(prop(50, Y + 1, z, "shrieking")), 3000));
+        boolean spawned = waitFor(() -> world.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.WARDEN), 9000);
+        check("warning level 4 summons a warden near the shrieker", spawned);
+        if (!spawned) {
+            rs(50, Y + 1, z, Block.AIR);
+            for (int dy = 1; dy <= 4; dy++) rs(60, Y + dy, z, Block.AIR);
+            resetPlayer();
+            return;
+        }
+        Entity wardenEntity = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.WARDEN).findFirst().orElseThrow();
+        var warden = dev.pointofpressure.minecom.mobs.ai.WardenMob.of(wardenEntity);
+        check("summoned warden burrows up in the emerging pose",
+                warden != null && warden.isDiggingOrEmerging());
+        boolean darkness = player.getActiveEffects().stream().anyMatch(t ->
+                t.potion().effect() == net.minestom.server.potion.PotionEffect.DARKNESS);
+        check("summoning shriek applies Darkness to the causing player", darkness);
+        check("warden finishes emerging and stands",
+                waitFor(() -> !warden.isDiggingOrEmerging(), 10000));
+
+        player.teleport(new Pos(60.5, Y + 5, z + 0.5)).join(); // onto the perch
+        player.setHealth(20);
+        tick(2);
+        EventDispatcher.call(new EntityAttackEvent(player, wardenEntity));
+        check("hurting the warden angers it past the ANGRY threshold (80)",
+                waitFor(() -> warden.angerAt(player) >= 80, 3000));
+        check("warden roars, then locks the attacker as its fight target",
+                waitFor(warden::isFighting, 10000));
+        warden.hastenSonicBoom();
+        check("unreachable perch: the sonic boom lands 10 damage through the air gap",
+                waitFor(() -> player.getHealth() <= 12, 10000));
+
+        // out of vibration earshot (16) and follow range (24): the knocked-off
+        // player's landing steps must not reset the warden's dig clock
+        player.teleport(new Pos(53.5, Y + 1, 200.5)).join();
+        tick(2);
+        warden.forceDigNow();
+        check("a calm warden digs back down and despawns",
+                waitFor(wardenEntity::isRemoved, 12000));
+        rs(50, Y + 1, z, Block.AIR);
+        for (int dy = 1; dy <= 4; dy++) rs(60, Y + dy, z, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Persistence round-trip (docs/PERSISTENCE.md): fill chunk-anchored state,
+     * save to region shards, wipe every registry + entity, reload, and assert
+     * both data (items, positions, health) and behavior (sensor still hears)
+     * came back.
+     */
+    private static void scenarioPersistence() {
+        int z = 240;
+        var base = java.nio.file.Path.of("target", "playtest-persist");
+        dev.pointofpressure.minecom.Persist.setBaseDirForTest(base, world);
+
+        // chest holding a custom-named item — proves full NBT fidelity survives
+        String chestKey = "50," + (Y + 1) + "," + z;
+        world.setBlock(50, Y + 1, z, Block.CHEST);
+        interact(new BlockVec(50, Y + 1, z));
+        tick(2);
+        var chest = dev.pointofpressure.minecom.blocks.Containers.CHESTS.get(chestKey);
+        ItemStack blade = ItemStack.of(Material.DIAMOND_SWORD).with(b ->
+                b.set(DataComponents.CUSTOM_NAME, net.kyori.adventure.text.Component.text("Persisted Blade")));
+        chest.setItemStack(3, blade);
+
+        rs(52, Y + 1, z, Block.HOPPER);
+        dev.pointofpressure.minecom.redstone.Hoppers.inventory(new Vec(52, Y + 1, z))
+                .setItemStack(0, ItemStack.of(Material.COBBLESTONE, 17));
+
+        rs(54, Y + 1, z, Block.SCULK_SENSOR);
+        dev.pointofpressure.minecom.redstone.Vibrations.trackSensor(new Vec(54, Y + 1, z));
+
+        world.setTime(14000);
+        EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(58.5, Y + 1, z + 0.5));
+        zombie.setHealth(13f);
+        dev.pointofpressure.minecom.Difficulty.setInhabitedTicks(world, new Pos(50, Y, z), 123456L);
+
+        dev.pointofpressure.minecom.Persist.save();
+        dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
+        clearEntitiesExceptPlayer();
+        // clobber inhabited time so the reload assertion proves a real restore
+        dev.pointofpressure.minecom.Difficulty.setInhabitedTicks(world, new Pos(50, Y, z), 1L);
+        check("wipe empties the chest registry",
+                dev.pointofpressure.minecom.blocks.Containers.CHESTS.isEmpty());
+
+        dev.pointofpressure.minecom.Persist.loadRegions(world);
+        var restoredChest = dev.pointofpressure.minecom.blocks.Containers.CHESTS.get(chestKey);
+        check("chest inventory returns from the region shard",
+                restoredChest != null && restoredChest.getItemStack(3).material() == Material.DIAMOND_SWORD);
+        check("item NBT (custom name) survives the round trip",
+                restoredChest != null && blade.equals(restoredChest.getItemStack(3)));
+        var restoredHopper = dev.pointofpressure.minecom.redstone.Hoppers.inventory(new Vec(52, Y + 1, z));
+        check("hopper contents return (17 cobblestone)",
+                restoredHopper.getItemStack(0).material() == Material.COBBLESTONE
+                        && restoredHopper.getItemStack(0).amount() == 17);
+        boolean zombieBack = world.getEntities().stream().anyMatch(e ->
+                e.getEntityType() == EntityType.ZOMBIE
+                        && e instanceof EntityCreature c && Math.abs(c.getHealth() - 13f) < 0.01f);
+        check("mob snapshot respawns the zombie with its health", zombieBack);
+        check("chunk inhabited time survives",
+                dev.pointofpressure.minecom.Difficulty.inhabitedTicks(world, new Pos(50, Y, z)) == 123456L);
+        // behavior, not just data: the restored sensor still hears vibrations
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("note_block_play",
+                new Vec(56.5, Y + 1, z + 0.5), player);
+        check("restored sculk sensor still activates on a vibration",
+                waitFor(() -> "active".equals(prop(54, Y + 1, z, "sculk_sensor_phase")), 3000));
+
+        rs(50, Y + 1, z, Block.AIR);
+        rs(52, Y + 1, z, Block.AIR);
+        rs(54, Y + 1, z, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Random-tick engine (docs: ServerLevel.tickChunk port in RandomTicks):
+     * handler behavior via the deterministic forceTick hook, plus one growth
+     * through the real dispatch path at a cranked randomTickSpeed.
+     */
+    private static void scenarioRandomTicks() {
+        int z = 245;
+        var rt = dev.pointofpressure.minecom.blocks.RandomTicks.class;
+        world.setTime(1000); // day: grass spread needs brightness >= 9 above
+        dev.pointofpressure.minecom.survival.WeatherCycle.setRaining(world, false);
+
+        // grass spreads to nearby dirt, dies when smothered
+        rs(50, Y + 1, z, Block.GRASS_BLOCK);
+        rs(51, Y + 1, z, Block.DIRT);
+        for (int i = 0; i < 400 && !"grass_block".equals(blockKey(51, Y + 1, z)); i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(50, Y + 1, z));
+        }
+        check("random tick: grass spreads to adjacent dirt in daylight",
+                "grass_block".equals(blockKey(51, Y + 1, z)));
+        rs(50, Y + 2, z, Block.STONE);
+        dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(50, Y + 1, z));
+        check("random tick: smothered grass dies back to dirt",
+                "dirt".equals(blockKey(50, Y + 1, z)));
+        rs(50, Y + 2, z, Block.AIR);
+
+        // ice melts beside a glowstone (block light 14 > 11)
+        rs(53, Y + 1, z, Block.ICE);
+        rs(54, Y + 1, z, Block.GLOWSTONE);
+        tick(10); // let the lighting engine propagate
+        dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(53, Y + 1, z));
+        check("random tick: ice melts to water at block light > 11",
+                "water".equals(blockKey(53, Y + 1, z)));
+        rs(53, Y + 1, z, Block.AIR);
+        rs(54, Y + 1, z, Block.AIR);
+
+        // the REAL dispatch path: cranked speed grows an age-15 cane in seconds
+        rs(56, Y + 1, z, Block.SUGAR_CANE.withProperty("age", "15"));
+        dev.pointofpressure.minecom.blocks.RandomTicks.setSpeedForTest(400);
+        boolean grew = waitFor(() -> "sugar_cane".equals(blockKey(56, Y + 2, z)), 8000);
+        dev.pointofpressure.minecom.blocks.RandomTicks.setSpeedForTest(3);
+        check("random tick engine: age-15 sugar cane grows via the live dispatch", grew);
+        rs(56, Y + 2, z, Block.AIR);
+        rs(56, Y + 1, z, Block.AIR);
+
+        // copper oxidation (0.0569 roll x 0.75 -> ~2000 forced ticks is overwhelming)
+        rs(58, Y + 1, z, Block.COPPER_BLOCK);
+        for (int i = 0; i < 3000 && !"exposed_copper".equals(blockKey(58, Y + 1, z)); i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(58, Y + 1, z));
+        }
+        check("random tick: copper block weathers to exposed_copper",
+                "exposed_copper".equals(blockKey(58, Y + 1, z)));
+        rs(58, Y + 1, z, Block.AIR);
+
+        // farmland dries without water, reverts to dirt when bare
+        rs(60, Y + 1, z, Block.FARMLAND.withProperty("moisture", "7"));
+        dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(60, Y + 1, z));
+        check("random tick: dry farmland loses moisture",
+                "6".equals(prop(60, Y + 1, z, "moisture")));
+        for (int i = 0; i < 8; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(60, Y + 1, z));
+        }
+        check("random tick: bare dry farmland reverts to dirt",
+                "dirt".equals(blockKey(60, Y + 1, z)));
+        rs(60, Y + 1, z, Block.AIR);
+
+        // budding amethyst sprouts a bud on some face (1/5 per forced tick)
+        rs(62, Y + 2, z, Block.BUDDING_AMETHYST);
+        boolean bud = false;
+        for (int i = 0; i < 400 && !bud; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(62, Y + 2, z));
+            bud = "small_amethyst_bud".equals(blockKey(63, Y + 2, z))
+                    || "small_amethyst_bud".equals(blockKey(61, Y + 2, z))
+                    || "small_amethyst_bud".equals(blockKey(62, Y + 3, z))
+                    || "small_amethyst_bud".equals(blockKey(62, Y + 2, z + 1))
+                    || "small_amethyst_bud".equals(blockKey(62, Y + 2, z - 1));
+        }
+        check("random tick: budding amethyst sprouts a small bud", bud);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = 0; dy <= 1; dy++) {
+                for (int dz2 = -1; dz2 <= 1; dz2++) rs(62 + dx, Y + 2 + dy, z + dz2, Block.AIR);
+            }
+        }
+        resetPlayer();
+    }
+
+    private static String blockKey(int x, int y, int z) {
+        return world.getBlock(x, y, z).key().value();
     }
 
     private static void scenarioButton() {

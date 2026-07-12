@@ -110,7 +110,7 @@ public final class VanillaMobs {
         }
     }
 
-    private static VBrain brain(EntityCreature mob, double speed, double followRange,
+    static VBrain brain(EntityCreature mob, double speed, double followRange,
                                 double attackDamage, float maxHealth, double armor) {
         mob.getAttribute(Attribute.MOVEMENT_SPEED).setBaseValue(speed);
         mob.getAttribute(Attribute.FOLLOW_RANGE).setBaseValue(followRange);

@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import net.kyori.adventure.text.Component;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.component.DataComponents;
@@ -19,6 +22,7 @@ import net.minestom.server.timer.TaskSchedule;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Brewing stands with the vanilla recipe graph: nether wart makes awkward,
@@ -74,6 +78,42 @@ public final class Brewing {
         });
         MinecraftServer.getSchedulerManager().buildTask(Brewing::tickAll)
                 .repeat(TaskSchedule.tick(1)).schedule();
+        Persist.register(persistence());
+    }
+
+    /** Brewing-stand persistence (docs/PERSISTENCE.md): slots + brew progress + fuel. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "brewing_stand";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                STANDS.forEach((key, stand) -> {
+                    var o = new JsonObject();
+                    o.add("items", Persist.writeItems(stand.inv));
+                    o.addProperty("brew", stand.brewTicks);
+                    o.addProperty("fuel", stand.fuel);
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                Stand stand = new Stand();
+                Persist.readItems(data.getAsJsonArray("items"), stand.inv);
+                stand.brewTicks = data.get("brew").getAsInt();
+                stand.fuel = data.get("fuel").getAsInt();
+                STANDS.put(Containers.posKey(pos), stand);
+            }
+
+            @Override
+            public void wipe() {
+                STANDS.clear();
+            }
+        };
     }
 
     static void onRemoved(Instance inst, Point pos) {

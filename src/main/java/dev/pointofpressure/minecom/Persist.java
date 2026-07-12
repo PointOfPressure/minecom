@@ -10,9 +10,11 @@ import dev.pointofpressure.minecom.blocks.Farming;
 import dev.pointofpressure.minecom.blocks.Furnaces;
 import dev.pointofpressure.minecom.survival.Experience;
 import dev.pointofpressure.minecom.survival.WeatherCycle;
+import net.kyori.adventure.nbt.TagStringIO;
 import net.kyori.adventure.text.Component;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.component.DataComponents;
+import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Player;
@@ -37,35 +39,80 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * World-extra state persisted to world/minecom_state.json: chest + furnace
- * contents, crop positions, world time + weather, and per-player inventory,
- * health, hunger, XP and position. Saved on shutdown, every 5 minutes, and on
- * player disconnect.
+ * Persistence coordinator (docs/PERSISTENCE.md). World-level state (time,
+ * weather, difficulty, ender chests, player snapshots) lives in
+ * world/minecom_state.json; all chunk-anchored state (container inventories,
+ * crops, tracked redstone positions, mobs, inhabited time) lives in
+ * region-sharded files under world/minecom/ written by {@link RegionStore}
+ * from {@link StateAdapter}s that subsystems register at boot. Saved on
+ * shutdown, every 5 minutes, and on player disconnect. Legacy v0 files that
+ * still carry chests/furnaces/crops sections load once and migrate to shards
+ * on the next save.
  */
 public final class Persist {
     private Persist() {}
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Persist.class);
     private static final Gson GSON = new GsonBuilder().create();
-    private static final Path FILE = Path.of("world", "minecom_state.json");
+
+    // thread: written once at boot (or by the playtest hook) before any save
+    private static Path baseDir = Path.of("world");
 
     /** Saved player snapshots by UUID (kept for offline players). */
     private static final Map<String, JsonObject> PLAYERS = new ConcurrentHashMap<>();
+    private static final Map<String, StateAdapter> ADAPTERS = new ConcurrentHashMap<>();
     private static Instance instance;
+
+    private static Path stateFile() {
+        return baseDir.resolve("minecom_state.json");
+    }
+
+    private static Path regionDir() {
+        return baseDir.resolve("minecom");
+    }
+
+    /** Subsystems register their chunk-anchored state adapter at boot. */
+    public static void register(StateAdapter adapter) {
+        ADAPTERS.put(adapter.kind(), adapter);
+    }
+
+    /** Playtest hook: redirect all persistence files and forget prior state. */
+    public static void setBaseDirForTest(Path dir, Instance overworld) {
+        baseDir = dir;
+        instance = overworld;
+        PLAYERS.clear();
+    }
+
+    /** Playtest hook: wipe every registered adapter's in-memory state. */
+    public static void wipeAdaptersForTest() {
+        for (StateAdapter adapter : ADAPTERS.values()) adapter.wipe();
+    }
+
+    /** Reload chunk-anchored state from shards (playtest drives this directly). */
+    public static void loadRegions(Instance overworld) {
+        RegionStore.load(regionDir(), overworld, ADAPTERS);
+    }
 
     // ------------------------------------------------------------------ lifecycle
 
     public static void load(Instance overworld) {
         instance = overworld;
-        if (!Files.exists(FILE)) return;
+        loadWorldFile(overworld);
+        loadRegions(overworld);
+    }
+
+    private static void loadWorldFile(Instance overworld) {
+        if (!Files.exists(stateFile())) return;
         try {
-            JsonObject root = GSON.fromJson(Files.readString(FILE, StandardCharsets.UTF_8), JsonObject.class);
+            JsonObject root = GSON.fromJson(Files.readString(stateFile(), StandardCharsets.UTF_8), JsonObject.class);
             if (root.has("time")) overworld.setTime(root.get("time").getAsLong());
             if (root.has("raining")) WeatherCycle.setRaining(overworld, root.get("raining").getAsBoolean());
             if (root.has("difficulty")) {
                 Difficulty.set(Difficulty.valueOf(root.get("difficulty").getAsString()));
             }
 
+            // legacy v0 sections (chests/furnaces/crops): loaded once here, saved
+            // back out as region shards — the sections vanish on the next save
             if (root.has("chests")) {
                 for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("chests").entrySet()) {
                     Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Component.text("Chest"));
@@ -113,7 +160,7 @@ public final class Persist {
                     Containers.CHESTS.size(), dev.pointofpressure.minecom.blocks.EnderChest.INVENTORIES.size(),
                     Furnaces.FURNACES.size(), Farming.CROPS.size(), PLAYERS.size());
         } catch (Exception e) {
-            LOGGER.error("Failed loading {}", FILE, e);
+            LOGGER.error("Failed loading {}", stateFile(), e);
         }
     }
 
@@ -135,39 +182,20 @@ public final class Persist {
             root.addProperty("raining", WeatherCycle.isRaining(instance));
             root.addProperty("difficulty", Difficulty.current().name());
 
-            JsonObject chests = new JsonObject();
-            Containers.CHESTS.forEach((key, inv) -> chests.add(key, writeItems(inv)));
-            root.add("chests", chests);
-
             JsonObject enderchests = new JsonObject();
             dev.pointofpressure.minecom.blocks.EnderChest.INVENTORIES.forEach((key, inv) -> enderchests.add(key, writeItems(inv)));
             root.add("enderchests", enderchests);
-
-            JsonObject furnaces = new JsonObject();
-            Furnaces.FURNACES.forEach((key, s) -> {
-                JsonObject f = new JsonObject();
-                f.add("items", writeItems(s.inv));
-                f.addProperty("burn", s.burnTicks);
-                f.addProperty("burnTotal", s.burnTotal);
-                f.addProperty("cook", s.cookTicks);
-                f.addProperty("xp", s.xpBank);
-                furnaces.add(key, f);
-            });
-            root.add("furnaces", furnaces);
-
-            JsonArray crops = new JsonArray();
-            Farming.CROPS.forEach(crops::add);
-            root.add("crops", crops);
 
             MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(Persist::snapshot);
             JsonObject players = new JsonObject();
             PLAYERS.forEach(players::add);
             root.add("players", players);
 
-            Files.createDirectories(FILE.getParent());
-            Files.writeString(FILE, GSON.toJson(root), StandardCharsets.UTF_8);
+            Files.createDirectories(stateFile().getParent());
+            Files.writeString(stateFile(), GSON.toJson(root), StandardCharsets.UTF_8);
+            RegionStore.save(regionDir(), instance, ADAPTERS.values().stream().toList());
         } catch (Exception e) {
-            LOGGER.error("Failed saving {}", FILE, e);
+            LOGGER.error("Failed saving {}", stateFile(), e);
         }
     }
 
@@ -212,36 +240,103 @@ public final class Persist {
     }
 
     // ------------------------------------------------------------------ items
+    // (public: StateAdapters and RegionStore serialize through these)
 
-    private static JsonArray writeItems(AbstractInventory inv) {
+    public static JsonArray writeItems(AbstractInventory inv) {
         JsonArray arr = new JsonArray();
         for (int slot = 0; slot < inv.getSize(); slot++) {
             ItemStack stack = inv.getItemStack(slot);
             if (stack.isAir()) continue;
-            JsonObject item = new JsonObject();
+            JsonObject item = writeItem(stack);
             item.addProperty("s", slot);
-            item.addProperty("m", stack.material().key().asString());
-            item.addProperty("a", stack.amount());
-            Integer damage = stack.get(DataComponents.DAMAGE);
-            if (damage != null && damage > 0) item.addProperty("d", damage);
             arr.add(item);
         }
         return arr;
     }
 
-    private static void readItems(JsonArray arr, AbstractInventory inv) {
+    public static JsonArray writeItems(ItemStack[] items) {
+        JsonArray arr = new JsonArray();
+        for (int slot = 0; slot < items.length; slot++) {
+            if (items[slot] == null || items[slot].isAir()) continue;
+            JsonObject item = writeItem(items[slot]);
+            item.addProperty("s", slot);
+            arr.add(item);
+        }
+        return arr;
+    }
+
+    /**
+     * One item without a slot. "nbt" (SNBT via toItemNBT) carries full component
+     * fidelity — potions, enchants, names; "m"/"a" stay for debuggability and as
+     * the legacy fallback readItem still accepts.
+     */
+    public static JsonObject writeItem(ItemStack stack) {
+        JsonObject item = new JsonObject();
+        item.addProperty("m", stack.material().key().asString());
+        item.addProperty("a", stack.amount());
+        Integer damage = stack.get(DataComponents.DAMAGE);
+        if (damage != null && damage > 0) item.addProperty("d", damage);
+        try {
+            item.addProperty("nbt", TagStringIO.tagStringIO().asString(stack.toItemNBT()));
+        } catch (Exception e) {
+            LOGGER.warn("Item NBT serialization failed for {} — saving material+amount only",
+                    stack.material().key(), e);
+        }
+        return item;
+    }
+
+    public static void readItems(JsonArray arr, AbstractInventory inv) {
         if (arr == null) return;
         for (JsonElement el : arr) {
             JsonObject item = el.getAsJsonObject();
-            Material mat = Material.fromKey(item.get("m").getAsString());
-            if (mat == null) continue;
-            ItemStack stack = ItemStack.of(mat, item.get("a").getAsInt());
-            if (item.has("d")) {
-                int damage = item.get("d").getAsInt();
-                stack = stack.with(b -> b.set(DataComponents.DAMAGE, damage));
-            }
+            ItemStack stack = readItem(item);
+            if (stack == null) continue;
             int slot = item.get("s").getAsInt();
             if (slot < inv.getSize()) inv.setItemStack(slot, stack);
         }
+    }
+
+    public static void readItems(JsonArray arr, ItemStack[] items) {
+        if (arr == null) return;
+        for (JsonElement el : arr) {
+            JsonObject item = el.getAsJsonObject();
+            ItemStack stack = readItem(item);
+            if (stack == null) continue;
+            int slot = item.get("s").getAsInt();
+            if (slot < items.length) items[slot] = stack;
+        }
+    }
+
+    /** Null when the material no longer exists. */
+    public static ItemStack readItem(JsonObject item) {
+        if (item.has("nbt")) {
+            try {
+                return ItemStack.fromItemNBT(
+                        TagStringIO.tagStringIO().asCompound(item.get("nbt").getAsString()));
+            } catch (Exception e) {
+                LOGGER.warn("Item NBT parse failed — falling back to material+amount", e);
+            }
+        }
+        Material mat = Material.fromKey(item.get("m").getAsString());
+        if (mat == null) return null;
+        ItemStack stack = ItemStack.of(mat, item.get("a").getAsInt());
+        if (item.has("d")) {
+            int damage = item.get("d").getAsInt();
+            stack = stack.with(b -> b.set(DataComponents.DAMAGE, damage));
+        }
+        return stack;
+    }
+
+    // ------------------------------------------------------------------ positions
+
+    /** Canonical "x,y,z" block-position key (matches Containers.posKey). */
+    public static String posKey(Point p) {
+        return p.blockX() + "," + p.blockY() + "," + p.blockZ();
+    }
+
+    public static Point parsePos(String key) {
+        String[] parts = key.split(",");
+        return new Vec(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
+                Integer.parseInt(parts[2]));
     }
 }

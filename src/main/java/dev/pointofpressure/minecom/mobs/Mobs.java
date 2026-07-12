@@ -156,6 +156,7 @@ public final class Mobs {
             case "giant" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.giant(instance, pos);
             case "strider" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.strider(instance, pos);
             case "breeze" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.breeze(instance, pos);
+            case "warden" -> dev.pointofpressure.minecom.mobs.ai.WardenMob.spawn(instance, pos, false);
             case "wither_skeleton" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.witherSkeleton(instance, pos);
             case "witch" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.witch(instance, pos);
             case "ghast" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.ghast(instance, pos);
@@ -169,6 +170,7 @@ public final class Mobs {
             case "parched" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.parched(instance, pos);
             case "bat" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.bat(instance, pos);
             case "wandering_trader" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.wanderingTrader(instance, pos);
+            case "villager" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(instance, pos);
             case "pillager" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.pillager(instance, pos);
             case "vindicator" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.vindicator(instance, pos);
             case "evoker" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.evoker(instance, pos);

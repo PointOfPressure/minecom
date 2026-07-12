@@ -121,6 +121,12 @@ public enum Difficulty {
                 .put(pack(pos.chunkX(), pos.chunkZ()), ticks);
     }
 
+    /** Per-chunk inhabited-ticks snapshot, keyed (chunkX<<32|chunkZ) — persistence. */
+    public static Map<Long, Long> inhabitedSnapshot(Instance instance) {
+        var map = INHABITED.get(instance);
+        return map == null ? Map.of() : Map.copyOf(map);
+    }
+
     private static long pack(int cx, int cz) {
         return ((long) cx << 32) | (cz & 0xFFFFFFFFL);
     }

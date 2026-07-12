@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.Recipes;
 import net.kyori.adventure.text.Component;
 import net.minestom.server.MinecraftServer;
@@ -17,6 +20,7 @@ import net.minestom.server.timer.TaskSchedule;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Furnaces (+ blast furnace + smoker): real smelting/blasting/smoking recipes and
@@ -91,6 +95,7 @@ public final class Furnaces {
     public static final Map<String, State> FURNACES = new ConcurrentHashMap<>();
 
     static void register(GlobalEventHandler events) {
+        Persist.register(persistence());
         MinecraftServer.getSchedulerManager().buildTask(Furnaces::tickAll)
                 .repeat(TaskSchedule.tick(1))
                 .schedule();
@@ -116,6 +121,48 @@ public final class Furnaces {
         state.instance = instance;
         state.pos = pos;
         player.openInventory(state.inv);
+    }
+
+    /** Furnace persistence (docs/PERSISTENCE.md): items + burn/cook progress + XP bank. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "furnace";
+            }
+
+            @Override
+            public void collect(Instance instance, BiConsumer<Point, JsonObject> out) {
+                FURNACES.forEach((key, s) -> {
+                    JsonObject f = new JsonObject();
+                    f.addProperty("kind2", s.kind);
+                    f.add("items", Persist.writeItems(s.inv));
+                    f.addProperty("burn", s.burnTicks);
+                    f.addProperty("burnTotal", s.burnTotal);
+                    f.addProperty("cook", s.cookTicks);
+                    f.addProperty("xp", s.xpBank);
+                    out.accept(Persist.parsePos(key), f);
+                });
+            }
+
+            @Override
+            public void restore(Instance instance, Point pos, JsonObject data) {
+                State state = new State(data.get("kind2").getAsString());
+                Persist.readItems(data.getAsJsonArray("items"), state.inv);
+                state.burnTicks = data.get("burn").getAsInt();
+                state.burnTotal = Math.max(1, data.get("burnTotal").getAsInt());
+                state.cookTicks = data.get("cook").getAsInt();
+                state.xpBank = data.get("xp").getAsFloat();
+                state.instance = instance;
+                state.pos = pos;
+                FURNACES.put(Containers.posKey(pos), state);
+            }
+
+            @Override
+            public void wipe() {
+                FURNACES.clear();
+            }
+        };
     }
 
     static void remove(Instance instance, Point pos) {

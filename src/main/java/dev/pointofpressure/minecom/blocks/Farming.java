@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.Items;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
@@ -19,6 +22,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Farming: hoes till farmland, seeds plant crops, crops grow over time (tracked
@@ -54,6 +58,32 @@ public final class Farming {
                 schedulSaplingGrowth(e.getInstance(), e.getBlockPosition(), 1200 + RANDOM.nextInt(1200));
             }
         });
+        Persist.register(persistence());
+    }
+
+    /** Crop-position persistence (docs/PERSISTENCE.md); ages live in block states. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "crop";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                for (String key : CROPS) out.accept(Persist.parsePos(key), new JsonObject());
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                CROPS.add(key(pos));
+            }
+
+            @Override
+            public void wipe() {
+                CROPS.clear();
+            }
+        };
     }
 
     private static void useOnBlock(PlayerUseItemOnBlockEvent e) {

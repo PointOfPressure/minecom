@@ -1247,6 +1247,41 @@ public final class SelfTest {
             dev.pointofpressure.minecom.Difficulty.set(saved);
         }
 
+        // ---- persistence serialization (Persist item/pos round-trips) ----
+        {
+            ItemStack named = ItemStack.of(Material.DIAMOND_SWORD).with(b -> b.set(
+                    net.minestom.server.component.DataComponents.CUSTOM_NAME,
+                    net.kyori.adventure.text.Component.text("Blade")));
+            ItemStack back = dev.pointofpressure.minecom.Persist.readItem(
+                    dev.pointofpressure.minecom.Persist.writeItem(named));
+            check("persistence: item round-trip keeps full NBT (custom name)",
+                    back != null && named.equals(back));
+            ItemStack damaged = ItemStack.of(Material.IRON_PICKAXE).with(b -> b.set(
+                    net.minestom.server.component.DataComponents.DAMAGE, 77));
+            ItemStack back2 = dev.pointofpressure.minecom.Persist.readItem(
+                    dev.pointofpressure.minecom.Persist.writeItem(damaged));
+            check("persistence: damage survives the round trip",
+                    back2 != null && damaged.equals(back2));
+            var pos = dev.pointofpressure.minecom.Persist.parsePos("-31,64,207");
+            check("persistence: position key round-trip",
+                    pos.blockX() == -31 && pos.blockY() == 64 && pos.blockZ() == 207
+                            && dev.pointofpressure.minecom.Persist.posKey(pos).equals("-31,64,207"));
+        }
+
+        // ---- warden anger arbitration (AngerManagement.Sorter, decompile-verified) ----
+        {
+            check("warden suspects: an angry (>=80) mob outranks a calm player",
+                    dev.pointofpressure.minecom.mobs.ai.WardenMob.compareSuspects(false, 90, true, 70) < 0);
+            check("warden suspects: both angry -> the player wins",
+                    dev.pointofpressure.minecom.mobs.ai.WardenMob.compareSuspects(true, 80, false, 150) < 0);
+            check("warden suspects: same class -> higher anger first",
+                    dev.pointofpressure.minecom.mobs.ai.WardenMob.compareSuspects(false, 40, false, 60) > 0);
+            check("warden anger thresholds: calm<40<=agitated<80<=angry, cap 150",
+                    dev.pointofpressure.minecom.mobs.ai.WardenMob.AGITATED == 40
+                            && dev.pointofpressure.minecom.mobs.ai.WardenMob.ANGRY == 80
+                            && dev.pointofpressure.minecom.mobs.ai.WardenMob.MAX_ANGER == 150);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }

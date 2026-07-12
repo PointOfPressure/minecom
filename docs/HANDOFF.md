@@ -16,7 +16,22 @@ of what got escalated and why.
 
 ## Open
 
+### Persistence adapter tail — Sonnet
+
+The persistence core landed 2026-07-12 (Fable): `StateAdapter` SPI +
+`RegionStore` region shards + 9 adapters + mob snapshots + inhabited time
+(docs/PERSISTENCE.md has the full status). What remains is mechanical
+now the SPI exists — one small adapter each, copying the existing
+patterns (Containers/Furnaces are the reference implementations):
+campfire, composter, jukebox, lectern, decorated pot, chiseled bookshelf,
+bells, note blocks, shulker boxes, plus per-mob extras (sheep color/
+sheared, breeding cooldowns, baby state) in RegionStore.collectMobs/
+restoreMob. Trial chambers and position-anchored scheduled ticks are the
+two non-trivial stragglers — scope them before starting. Every adapter
+addition extends scenarioPersistence with one save/wipe/reload check.
+
 ### Redstone parity — remaining summit after the 2026-07-11 pass — mixed
+### (summit COMPLETE 2026-07-12: items 1-3 done; 4 is a design decision, 5 is cleanup)
 
 The redstone-parity pass (see Done entries + AUDIT.md updates of this date)
 landed: piston slime/honey chains, copper bulbs, weighted plates, lightning
@@ -32,14 +47,29 @@ meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
    per-entity cooldown) for player throws AND dispensers, through a new
    scaled `Potions.apply` overload. Approximation noted in AUDIT: impact
    distance is center-to-center, not vanilla's AABB-to-AABB.
-2. **Warden mob** (Fable — the ONLY summit item left): shrieker mechanics
-   landed this session inside `Vibrations.java` (player-caused vibrations
-   within 8 → SHRIEKING 90gt, Darkness 260gt to players within 40,
-   per-player warning levels capped at 4 with 10-minute reset). What
-   remains is exactly the warning-4 consequence: the warden itself —
-   burrow-up spawn, anger management, sniffing, sonic boom, darkness pulses.
-   Creaking-scale mob-AI work; decompile Warden.java + WardenSpawnTracker
-   first. The `WARNINGS` map in Vibrations already holds the trigger state.
+2. ~~Warden mob~~ **Done 2026-07-12 (Fable) — the summit is complete.**
+   `mobs/ai/WardenMob.java`: full port of Warden/WardenAi/AngerManagement/
+   AngerLevel + behavior/warden (all decompiles cached, incl. fresh
+   SculkShriekerBlockEntity + SpawnUtil) as an explicit state machine
+   (EMERGING 134gt invulnerable / DIGGING 100gt after 1200gt calm / ROARING
+   84gt / SNIFFING 84gt / SONIC_BOOM 60gt with the 34gt strike, 10 dmg,
+   2.5/0.5 knockback, 40gt cooldown + 200gt fresh-target grace / melee 18gt
+   cadence 30 dmg) over VBrain navigation; per-entity anger (35 default, 10
+   first-projectile, +100 on hurt, +20 roar, 1/s decay, cap 150, angry-then-
+   players-then-anger suspect order), vibration listening (radius 16, 40gt
+   cooldown, wool occlusion, projectile-owner resolution), disturbance
+   investigation, 120gt darkness pulses, warden-steps-dampened. Shrieker
+   side reworked to the faithful WardenSpawnTracker semantics in
+   `Vibrations.java`: can_summon-gated warnings, 16-block player pooling
+   (max+1 copied to all), 200gt increase cooldown, warden-within-48
+   suppression, -1/12000gt quiet decay, respond at the 90gt shriek end
+   (darkness within 40 + reply sound by level, warden summon at 4 via the
+   SpawnUtil placement walk). Behavior change: default (can_summon=false)
+   shriekers no longer apply Darkness — matches vanilla tryRespond.
+   Playtest scenario at z=235 drives the whole chain (warn→summon→emerge→
+   anger→roar→sonic boom→dig despawn); selftest covers the suspect-order
+   comparator + thresholds. Simplifications in AUDIT.md (particles, total
+   dig/emerge invulnerability, session-scoped anger, shared pathfinder).
 3. ~~Dispenser exotics~~ **Mostly done 2026-07-11 (Fable, same session):**
    XP bottle (orbs 3-11 on land), glass-bottle water fill, shears (shared
    `Shearing.shear`), armor equipping onto empty-slotted living entities,
@@ -95,6 +125,16 @@ Also observed once (playtest_redstone_batch2.log): "the enderman later
 places the carried block back down" — same class of AI-timing flake; fold it
 into the same determinism pass. Second enderman flake + one trident-loyalty
 flake ("free slots at throw time=45") in playtest_summit.log (2026-07-12).
+More of the same class, 2026-07-12 warden runs: playtest_warden.log failed
+only the two breeding checks; playtest_warden2.log (identical jar + three
+zero-behavior source tweaks) failed breeding ×2, farmer food-sharing, and —
+new — "fire aspect II ignites the target" (its sibling burning-damage check
+PASSED in the same run, so the ignite worked; the 1000ms isOnFire
+observation window just lost on this box — widen or gate on state when
+doing the determinism pass). And once in playtest_persist.log: "zombie hits
+for 3 unarmored (got 6.5)" — two prior runs measured exactly 3.0; 6.5 is a
+sword-equipped zombie (the 1% maybeEquipZombieWeapon roll). Fix in the same
+pass by stripping the test zombie's held item before measuring.
 
 While in here: add a **section filter to the harness** (`--playtest redstone`
 runs only matching scenario names). The suite is now 500+ checks with

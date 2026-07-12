@@ -1,5 +1,9 @@
 package dev.pointofpressure.minecom.redstone;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.data.Recipes;
 import net.kyori.adventure.text.Component;
@@ -17,6 +21,7 @@ import net.minestom.server.item.ItemStack;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Crafter (the 26.x auto-crafter). Ported from decompiled CrafterBlock /
@@ -66,6 +71,50 @@ public final class Crafters {
             }
             Redstone.markDirty(unkey(key));
         });
+        Persist.register(persistence());
+    }
+
+    /** Crafter persistence (docs/PERSISTENCE.md): grid items + locked slots. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "crafter";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                CRAFTERS.forEach((key, inv) -> {
+                    JsonObject o = new JsonObject();
+                    o.add("items", Persist.writeItems(inv));
+                    Set<Integer> locked = LOCKED.get(key);
+                    if (locked != null && !locked.isEmpty()) {
+                        JsonArray arr = new JsonArray();
+                        locked.forEach(arr::add);
+                        o.add("locked", arr);
+                    }
+                    out.accept(unkey(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                Inventory inv = inventory(pos);
+                Persist.readItems(data.getAsJsonArray("items"), inv);
+                if (data.has("locked")) {
+                    Set<Integer> locked = LOCKED.computeIfAbsent(
+                            Containers.posKey(pos), k -> ConcurrentHashMap.newKeySet());
+                    data.getAsJsonArray("locked").forEach(el -> locked.add(el.getAsInt()));
+                }
+            }
+
+            @Override
+            public void wipe() {
+                CRAFTERS.clear();
+                LOCKED.clear();
+                INV_KEYS.clear();
+            }
+        };
     }
 
     /** Redstone hook: rising edge triggers, falling edge resets (no QC). */

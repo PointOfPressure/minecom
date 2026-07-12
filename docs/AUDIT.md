@@ -10,15 +10,20 @@ leftovers.
 
 ## Cross-cutting
 
-- **Session-scoped block-entity/mob state.** Container inventories beyond
-  chests/furnaces (dispensers/droppers `Redstone.DISPENSERS`, hoppers
-  `Hoppers.HOPPERS`, brewing stands, jukebox discs, lectern books, composter is
-  block-state so fine), villager inventories/food (`VillagerFood`), trial
-  chamber registrations (`TrialChambers` — chambers reloaded from a saved Anvil
-  world come back inert), mob entities themselves (nothing re-spawns mobs from a
-  save; villagers re-seed via bell scan only) — all lost on restart.
-  `Persist.java` saves only: time, raining, difficulty, chests, furnaces, crops,
-  players. (L — needs a persistence design pass; per-chunk entity/BE save)
+- **Session-scoped block-entity/mob state — largely CLOSED 2026-07-12
+  (Fable).** The persistence design pass landed: docs/PERSISTENCE.md +
+  `StateAdapter` SPI + `RegionStore` region shards (multi-core-ready
+  sharding). Now persisted: chests (incl. double-chest shared views, full
+  item NBT), furnaces (progress/XP), hoppers, crafters (+locked slots),
+  brewing stands, dispensers/droppers, crops, all tracked redstone/sculk
+  positions, mob entities (kind/pos/health/equipment + villager
+  profession/food/inventory), chunk inhabited time. Still session-scoped
+  (HANDOFF "Persistence adapter tail"): campfire/composter/jukebox/lectern/
+  pot/bookshelf/bells/note-block/shulker-box state, trial chambers,
+  scheduled ticks, per-mob extras (sheep color, baby state, breeding
+  cooldowns), warden anger (deliberate), item entities in flight, and the
+  registries are overworld-only (position keys would collide across
+  dimensions — pre-existing limitation).
 - **No random-tick engine.** Harvesting.java:18 admits it: crop growth is a
   scheduled-task approximation (Farming.java), and there's no generic random
   tick for: grass/mycelium spread, leaf decay timing (leaf decay exists but
@@ -32,9 +37,8 @@ leftovers.
 - **No server-enforced mining-speed system** (VanillaMobs elder guardian notes)
   — Mining Fatigue/Haste apply as effects but don't change dig speed
   server-side; Aqua Affinity/Depth Strider abandoned for the same reason. (M/L)
-- **Chunk inhabited time not persisted** (Difficulty.java) — regional difficulty
-  ramp resets each restart; vanilla stores it per chunk. (S once per-chunk
-  persistence exists)
+- ~~Chunk inhabited time not persisted~~ **Done 2026-07-12 (Fable)** — rides
+  the region shards (RegionStore), restored via Difficulty.setInhabitedTicks.
 - **Concurrent-session note:** another model is actively adding blocks
   (Cake.java, Candle.java appeared mid-audit); re-check this list against HEAD
   before starting work.
@@ -58,8 +62,8 @@ leftovers.
   honeycomb/waxing (no oxidation), brush (no archaeology), candle
   placement, chest-onto-donkey (no chested-horse inventory). Sculk
   shriekers landed too (Vibrations.java): player-caused shrieks, Darkness,
-  warning levels; the warden itself is a HANDOFF item. (each S once its
-  base system exists)
+  warning levels; the warden itself landed 2026-07-12 (Fable — see the
+  mobs/ section entry). (each S once its base system exists)
 - Redstone.java `containerSignal` — **expanded 2026-07-11 (Fable)**: added
   copper bulb (LIT=15), crafter (filled+locked slots), sculk sensors (last
   vibration frequency while active). Still missing: beehive honey level (no
@@ -79,9 +83,18 @@ leftovers.
   occlusion as a straight-line sample (vanilla probes a curved occlusion set),
   step sweep every 5gt (sneaking players silent). Emission taps: block
   place/break, note blocks, doors/trapdoors/gates, TNT prime, explosions,
-  lightning, projectile land. Not modeled: sculk shriekers/warden chain,
-  amethyst resonance, container open/close + eat/drink/equip-class events,
-  waterlogged silencing, swim/splash/flap emissions.
+  lightning, projectile land. The shrieker→warning→warden chain is fully
+  modeled as of 2026-07-12 (Fable): faithful WardenSpawnTracker port in
+  Vibrations.java (can_summon-gated warnings, players within 16 pooled to
+  max+1 and copied back, 200gt increase cooldown, no warning with a warden
+  within 48, amortized -1-per-12000gt quiet decay, darkness + reply
+  sound/summon when the 90gt shriek ends) plus the warden itself
+  (mobs/ai/WardenMob.java). Still not modeled: amethyst resonance,
+  container open/close + eat/drink/equip-class events, waterlogged
+  silencing, swim/splash/flap emissions, the spawn_wardens gamerule (no
+  gamerule system). Note the behavior change: non-summon shriekers
+  (can_summon=false, the player-placed default) no longer apply Darkness —
+  that matches vanilla (tryRespond requires an actual warning).
 - ~~Pistons.java — no slime/honey chains~~ **Done 2026-07-11 (Fable)** — full
   structure resolver port; see docs/HANDOFF.md Done entry. Block-entity move
   denial is inherent (isPushable rejects block entities).
@@ -138,11 +151,28 @@ leftovers.
 - Missing hostile mobs entirely (no factory/case): **cave_spider** (mineshaft
   spawners are also unimplemented — VStructureManager:1101 defers the spawner
   block), silverfish (infested blocks too), endermite (ender pearl 5% spawn),
-  vex exists only as evoker summon (fine), warden + skulk shrieker pipeline,
+  vex exists only as evoker summon (fine), ~~warden + skulk shrieker
+  pipeline~~ (done 2026-07-12, Fable — see the Warden entry below),
   piglin_brute (bastion), zoglin (hoglin portal conversion), illusioner,
   giant/unused. 26.x additions to check against the jar's entity registry:
   creaking (+ creaking heart), copper golem?, happy ghast?, parched (exists!),
   nautilus (exists as water animal). (each S-M given the factory pattern)
+- **Warden (mobs/ai/WardenMob.java, 2026-07-12, Fable)** — full port of
+  Warden/WardenAi/AngerManagement/AngerLevel + the behavior/warden package
+  as one explicit state machine over VBrain navigation; summoned by the
+  shrieker chain (Vibrations.tryRespond → WardenMob.trySummon, the
+  SpawnUtil 20×(±5,±6) ON_TOP_OF_COLLIDER walk-down) or /summon-equivalent
+  Mobs.spawn("warden"). Deliberate simplifications: digging/emerging
+  invulnerability is total (vanilla exempts BYPASSES_INVULNERABILITY
+  damage types); no sonic-boom particle trail or digging block particles
+  (client visuals — no particle idiom in the codebase yet); anger is
+  session-scoped (vanilla persists suspect UUIDs in NBT — ties into
+  docs/PERSISTENCE.md); navigation is the shared VPathfinder rather than
+  vanilla's warden-specific XZ-weighted PathFinder subclass; touch-anger
+  approximates doPush with a 1.5-block nearby sweep; the sniff/emerge
+  ambient-sound and heartbeat cadences are client-driven via WardenMeta
+  anger sync only. Sonic boom damage rides DamageType.SONIC_BOOM (armor
+  bypass follows the bundled damage-type tags).
 - Missing passive/utility mobs: bee (pollination/hive/anger — M-L), cat (village
   spawning, morning gifts, creeper repel), skeleton_horse (trap exists? no —
   lightning trap missing), mule, trader_llama (wandering trader spawns alone;

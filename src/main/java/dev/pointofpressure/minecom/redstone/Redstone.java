@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.redstone;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.blocks.Explosions;
 import net.minestom.server.MinecraftServer;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Vanilla redstone: wire networks with 15-block signal decay, strong vs weak
@@ -73,6 +77,8 @@ public final class Redstone {
     }
 
     public static void register(GlobalEventHandler events) {
+        Persist.register(positionsPersistence());
+        Persist.register(dispenserPersistence());
         events.addListener(PlayerBlockPlaceEvent.class, e -> {
             if (e.getBlock().key().value().endsWith("_pressure_plate")) {
                 platePositions.add(pack(e.getBlockPosition()));
@@ -862,6 +868,79 @@ public final class Redstone {
         }
         if (occupied == 0) return 0;
         return (int) Math.floor(1 + (fill / inv.getSize()) * 14);
+    }
+
+    // ------------------------------------------------------------------ persistence
+
+    /**
+     * Tracked-position persistence (docs/PERSISTENCE.md): the five position
+     * registries the tick sweeps run over (plates, detector rails, daylight
+     * detectors, tripwire hooks, lightning rods), typed by "t". Dispenser
+     * inventories ride the second adapter below.
+     */
+    private static StateAdapter positionsPersistence() {
+        return new StateAdapter() {
+            private final Map<String, Set<Long>> sets = Map.of(
+                    "plate", platePositions, "detector_rail", detectorPositions,
+                    "daylight", daylightDetectors, "tripwire_hook", tripwireHooks,
+                    "rod", lightningRods);
+
+            @Override
+            public String kind() {
+                return "redstone_pos";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                sets.forEach((type, set) -> {
+                    for (long packed : set) {
+                        JsonObject o = new JsonObject();
+                        o.addProperty("t", type);
+                        out.accept(unpackVec(packed), o);
+                    }
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                Set<Long> set = sets.get(data.get("t").getAsString());
+                if (set != null) set.add(pack(pos));
+            }
+
+            @Override
+            public void wipe() {
+                sets.values().forEach(Set::clear);
+            }
+        };
+    }
+
+    /** Dispenser/dropper inventory persistence (docs/PERSISTENCE.md). */
+    private static StateAdapter dispenserPersistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "dispenser";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                DISPENSERS.forEach((key, inv) -> {
+                    JsonObject o = new JsonObject();
+                    o.add("items", Persist.writeItems(inv));
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                Persist.readItems(data.getAsJsonArray("items"), dispenserInventory(pos));
+            }
+
+            @Override
+            public void wipe() {
+                DISPENSERS.clear();
+            }
+        };
     }
 
     // ------------------------------------------------------------------ dispensers

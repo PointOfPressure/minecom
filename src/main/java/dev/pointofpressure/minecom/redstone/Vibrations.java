@@ -30,13 +30,20 @@ import java.util.concurrent.ConcurrentHashMap;
  * lightning, projectiles landing, and a 5gt movement sweep for steps
  * (sneaking players emit nothing).
  * Sculk shriekers are vibration listeners too (radius 8, player-caused events
- * only): a heard vibration shrieks for 90gt, applies Darkness (260gt) to
- * players within 40 blocks and raises the causing player's warning level
- * (cap 4, resetting after 10 quiet minutes). The warden summon at warning 4
- * is NOT modeled — the warden is its own feature (docs/HANDOFF.md).
+ * only): a heard vibration shrieks for 90gt. Warning levels follow
+ * WardenSpawnTracker (decompiled): only can_summon=true shriekers warn (and
+ * never in Peaceful, or with a warden within 48 blocks); the warning is
+ * shared across players within 16 blocks (max+1, copied to all), increases
+ * are rate-limited to one per 200gt per player, and each 12000 quiet ticks
+ * decays one level. When a warning shriek ends (SculkShriekerBlock's 90gt
+ * scheduled tick -> tryRespond), players within 40 get Darkness 260gt and
+ * warning 4 summons a warden (burrow-up emerge via WardenMob.trySummon);
+ * lower levels play the warning-proximity reply sound at a random ±10 offset.
+ * Wardens themselves listen to every vibration within 16 blocks
+ * (WardenMob.hearVibration).
  * Not modeled (AUDIT.md): amethyst resonance, container open/close and
  * eat/drink/equip-class entity events, waterlogged silencing, per-event
- * Context entity checks, shrieker warning-level advancement triggers.
+ * Context entity checks, the spawn_wardens gamerule (no gamerule system).
  */
 public final class Vibrations {
     private Vibrations() {}
@@ -45,9 +52,15 @@ public final class Vibrations {
     private static final Set<Long> SHRIEKERS = ConcurrentHashMap.newKeySet();
     private static final Map<Long, Integer> LAST_FREQUENCY = new ConcurrentHashMap<>();
     private static final Map<Integer, Point> LAST_POSITIONS = new ConcurrentHashMap<>();
-    /** Per-player warden warning: [level, lastShriekAge]; resets after 10 quiet minutes. */
+    /** Per-player warden warning: [level, lastIncreaseAge, lastDecayAge] (WardenSpawnTracker). */
     private static final Map<java.util.UUID, int[]> WARNINGS = new ConcurrentHashMap<>();
     private static int age;
+
+    private static final int MAX_WARNING_LEVEL = 4;
+    private static final int WARNING_DECAY_INTERVAL = 12000; // -1 level per 10 quiet minutes
+    private static final int WARNING_INCREASE_COOLDOWN = 200;
+    private static final double WARNING_SHARE_RADIUS = 16.0; // players pooled per shriek
+    private static final int NEARBY_WARDEN_RADIUS = 48;
 
     /** VibrationSystem.VIBRATION_FREQUENCY_FOR_EVENT, keyed by event name. */
     private static final Map<String, Integer> FREQ = Map.ofEntries(
@@ -81,6 +94,43 @@ public final class Vibrations {
         });
         events.addListener(PlayerBlockBreakEvent.class,
                 e -> emit("block_destroy", e.getBlockPosition(), e.getPlayer()));
+        dev.pointofpressure.minecom.Persist.register(persistence());
+    }
+
+    /** Sensor/shrieker tracked-position persistence (docs/PERSISTENCE.md). */
+    private static dev.pointofpressure.minecom.StateAdapter persistence() {
+        return new dev.pointofpressure.minecom.StateAdapter() {
+            @Override
+            public String kind() {
+                return "sculk_pos";
+            }
+
+            @Override
+            public void collect(Instance in, java.util.function.BiConsumer<Point, com.google.gson.JsonObject> out) {
+                for (long key : SENSORS) {
+                    var o = new com.google.gson.JsonObject();
+                    o.addProperty("t", "sensor");
+                    out.accept(unpack(key), o);
+                }
+                for (long key : SHRIEKERS) {
+                    var o = new com.google.gson.JsonObject();
+                    o.addProperty("t", "shrieker");
+                    out.accept(unpack(key), o);
+                }
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, com.google.gson.JsonObject data) {
+                if ("sensor".equals(data.get("t").getAsString())) trackSensor(pos);
+                else trackShrieker(pos);
+            }
+
+            @Override
+            public void wipe() {
+                SENSORS.clear();
+                SHRIEKERS.clear();
+            }
+        };
     }
 
     /** Track sensors loaded from a saved world (or placed by tests). */
@@ -99,11 +149,13 @@ public final class Vibrations {
      */
     public static void emit(String event, Point sourcePos, Entity source) {
         Instance instance = Redstone.instance();
-        if (instance == null || (SENSORS.isEmpty() && SHRIEKERS.isEmpty())) return;
+        boolean wardens = dev.pointofpressure.minecom.mobs.ai.WardenMob.anyListening();
+        if (instance == null || (SENSORS.isEmpty() && SHRIEKERS.isEmpty() && !wardens)) return;
         int frequency = FREQ.getOrDefault(event, 0);
         if (frequency == 0) return;
         if (source instanceof Player p && p.isSneaking() && frequency == 1) return; // silent steps
         Vec origin = new Vec(sourcePos.x(), sourcePos.y(), sourcePos.z());
+        if (wardens) dev.pointofpressure.minecom.mobs.ai.WardenMob.hearVibration(event, origin, source);
 
         for (long key : SENSORS) {
             Point pos = unpack(key);
@@ -155,34 +207,103 @@ public final class Vibrations {
     }
 
     /**
-     * SculkShriekerBlockEntity.tryShriek/tryRespond: SHRIEKING for 90gt,
-     * Darkness (260gt) to players within 40, warning level +1 for the causing
-     * player (cap 4, reset after 10 quiet minutes). Warning 4 would summon a
-     * warden — not modeled, see docs/HANDOFF.md.
+     * SculkShriekerBlockEntity.tryShriek: warn first (only can_summon=true
+     * shriekers, see tryToWarn), then shriek for 90gt; the block's scheduled
+     * tick clears SHRIEKING and responds (darkness, reply sound or warden).
      */
     private static void shriek(Instance instance, Point pos, Player cause) {
         Block shrieker = instance.getBlock(pos);
         if (!shrieker.key().value().equals("sculk_shrieker")) return;
         if ("true".equals(shrieker.getProperty("shrieking"))) return;
-        instance.setBlock(pos, shrieker.withProperty("shrieking", "true"));
-        int[] warning = WARNINGS.computeIfAbsent(cause.getUuid(), k -> new int[]{0, age});
-        if (age - warning[1] > 12000) warning[0] = 0; // 10 quiet minutes reset
-        warning[0] = Math.min(4, warning[0] + 1);
-        warning[1] = age;
+        boolean canRespond = "true".equals(shrieker.getProperty("can_summon"))
+                && dev.pointofpressure.minecom.Difficulty.current()
+                        != dev.pointofpressure.minecom.Difficulty.PEACEFUL;
         Vec center = new Vec(pos.blockX() + 0.5, pos.blockY() + 0.5, pos.blockZ() + 0.5);
-        for (Player player : instance.getPlayers()) {
-            if (player.getPosition().distance(center) <= 40) {
-                player.addEffect(new net.minestom.server.potion.Potion(
-                        net.minestom.server.potion.PotionEffect.DARKNESS, (byte) 0, 260));
-            }
-        }
+        int warningLevel = canRespond ? tryToWarn(instance, center, cause) : 0;
+        if (canRespond && warningLevel == 0) return; // warn failed (cooldown/warden near): no shriek
+        instance.setBlock(pos, shrieker.withProperty("shrieking", "true"));
         Redstone.schedule(90, () -> {
             Block now = instance.getBlock(pos);
             if (now.key().value().equals("sculk_shrieker")
                     && "true".equals(now.getProperty("shrieking"))) {
                 instance.setBlock(pos, now.withProperty("shrieking", "false"));
+                tryRespond(instance, pos, center, warningLevel);
             }
         });
+    }
+
+    /**
+     * WardenSpawnTracker.tryWarn: no warning with a warden within 48 blocks or
+     * any pooled player on the 200gt increase cooldown; otherwise the highest
+     * warning among players within 16 (plus the causer) increases by one and is
+     * copied to all of them. Returns the new level, or 0 if warning failed.
+     */
+    private static int tryToWarn(Instance instance, Vec center, Player cause) {
+        if (dev.pointofpressure.minecom.mobs.ai.WardenMob.anyWithin(instance, center, NEARBY_WARDEN_RADIUS)) return 0;
+        java.util.List<Player> pooled = new java.util.ArrayList<>();
+        for (Player p : instance.getPlayers()) {
+            if (p == cause || (p.getGameMode() != net.minestom.server.entity.GameMode.SPECTATOR
+                    && p.getPosition().distance(center) <= WARNING_SHARE_RADIUS && !p.isDead())) {
+                pooled.add(p);
+            }
+        }
+        int highest = 0;
+        for (Player p : pooled) {
+            int[] w = warningOf(p.getUuid());
+            if (age - w[1] < WARNING_INCREASE_COOLDOWN && w[1] != 0) return 0; // on cooldown
+            highest = Math.max(highest, w[0]);
+        }
+        int level = Math.min(MAX_WARNING_LEVEL, highest + 1);
+        for (Player p : pooled) {
+            int[] w = warningOf(p.getUuid());
+            w[0] = level;
+            w[1] = age;
+            w[2] = age;
+        }
+        return level;
+    }
+
+    /** Current warning entry with the 12000gt-per-level quiet decay applied. */
+    private static int[] warningOf(java.util.UUID player) {
+        int[] w = WARNINGS.computeIfAbsent(player, k -> new int[]{0, 0, 0});
+        int elapsed = age - w[2];
+        if (elapsed >= WARNING_DECAY_INTERVAL && w[0] > 0) {
+            w[0] = Math.max(0, w[0] - elapsed / WARNING_DECAY_INTERVAL);
+            w[2] = age;
+        }
+        return w;
+    }
+
+    /** Test hook: pin a player's warning level (playtest drives warning 4 directly). */
+    public static void setWarningLevel(java.util.UUID player, int level) {
+        WARNINGS.put(player, new int[]{level, 0, age});
+    }
+
+    /**
+     * SculkShriekerBlockEntity.tryRespond: after a warning shriek, Darkness
+     * (260gt) within 40 blocks; warning 4 summons a warden (burrow-up emerge
+     * within ±5 xz / ±6 y), lower levels answer with the proximity sound at a
+     * random ±10 block offset.
+     */
+    private static void tryRespond(Instance instance, Point pos, Vec center, int warningLevel) {
+        if (warningLevel <= 0) return;
+        boolean summoned = warningLevel >= MAX_WARNING_LEVEL
+                && dev.pointofpressure.minecom.mobs.ai.WardenMob.trySummon(instance, pos) != null;
+        if (!summoned) {
+            var sound = switch (warningLevel) {
+                case 1 -> net.minestom.server.sound.SoundEvent.ENTITY_WARDEN_NEARBY_CLOSE;
+                case 2 -> net.minestom.server.sound.SoundEvent.ENTITY_WARDEN_NEARBY_CLOSER;
+                case 3 -> net.minestom.server.sound.SoundEvent.ENTITY_WARDEN_NEARBY_CLOSEST;
+                default -> net.minestom.server.sound.SoundEvent.ENTITY_WARDEN_LISTENING_ANGRY;
+            };
+            var rng = java.util.concurrent.ThreadLocalRandom.current();
+            instance.playSound(net.kyori.adventure.sound.Sound.sound(sound,
+                            net.kyori.adventure.sound.Sound.Source.HOSTILE, 5f, 1f),
+                    pos.blockX() + rng.nextInt(-10, 11),
+                    pos.blockY() + rng.nextInt(-10, 11),
+                    pos.blockZ() + rng.nextInt(-10, 11));
+        }
+        dev.pointofpressure.minecom.mobs.ai.WardenMob.applyDarknessAround(instance, center, 40);
     }
 
     private static void activate(Instance instance, Point pos, int power, int frequency, int activeTicks) {
@@ -211,8 +332,8 @@ public final class Vibrations {
         });
     }
 
-    /** Straight-line wool check, sampled every half block. */
-    private static boolean woolOccludes(Instance instance, Vec from, Vec to) {
+    /** Straight-line wool check, sampled every half block. Public: wardens use it too. */
+    public static boolean woolOccludes(Instance instance, Vec from, Vec to) {
         double distance = from.distance(to);
         int steps = (int) Math.ceil(distance * 2);
         for (int i = 1; i < steps; i++) {
@@ -229,6 +350,8 @@ public final class Vibrations {
         if (instance == null || (SENSORS.isEmpty() && SHRIEKERS.isEmpty())) return;
         for (Entity entity : instance.getEntities()) {
             if (entity instanceof ItemEntity || entity.isRemoved()) continue;
+            // Warden.dampensVibrations: a warden's own movement emits nothing
+            if (entity.getEntityType() == net.minestom.server.entity.EntityType.WARDEN) continue;
             Point now = entity.getPosition();
             Point before = LAST_POSITIONS.put(entity.getEntityId(),
                     new Vec(now.x(), now.y(), now.z()));

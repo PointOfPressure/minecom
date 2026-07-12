@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.Recipes;
 import net.kyori.adventure.text.Component;
 import net.minestom.server.coordinate.Point;
@@ -14,8 +17,10 @@ import net.minestom.server.inventory.InventoryType;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Interactive blocks: crafting tables, furnaces, chests (per-position inventories,
@@ -42,8 +47,70 @@ public final class Containers {
             Point pos = TRAPPED_CHEST_POS.get(e.getInventory());
             if (pos != null) dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(pos);
         });
+        Persist.register(persistence());
         Crafting.register(events);
         Furnaces.register(events);
+    }
+
+    /**
+     * Chest persistence (docs/PERSISTENCE.md). Double chests share one
+     * Inventory under both position keys: the first key met saves the items,
+     * the partner saves a {"ref": "x,y,z"} entry resolved in finishRestore
+     * (the halves can sit in different chunks, so resolution must wait until
+     * every shard is in).
+     */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            private final Map<String, String> pendingRefs = new ConcurrentHashMap<>();
+
+            @Override
+            public String kind() {
+                return "chest";
+            }
+
+            @Override
+            public void collect(Instance instance, BiConsumer<Point, JsonObject> out) {
+                Map<Inventory, String> seen = new HashMap<>();
+                CHESTS.forEach((key, inv) -> {
+                    JsonObject o = new JsonObject();
+                    String first = seen.putIfAbsent(inv, key);
+                    if (first != null) {
+                        o.addProperty("ref", first);
+                    } else {
+                        o.addProperty("size", inv.getSize());
+                        o.add("items", Persist.writeItems(inv));
+                    }
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance instance, Point pos, JsonObject data) {
+                if (data.has("ref")) {
+                    pendingRefs.put(posKey(pos), data.get("ref").getAsString());
+                    return;
+                }
+                InventoryType type = data.get("size").getAsInt() > 27
+                        ? InventoryType.CHEST_6_ROW : InventoryType.CHEST_3_ROW;
+                Inventory inv = new Inventory(type, Component.text("Chest"));
+                Persist.readItems(data.getAsJsonArray("items"), inv);
+                CHESTS.put(posKey(pos), inv);
+            }
+
+            @Override
+            public void finishRestore(Instance instance) {
+                pendingRefs.forEach((key, ref) -> {
+                    Inventory shared = CHESTS.get(ref);
+                    if (shared != null) CHESTS.put(key, shared);
+                });
+                pendingRefs.clear();
+            }
+
+            @Override
+            public void wipe() {
+                CHESTS.clear();
+            }
+        };
     }
 
     private static void interact(PlayerBlockInteractEvent e) {

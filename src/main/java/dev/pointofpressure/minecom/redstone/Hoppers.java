@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.redstone;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.blocks.Furnaces;
 import net.kyori.adventure.text.Component;
@@ -17,6 +20,7 @@ import net.minestom.server.timer.TaskSchedule;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Hoppers: 5 slots, one item moved every 8 game ticks — push into the faced
@@ -33,8 +37,42 @@ public final class Hoppers {
 
     public static void start(Instance overworld) {
         instance = overworld;
+        Persist.register(persistence());
         MinecraftServer.getSchedulerManager().buildTask(Hoppers::tickAll)
                 .repeat(TaskSchedule.tick(1)).schedule();
+    }
+
+    /** Hopper persistence (docs/PERSISTENCE.md): items; cooldown restarts fresh. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "hopper";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                POSITIONS.forEach((key, pos) -> {
+                    Inventory inv = HOPPERS.get(key);
+                    if (inv == null) return;
+                    JsonObject o = new JsonObject();
+                    o.add("items", Persist.writeItems(inv));
+                    out.accept(pos, o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                Persist.readItems(data.getAsJsonArray("items"), inventory(pos));
+            }
+
+            @Override
+            public void wipe() {
+                HOPPERS.clear();
+                POSITIONS.clear();
+                COOLDOWN.clear();
+            }
+        };
     }
 
     public static Inventory inventory(Point pos) {
