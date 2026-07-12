@@ -936,7 +936,7 @@ exercised by any rig — logged as its own Open task above. Log:
 test-logs/playtest_piston_chains.log.
 
 
-### Daylight detector — Opus
+### ~~Daylight detector~~ — DONE 2026-07-11 (Fable)
 
 Scoped as "low complexity" by an earlier research pass in this session,
 but decompiling `DaylightDetectorBlock.updateSignalStrength` exactly
@@ -977,7 +977,7 @@ Implemented in `redstone/DaylightDetectors.java` + Redstone integration
 playtest covers noon 15 / afternoon cos-scaled / midnight 0 / inverted 11 /
 rain 12.
 
-### Difficulty system (Peaceful/Easy/Normal/Hard) — Opus
+### ~~Difficulty system (Peaceful/Easy/Normal/Hard)~~ — DONE 2026-07-11 (Fable)
 
 Currently the whole project implicitly assumes one fixed difficulty
 (closest to Normal) everywhere a difficulty-dependent constant is needed
@@ -1019,7 +1019,7 @@ behaviorally. Not done (noted in AUDIT.md): mob equipment enchant provider,
 equipment drop chances, raid wave counts by difficulty,
 villager→zombie-villager conversion rolls.
 
-### Villager breeding food-threshold (personal food inventory + pickup AI) — Opus/Fable
+### ~~Villager breeding food-threshold (personal food inventory + pickup AI)~~ — DONE 2026-07-11 (Fable)
 
 `Villagers.java` (~line 90-103) only enforces the bed-capacity half of
 real vanilla's breeding-willingness check; the food half is skipped
