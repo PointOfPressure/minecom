@@ -1055,6 +1055,7 @@ public final class Redstone {
                         && le.getEquipment(eqSlot).isAir()) {
                     le.setEquipment(eqSlot, stack.withAmount(1));
                     inv.setItemStack(slot, stack.consume(1));
+                    Vibrations.emit("equip", le.getPosition(), le);
                     return;
                 }
             }
@@ -1190,10 +1191,12 @@ public final class Redstone {
             case "dispenser", "dropper" -> {
                 e.setBlockingItemUse(true);
                 e.getPlayer().openInventory(dispenserInventory(pos));
+                Vibrations.emit("container_open", pos, e.getPlayer());
             }
             case "crafter" -> {
                 e.setBlockingItemUse(true);
                 e.getPlayer().openInventory(Crafters.inventory(pos));
+                Vibrations.emit("container_open", pos, e.getPlayer());
             }
             case "daylight_detector" -> {
                 // DaylightDetectorBlock.useWithoutItem: cycle INVERTED + immediate re-read

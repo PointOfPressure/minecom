@@ -26,9 +26,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * reading the last vibration frequency while active, and wool blocking the
  * path (straight-line sample — vanilla occlusion-probe geometry simplified;
  * see AUDIT.md). Emission sites are tapped where minecom already models the
- * event: block place/break, note blocks, doors, TNT fuses, explosions,
- * lightning, projectiles landing, and a 5gt movement sweep for steps
- * (sneaking players emit nothing).
+ * event: block place/break, note blocks, TNT fuses, explosions, lightning,
+ * projectiles landing, a 5gt movement sweep for steps (sneaking players
+ * emit nothing), container open/close (chest/trapped_chest/ender_chest/
+ * barrel/hopper/furnace family/shulker box/brewing stand/dispenser+dropper/
+ * crafter — decompile-verified against ContainerOpenersCounter's own
+ * 0-&gt;1/1-&gt;0 opener-count transition), door/trapdoor/fence-gate open/
+ * close, eating, and drinking a potion.
  * Sculk shriekers are vibration listeners too (radius 8, player-caused events
  * only): a heard vibration shrieks for 90gt. Warning levels follow
  * WardenSpawnTracker (decompiled): only can_summon=true shriekers warn (and
@@ -41,9 +45,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * lower levels play the warning-proximity reply sound at a random ±10 offset.
  * Wardens themselves listen to every vibration within 16 blocks
  * (WardenMob.hearVibration).
- * Not modeled (AUDIT.md): amethyst resonance, container open/close and
- * eat/drink/equip-class entity events, waterlogged silencing, per-event
- * Context entity checks, the spawn_wardens gamerule (no gamerule system).
+ * Not modeled (AUDIT.md): amethyst resonance, player-direct equip (only
+ * a dispenser equipping a mob is wired), swim/splash/flap emissions,
+ * waterlogged silencing, per-event Context entity checks, the
+ * spawn_wardens gamerule (no gamerule system).
  */
 public final class Vibrations {
     private Vibrations() {}

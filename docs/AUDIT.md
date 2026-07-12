@@ -206,17 +206,29 @@ leftovers.
   frequency filter, 10gt cooldown, comparator = last frequency, wool
   occlusion as a straight-line sample (vanilla probes a curved occlusion set),
   step sweep every 5gt (sneaking players silent). Emission taps: block
-  place/break, note blocks, doors/trapdoors/gates, TNT prime, explosions,
-  lightning, projectile land. The shrieker→warning→warden chain is fully
-  modeled as of 2026-07-12 (Fable): faithful WardenSpawnTracker port in
-  Vibrations.java (can_summon-gated warnings, players within 16 pooled to
-  max+1 and copied back, 200gt increase cooldown, no warning with a warden
-  within 48, amortized -1-per-12000gt quiet decay, darkness + reply
-  sound/summon when the 90gt shriek ends) plus the warden itself
-  (mobs/ai/WardenMob.java). Still not modeled: amethyst resonance,
-  container open/close + eat/drink/equip-class events (a real, diffuse
-  gap — see HANDOFF's redstone-parity item 5 for scope), swim/splash/flap
-  emissions, the spawn_wardens gamerule (no gamerule system). "Waterlogged
+  place/break, note blocks, TNT prime, explosions, lightning, projectile
+  land, and — done 2026-07-12 (Sonnet), decompile-verified against
+  `ContainerOpenersCounter.incrementOpeners`/`decrementOpeners` (the exact
+  same 0-&gt;1/1-&gt;0 transition already driving this session's new chest/
+  barrel lid-animation work) — `container_open`/`container_close` (chest/
+  trapped_chest/ender_chest/barrel/hopper/furnace family/shulker box/
+  brewing stand/dispenser+dropper/crafter; close only wired where this
+  project already tracks a close — chest/trapped_chest/barrel/ender_chest —
+  the other six only have open-side tracking today, a known asymmetry, not
+  a gap that needed new close-tracking infrastructure just for this),
+  `block_open`/`block_close` (doors/trapdoors/fence gates, unconditional on
+  every toggle, no opener-count gating), `eat`, `drink`, and one `equip`
+  site (dispenser-equips-a-mob — the only equip call site found with
+  confidence; player-direct right-click-to-wear-armor wasn't wired, no
+  clearly-matching call site found without guessing). The shrieker→warning→
+  warden chain is fully modeled as of 2026-07-12 (Fable): faithful
+  WardenSpawnTracker port in Vibrations.java (can_summon-gated warnings,
+  players within 16 pooled to max+1 and copied back, 200gt increase
+  cooldown, no warning with a warden within 48, amortized -1-per-12000gt
+  quiet decay, darkness + reply sound/summon when the 90gt shriek ends)
+  plus the warden itself (mobs/ai/WardenMob.java). Still not modeled:
+  amethyst resonance, player-direct equip, swim/splash/flap emissions, the
+  spawn_wardens gamerule (no gamerule system). "Waterlogged
   silencing" was on this list but turned out to be a non-issue — checked
   2026-07-12 (Sonnet): `SculkSensorBlock`'s WATERLOGGED references are all
   about suppressing the click *sound*, not detection; a waterlogged sensor

@@ -252,6 +252,7 @@ public final class Survival {
         p.setFood(Math.min(20, p.getFood() + food.nutrition()));
         p.setFoodSaturation(Math.min(p.getFood(),
                 p.getFoodSaturation() + food.nutrition() * food.saturationModifier() * 2f));
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("eat", p.getPosition(), p);
 
         if (p.getGameMode() != GameMode.CREATIVE) {
             ItemStack rest = item.consume(1);

@@ -64,6 +64,8 @@ public final class ShulkerBoxes {
             Inventory inv = INVENTORIES.computeIfAbsent(Containers.posKey(e.getBlockPosition()),
                     p -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Shulker Box")));
             e.getPlayer().openInventory(inv);
+            dev.pointofpressure.minecom.redstone.Vibrations.emit(
+                    "container_open", e.getBlockPosition(), e.getPlayer());
         });
     }
 

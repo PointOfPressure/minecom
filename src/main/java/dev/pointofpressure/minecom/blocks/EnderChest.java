@@ -40,6 +40,7 @@ public final class EnderChest {
                 Point soundPos = pos != null ? pos : e.getPlayer().getPosition();
                 if (pos != null) Containers.sendChestAction(e.getPlayer().getInstance(), pos, 0);
                 playAt(e.getPlayer().getInstance(), soundPos, SoundEvent.BLOCK_ENDER_CHEST_CLOSE);
+                dev.pointofpressure.minecom.redstone.Vibrations.emit("container_close", soundPos, e.getPlayer());
             }
         });
     }
@@ -51,6 +52,7 @@ public final class EnderChest {
         LAST_OPENED.put(player.getUuid().toString(), pos);
         Containers.sendChestAction(instance, pos, 1);
         playAt(instance, pos, SoundEvent.BLOCK_ENDER_CHEST_OPEN);
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("container_open", pos, player);
     }
 
     private static void playAt(Instance instance, Point pos, SoundEvent sound) {

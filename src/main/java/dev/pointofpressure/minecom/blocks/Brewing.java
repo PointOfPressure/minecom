@@ -59,6 +59,8 @@ public final class Brewing {
             e.setBlockingItemUse(true);
             Stand stand = STANDS.computeIfAbsent(Containers.posKey(e.getBlockPosition()), k -> new Stand());
             e.getPlayer().openInventory(stand.inv);
+            dev.pointofpressure.minecom.redstone.Vibrations.emit(
+                    "container_open", e.getBlockPosition(), e.getPlayer());
         });
         // filling bottles from water
         events.addListener(PlayerUseItemOnBlockEvent.class, e -> {

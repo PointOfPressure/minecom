@@ -121,6 +121,7 @@ public final class Furnaces {
         state.instance = instance;
         state.pos = pos;
         player.openInventory(state.inv);
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("container_open", pos, player);
     }
 
     /** Furnace persistence (docs/PERSISTENCE.md): items + burn/cook progress + XP bank. */

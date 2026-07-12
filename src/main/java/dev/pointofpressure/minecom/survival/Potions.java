@@ -37,6 +37,7 @@ public final class Potions {
         if (contents != null && contents.potion() != null) {
             apply(player, contents.potion());
         }
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("drink", player.getPosition(), player);
         if (player.getGameMode() != net.minestom.server.entity.GameMode.CREATIVE) {
             player.setItemInHand(e.getHand(), ItemStack.of(Material.GLASS_BOTTLE));
         }

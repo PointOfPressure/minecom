@@ -65,12 +65,14 @@ public final class Containers {
      * the 0-&gt;1 / 1-&gt;0 transition, matching vanilla not re-triggering it for every
      * additional/departing viewer.
      */
-    public static void chestAnimation(Instance instance, Point pos, int viewers) {
+    public static void chestAnimation(Instance instance, Point pos, int viewers, net.minestom.server.entity.Entity source) {
         sendChestAction(instance, pos, viewers);
         if (viewers == 1) {
             playChestSound(instance, pos, net.minestom.server.sound.SoundEvent.BLOCK_CHEST_OPEN);
+            dev.pointofpressure.minecom.redstone.Vibrations.emit("container_open", pos, source);
         } else if (viewers == 0) {
             playChestSound(instance, pos, net.minestom.server.sound.SoundEvent.BLOCK_CHEST_CLOSE);
+            dev.pointofpressure.minecom.redstone.Vibrations.emit("container_close", pos, source);
         }
     }
 
@@ -89,13 +91,15 @@ public final class Containers {
 
     /** BarrelBlock: no BlockActionPacket at all in real vanilla — the "open" blockstate property
      *  itself swaps the model, driven by ContainerOpenersCounter the same 0-&lt;-&gt;1+ way. */
-    public static void barrelToggle(Instance instance, Point pos, boolean open) {
+    public static void barrelToggle(Instance instance, Point pos, boolean open, net.minestom.server.entity.Entity source) {
         Block block = instance.getBlock(pos);
         if (!block.key().value().equals("barrel")) return;
         instance.setBlock(pos, block.withProperty("open", String.valueOf(open)));
         playChestSound(instance, pos, open
                 ? net.minestom.server.sound.SoundEvent.BLOCK_BARREL_OPEN
                 : net.minestom.server.sound.SoundEvent.BLOCK_BARREL_CLOSE);
+        dev.pointofpressure.minecom.redstone.Vibrations.emit(
+                open ? "container_open" : "container_close", pos, source);
     }
 
     /** Reverse lookup so a close event (which only knows the Inventory) can find the physical
@@ -135,11 +139,13 @@ public final class Containers {
                     .filter(v -> v != e.getPlayer()).count();
             Point[] animPositions = ANIM_POS.get(e.getInventory());
             if (animPositions != null) {
-                for (Point p : animPositions) chestAnimation(e.getPlayer().getInstance(), p, viewersAfterClose);
+                for (Point p : animPositions) {
+                    chestAnimation(e.getPlayer().getInstance(), p, viewersAfterClose, e.getPlayer());
+                }
             }
             Point barrelPos = BARREL_POS.get(e.getInventory());
             if (barrelPos != null && viewersAfterClose == 0) {
-                barrelToggle(e.getPlayer().getInstance(), barrelPos, false);
+                barrelToggle(e.getPlayer().getInstance(), barrelPos, false, e.getPlayer());
             }
         });
         Persist.register(persistence());
@@ -259,6 +265,9 @@ public final class Containers {
             case "hopper" -> {
                 e.setBlockingItemUse(true);
                 player.openInventory(dev.pointofpressure.minecom.redstone.Hoppers.inventory(pos));
+                // hoppers have no lid to animate (always visually "open"), but real vanilla's
+                // ContainerOpenersCounter still fires CONTAINER_OPEN for them same as any chest
+                dev.pointofpressure.minecom.redstone.Vibrations.emit("container_open", pos, player);
             }
             case "chest" -> {
                 e.setBlockingItemUse(true);
@@ -267,7 +276,7 @@ public final class Containers {
                 player.openInventory(inv);
                 Point[] positions = mergeablePositions(pos, block);
                 trackAnim(inv, positions);
-                for (Point p : positions) chestAnimation(instance, p, inv.getViewers().size());
+                for (Point p : positions) chestAnimation(instance, p, inv.getViewers().size(), player);
             }
             case "barrel" -> {
                 e.setBlockingItemUse(true);
@@ -276,7 +285,7 @@ public final class Containers {
                 rollPendingLoot(posKey(pos), inv);
                 player.openInventory(inv);
                 BARREL_POS.put(inv, pos);
-                barrelToggle(instance, pos, true);
+                barrelToggle(instance, pos, true, player);
             }
             case "trapped_chest" -> {
                 e.setBlockingItemUse(true);
@@ -287,7 +296,7 @@ public final class Containers {
                 dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(pos);
                 Point[] positions = mergeablePositions(pos, block);
                 trackAnim(inv, positions);
-                for (Point p : positions) chestAnimation(instance, p, inv.getViewers().size());
+                for (Point p : positions) chestAnimation(instance, p, inv.getViewers().size(), player);
             }
             case "ender_chest" -> {
                 e.setBlockingItemUse(true);
@@ -297,10 +306,18 @@ public final class Containers {
                 if ((key.endsWith("_door") && !key.equals("iron_door"))) {
                     e.setBlockingItemUse(true);
                     toggleDoor(instance, pos, block);
+                    // DoorBlock.setOpen: BLOCK_OPEN/BLOCK_CLOSE fire unconditionally on every
+                    // toggle (no opener-count gating like containers)
+                    dev.pointofpressure.minecom.redstone.Vibrations.emit(
+                            "true".equals(instance.getBlock(pos).getProperty("open")) ? "block_open" : "block_close",
+                            pos, player);
                 } else if ((key.endsWith("_trapdoor") && !key.equals("iron_trapdoor"))
                         || key.endsWith("_fence_gate")) {
                     e.setBlockingItemUse(true);
+                    boolean opening = !"true".equals(block.getProperty("open"));
                     instance.setBlock(pos, toggled(block));
+                    dev.pointofpressure.minecom.redstone.Vibrations.emit(
+                            opening ? "block_open" : "block_close", pos, player);
                 }
             }
         }

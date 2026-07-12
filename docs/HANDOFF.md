@@ -398,16 +398,35 @@ meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
      sensor still activates/powers/reads on comparator identically to a
      dry one in real vanilla. Also pure client-audio, not a real gameplay
      gap. (S, cosmetic)
-   - Vibration-tap gaps (container open/close, eat/drink/equip-class
-     entity events) — the one item here with real gameplay effect
-     (sculk sensors/shriekers/wardens currently can't hear these event
-     categories at all). Genuinely diffuse, not small: needs new
-     `Vibrations.emit(...)` call sites threaded through every container
-     type (chests, shulker boxes, furnaces, brewing stands, the new small
-     block entities from this session's persistence work...) plus
-     Survival.java's eat/drink logic plus wherever equipment gets set —
-     10+ files, not a single-file fix. Scope as its own task before
-     starting, don't treat as a quick addition. (M, real gap)
+   - ~~Vibration-tap gaps~~ **done 2026-07-12 (Sonnet)** — decompiled
+     `ContainerOpenersCounter` directly to confirm the exact trigger point
+     (`incrementOpeners`/`decrementOpeners` fire `GameEvent.CONTAINER_OPEN`/
+     `CLOSE` on the same 0-&gt;1/1-&gt;0 transition already being used for
+     this session's new chest/barrel lid-animation work — same call sites,
+     just add the emit). The frequency table already had every event name
+     needed (`container_open`/`_close`, `block_open`/`_close`, `eat`,
+     `drink`, `equip`) — nothing missing there, purely a wiring gap. Wired:
+     chest/trapped_chest/ender_chest/barrel/hopper/furnace family/shulker
+     box/brewing stand/dispenser+dropper/crafter (`container_open`,
+     `container_close` only where this project already tracks a close —
+     chest/trapped_chest/barrel/ender_chest; furnace/hopper/shulker/
+     brewing/dispenser/crafter only have open-side tracking today, so only
+     open is wired for those, noted as a known asymmetry rather than
+     building new close-tracking for six more block types just for this),
+     doors/trapdoors/fence gates (`block_open`/`_close`, unconditional on
+     every toggle — no opener-count gating like containers), eating
+     (`eat`), potion drinking (`drink`), and dispenser-equips-a-mob
+     (`equip` — the one dispenser-exotic call site that clearly matches;
+     did NOT guess at a player-direct right-click-to-wear-armor call site
+     since none was found with confidence, left as a further increment).
+     New `scenarioVibrationTaps` (5 checks: chest open, chest close, door
+     open, eat, drink, all heard by a sensor 4 blocks away), 5/5 clean
+     reruns. Also found and fixed, while re-verifying the fire-spread
+     section this touched only tangentially: a genuine ~1/15 statistical
+     flake in `scenarioFireSpread`'s wider-spread check (400 forced-tick
+     iterations wasn't always enough for a rarer-than-expected roll — only
+     one candidate position per tick ever has a flammable neighbor in that
+     test's layout); bumped to 2000, 8/8 clean after.
 
 ### Piston reorder-collision differential test — Opus (IN PROGRESS 2026-07-12 ~05:20, overnight Fable queue session)
 

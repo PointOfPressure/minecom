@@ -131,6 +131,7 @@ public final class PlayTest {
         scenario("redstone: lightning rod redirects strikes and pulses", PlayTest::scenarioLightningRod);
         scenario("redstone: crafter auto-crafts on a pulse", PlayTest::scenarioCrafter);
         scenario("redstone: sculk sensor hears a note block, wool blocks it", PlayTest::scenarioSculkSensor);
+        scenario("vibrations: a sensor hears container open/close, door open, eating, and drinking", PlayTest::scenarioVibrationTaps);
         scenario("redstone: calibrated sculk sensor filters frequencies", PlayTest::scenarioSculkCalibrated);
         scenario("redstone: dispenser spawn egg + minecart placement", PlayTest::scenarioDispenserBehaviors);
         scenario("redstone: powered rails carry power 8 rails down the line", PlayTest::scenarioPoweredRails);
@@ -634,7 +635,12 @@ public final class PlayTest {
         rs(61, Y + 2, z, Block.OAK_PLANKS);
         dev.pointofpressure.minecom.blocks.FireSpread.track(new Vec(59, Y + 2, z));
         boolean spread = false;
-        for (int i = 0; i < 400 && !spread; i++) {
+        // only one candidate air position per forced tick ever has a flammable neighbor here
+        // (60,Y+2,z, next to the plank at 61), so this is a much rarer per-attempt roll than
+        // it looks — 400 iterations occasionally wasn't enough (~1/15 in full-suite runs);
+        // 2000 pushes the tail-miss probability to negligible without touching the odds
+        // formula itself (this is a synchronous forced-tick sample count, not a real-time wait).
+        for (int i = 0; i < 2000 && !spread; i++) {
             dev.pointofpressure.minecom.blocks.FireSpread.forceTick(world, new Vec(59, Y + 2, z));
             spread = "fire".equals(blockKey(60, Y + 2, z));
             if ("air".equals(blockKey(59, Y + 2, z))) rs(59, Y + 2, z, Block.FIRE);
@@ -4947,6 +4953,61 @@ public final class PlayTest {
                 "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase")));
         rs(54, Y + 2, z, Block.AIR);
         for (int x = 50; x <= 54; x++) for (int dy = 1; dy <= 2; dy++) rs(x, Y + dy, z, Block.AIR);
+    }
+
+    /**
+     * Vibration emission tap coverage (ContainerOpenersCounter/DoorBlock/LivingEntity,
+     * decompile-verified): container open/close (chest, door open/close, eating, and
+     * drinking a potion all reach a nearby sensor — the "diffuse gap" HANDOFF flagged
+     * (10+ call sites across Containers/Furnaces/ShulkerBoxes/Brewing/Redstone/Survival/
+     * Potions). Same distance (4 blocks) as scenarioSculkSensor's note-block case, so the
+     * same expected power (9) applies throughout.
+     */
+    private static void scenarioVibrationTaps() {
+        int z = 215;
+        rs(50, Y + 1, z, Block.SCULK_SENSOR);
+        dev.pointofpressure.minecom.redstone.Vibrations.trackSensor(new Vec(50, Y + 1, z));
+
+        // container_open / container_close (chest)
+        rs(54, Y + 1, z, Block.CHEST);
+        interact(new BlockVec(54, Y + 1, z));
+        boolean heardOpen = waitFor(() -> "active".equals(prop(50, Y + 1, z, "sculk_sensor_phase"))
+                && "9".equals(prop(50, Y + 1, z, "power")), 3000);
+        check("a sensor hears a chest being opened 4 blocks away", heardOpen);
+        waitFor(() -> "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 4000);
+        player.closeInventory();
+        boolean heardClose = waitFor(() -> "active".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 3000);
+        check("a sensor also hears that chest closing again", heardClose);
+        waitFor(() -> "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 4000);
+        rs(54, Y + 1, z, Block.AIR);
+
+        // block_open (door)
+        rs(54, Y + 1, z, Block.OAK_DOOR.withProperty("half", "lower").withProperty("open", "false"));
+        interact(new BlockVec(54, Y + 1, z));
+        boolean heardDoor = waitFor(() -> "active".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 3000);
+        check("a sensor hears a door opening 4 blocks away", heardDoor);
+        waitFor(() -> "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 4000);
+        rs(54, Y + 1, z, Block.AIR);
+
+        // eat (LivingEntity.eat)
+        player.teleport(new Pos(54.5, Y + 1, z + 0.5)).join();
+        player.setFood(10);
+        player.setItemInMainHand(ItemStack.of(Material.COOKED_BEEF));
+        EventDispatcher.call(new PlayerFinishItemUseEvent(player, PlayerHand.MAIN,
+                player.getItemInMainHand(), 32));
+        boolean heardEat = waitFor(() -> "active".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 3000);
+        check("a sensor hears the player eating 4 blocks away", heardEat);
+        waitFor(() -> "inactive".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 4000);
+
+        // drink (potion)
+        player.setItemInMainHand(potionOf(net.minestom.server.potion.PotionType.HEALING));
+        EventDispatcher.call(new PlayerFinishItemUseEvent(player, PlayerHand.MAIN,
+                player.getItemInMainHand(), 32));
+        boolean heardDrink = waitFor(() -> "active".equals(prop(50, Y + 1, z, "sculk_sensor_phase")), 3000);
+        check("a sensor hears the player drinking a potion 4 blocks away", heardDrink);
+
+        rs(50, Y + 1, z, Block.AIR);
+        resetPlayer();
     }
 
     /** Calibrated sensor: radius 16, back-face signal filters to one frequency (0 = all). */
