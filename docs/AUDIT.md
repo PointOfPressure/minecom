@@ -605,8 +605,13 @@ leftovers.
 - Bootstrap.java — flat/playtest worlds skip Villagers.register: fine, but
   VillagerFood.start is therefore playtest-only-manual; production non-flat
   gets it via Villagers.register. OK — just noting the asymmetry.
-- PlayTest port collision with concurrent sessions — MINECOM_TEST_PORT exists;
-  consider defaulting to a random free port instead. (S)
+- ~~PlayTest port collision with concurrent sessions~~ **done 2026-07-12
+  (Sonnet)** — default changed from a fixed 25599 to 0 (OS-assigned
+  ephemeral port); nothing else in the harness reads the bound port back
+  (confirmed by grep — only the one bind call site existed), so this is
+  safe. `MINECOM_TEST_PORT` still overrides for a fixed port. Verified
+  two genuinely concurrent `--playtest` runs with no env var set at all
+  no longer collide.
 
 ## worldgen (documented deferrals only — core is verified elsewhere)
 

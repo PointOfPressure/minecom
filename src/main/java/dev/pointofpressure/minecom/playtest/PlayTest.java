@@ -61,9 +61,11 @@ public final class PlayTest {
         world = Bootstrap.boot(Bootstrap.Config.playtest());
         Pos spawn = Bootstrap.spawnOf(world);
         Main.registerConnectionFlow(MinecraftServer.getGlobalEventHandler(), world, spawn);
-        // real tick loop; port unused by scenarios — overridable so multiple concurrent
-        // playtest runs (e.g. different models working the same tree at once) don't collide
-        int port = Integer.parseInt(System.getenv().getOrDefault("MINECOM_TEST_PORT", "25599"));
+        // real tick loop; port unused by scenarios. Default 0 lets the OS assign a free
+        // ephemeral port, so concurrent playtest runs (e.g. different models working the same
+        // tree at once) never collide without anyone having to coordinate a port number by
+        // hand — MINECOM_TEST_PORT still overrides for anyone who wants a fixed one.
+        int port = Integer.parseInt(System.getenv().getOrDefault("MINECOM_TEST_PORT", "0"));
         server.start("127.0.0.1", port);
 
         for (int cx = -4; cx < 4; cx++) {
