@@ -267,7 +267,14 @@ public final class VanillaMobs {
         brain.addGoal(5, new SilverfishMergeWithStone(brain));
         brain.addTargetGoal(1, new Goals.HurtByTarget(brain, true));
         brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true));
-        mob.setInstance(instance, pos);
+        // joined (unlike most mob factories' fire-and-forget setInstance): this one backs
+        // InfestedBlocks.spawnInfestation, an ambush spawn a player expects to see the instant
+        // they break the block — Entity.setInstance returns a CompletableFuture, and callers
+        // checking world.getEntities() right after an un-joined call can occasionally race its
+        // completion (confirmed via a flaky playtest check that still failed with zero
+        // real-time wait between the break and the check, i.e. not the usual sleep-vs-real-tick
+        // skew class of flake this project otherwise sees).
+        mob.setInstance(instance, pos).join();
         return mob;
     }
 

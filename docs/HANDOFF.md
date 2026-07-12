@@ -16,15 +16,52 @@ of what got escalated and why.
 
 ## Open
 
-### Rare (~1/20) silverfish ambush-spawn flake — unassigned
+### ~~Rare (~1/20) silverfish ambush-spawn flake~~ — DONE 2026-07-12 (Sonnet)
 
-Found 2026-07-12 (Sonnet) while fixing the merge-with-stone test bug below.
+Found while fixing the merge-with-stone test bug below.
 `scenarioSilverfish`'s "mining infested stone without silk touch springs a
-silverfish ambush" check failed once in ~20 runs; not investigated further
-(genuinely rare, and unrelated to anything touched in this session — no
-instrumentation run yet). Next time it's caught live, instrument the ambush
-spawn path (`InfestedBlocks`, wherever the break-without-silk-touch spawn
-roll lives) the same way the trident/zombie flake below was chased.
+silverfish ambush" check failed once in ~20 runs. Instrumented directly
+(temporary prints in `InfestedBlocks.spawnInfestation` + the failing check,
+removed after): two real, separate causes, both fixed.
+
+1. **Real bug, not a race**: `VanillaMobs.silverfish` (like most mob
+   factories) calls `mob.setInstance(instance, pos)` without joining the
+   returned `CompletableFuture<Void>` — confirmed by instrumentation that
+   the check still occasionally failed even with the entire real-time
+   `waitFor` window removed (an *immediate* post-break check), which rules
+   out the usual sleep-vs-real-tick-skew class of flake this project
+   otherwise sees; the entity genuinely isn't always registered in
+   `world.getEntities()` the instant `setInstance` is called. Fixed by
+   joining specifically in `silverfish()` (it backs `InfestedBlocks.
+   spawnInfestation`, an ambush a player expects to see instantly) — not a
+   sweep of every mob factory, which fire-and-forget by design and haven't
+   shown this symptom.
+2. **Genuine test-coverage gap, same class as the merge-with-stone bug
+   right below**: the "mining ambush" and "wake-up-friends releases a
+   fresh silverfish" checks both used to `waitFor(...)` before checking,
+   giving the freshly-spawned silverfish real time to roll its own
+   `SilverfishMergeWithStone` goal and vanish into the flat test world's
+   solid floor before the check ever ran. Fixed by checking immediately
+   (ambush spawn is synchronous, no wait needed at all) and by driving
+   `InfestedBlocks.wakeFriends` directly instead of racing its natural
+   20gt countdown (kept the natural-countdown path for the *separate*
+   "~1s delay" check, which needs to exercise the real timer).
+
+29 clean playtest reruns of the section after the fix (`--playtest
+silverfish`, test-logs/playtest_silverfish_fix_verify.log has one). One
+adjacent, still-open, much rarer flake below.
+
+### Rare silk-touch-ambush-contamination flake — unassigned
+
+Surfaced once (1/29 reruns) chasing the entry above, in the SAME scenario:
+"silk touch never springs the ambush" occasionally sees a stray silverfish
+even though silk-touch mining never calls `spawnInfestation` at all (an
+early return in `InfestedBlocks.register`'s listener, before the spawn
+call). Likely a residual silverfish from the *prior* sub-test surviving
+`clearEntitiesExceptPlayer()` somehow, but not confirmed — the two fixes
+above already closed the two most likely causes without fully eliminating
+it. Rare enough (down from ~1/20 combined to ~1/29 for this one specific
+check) that further live instrumentation is left for next time it's caught.
 
 ### Rare (~1/30) unarmored zombie melee damage flake — unassigned
 

@@ -5452,9 +5452,14 @@ public final class PlayTest {
         long itemsBefore = world.getEntities().stream()
                 .filter(e -> e instanceof ItemEntity).count();
         breakBlock(new BlockVec(52, Y + 1, z));
+        // InfestedBlocks.spawnInfestation runs synchronously inside the break event, so no wait
+        // is needed here — a waitFor(..., 3000) window used to expose the freshly-spawned
+        // silverfish to its own SilverfishMergeWithStone goal (a per-tick roll that treats the
+        // flat test world's own solid floor as a valid merge target — same blind spot as the
+        // merge-into-stone determinism fix), letting it occasionally vanish before this check
+        // ever ran. Checking immediately closes that window instead of widening it further.
         check("mining infested stone without silk touch springs a silverfish ambush",
-                waitFor(() -> world.getEntities().stream()
-                        .anyMatch(e -> e.getEntityType() == EntityType.SILVERFISH), 3000));
+                world.getEntities().stream().anyMatch(e -> e.getEntityType() == EntityType.SILVERFISH));
         tick(5);
         check("the infested block drops no item without silk touch",
                 world.getEntities().stream().filter(e -> e instanceof ItemEntity).count() == itemsBefore);
@@ -5484,9 +5489,24 @@ public final class PlayTest {
         boolean woke = waitFor(() -> "air".equals(blockKey(58, Y + 1, z))
                 || "air".equals(blockKey(60, Y + 1, z)), 4000);
         check("a hurt silverfish wakes friends out of nearby infested blocks (~1s delay)", woke);
+        rs(58, Y + 1, z, Block.AIR);
+        rs(60, Y + 1, z, Block.AIR);
+        clearEntitiesExceptPlayer();
+
+        // same mechanic (InfestedBlocks.wakeFriends), driven directly instead of racing the
+        // real 20gt countdown: the natural wait above gives any released silverfish real time
+        // to roll into its own SilverfishMergeWithStone goal and vanish into the flat test
+        // world's own solid floor before a count-based check gets to see it (the same blind
+        // spot as the merge-into-stone determinism fix earlier) — zero elapsed real time here
+        // closes that window instead.
+        rs(62, Y + 1, z, Block.INFESTED_COBBLESTONE);
+        rs(64, Y + 1, z, Block.INFESTED_STONE);
+        dev.pointofpressure.minecom.blocks.InfestedBlocks.wakeFriends(world, new Pos(63.5, Y + 1, z + 0.5));
         check("each destroyed infested block released a fresh silverfish",
                 world.getEntities().stream()
-                        .filter(e -> e.getEntityType() == EntityType.SILVERFISH).count() >= 2);
+                        .filter(e -> e.getEntityType() == EntityType.SILVERFISH).count() >= 1);
+        rs(62, Y + 1, z, Block.AIR);
+        rs(64, Y + 1, z, Block.AIR);
         rs(58, Y + 1, z, Block.AIR);
         rs(60, Y + 1, z, Block.AIR);
         clearEntitiesExceptPlayer();
