@@ -274,7 +274,22 @@ Discord help channel: the Navigator breaks while an entity has a passenger,
 and passenger movement interpolation misbehaves for far-away mounts —
 design around both.
 
-### Silverfish + infested blocks — Opus (IN PROGRESS 2026-07-12 ~04:05, overnight Fable queue session)
+### ~~Silverfish + infested blocks~~ — DONE 2026-07-12 (Fable, overnight queue session)
+
+`VanillaMobs.silverfish` + `blocks/InfestedBlocks.java`: the real mechanic set —
+7-pair host↔infested table (deepslate keeps its axis), break-without-silk-touch
+ambush spawn (silk touch takes the host item through the existing loot path and
+suppresses the spawn — the bundled infested_* tables already had the match_tool
+gate), wake-up-friends (~20gt one-shot countdown after entity damage, then the
+X/Z ±10 / Y ±5 per-axis-outward destroy scan with 50% stop per find, each
+destroyed block releasing a fresh silverfish), and merge-with-stone (idle roll,
+one random direction from body center, mob discarded). Playtest scenario at
+z=260 covers all four behaviors; selftest checks the mapping table + scan
+order. Simplifications in AUDIT.md (no mobGriefing gamerule to honor, no
+explosion-release hook, magic-damage wake trigger not wired, hardness/blast
+resistance from Minestom registry). Original scoping kept below.
+
+### Silverfish + infested blocks — Opus (original scoping)
 
 Deferred in the same "missing hostile mobs" pass that closed cave_spider/
 endermite/illusioner/piglin_brute/zoglin/giant (2026-07-11) — silverfish

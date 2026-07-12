@@ -160,7 +160,8 @@ leftovers.
 
 - Missing hostile mobs entirely (no factory/case): **cave_spider** (mineshaft
   spawners are also unimplemented — VStructureManager:1101 defers the spawner
-  block), silverfish (infested blocks too), endermite (ender pearl 5% spawn),
+  block), ~~silverfish (infested blocks too)~~ (done 2026-07-12, Fable — see
+  the Silverfish entry below), endermite (ender pearl 5% spawn),
   vex exists only as evoker summon (fine), ~~warden + skulk shrieker
   pipeline~~ (done 2026-07-12, Fable — see the Warden entry below),
   piglin_brute (bastion), zoglin (hoglin portal conversion), illusioner,
@@ -198,6 +199,31 @@ leftovers.
   night window (vanilla reads the day timeline), hearts are session-scoped
   like TrialChambers (placement/test tracking only — no worldgen pale
   gardens yet, no Anvil reload re-link), body-rotation control not ported.
+- **Silverfish + infested blocks (VanillaMobs.silverfish +
+  blocks/InfestedBlocks.java, 2026-07-12, Fable)** — decompile-verified
+  Silverfish/InfestedBlock/InfestedRotatedPillarBlock: 8 HP / 0.25 speed /
+  1 attack factory with wake-up-friends (entity-attributed damage arms a
+  one-shot ~20gt countdown, then the X/Z ±10, Y ±5 per-axis-outward scan
+  destroys infested blocks — no drops, empty tool fails the silk gate —
+  releasing one fresh silverfish each, 50% stop per find) and
+  merge-with-stone (idle 1-in-10 per-tick roll ≈ vanilla's 1-in-5 per
+  every-other-tick evaluation; one random direction from body center;
+  host converts to its infested variant, deepslate keeps its axis, mob
+  discarded). Breaking any of the 7 infested variants without silk touch
+  spawns one silverfish at the block center; the bundled infested_* loot
+  tables already carry the silk-gated host-item drop. Simplifications:
+  no mobGriefing gamerule exists project-wide, so vanilla's griefing-off
+  fizzle branch (revert block, no spawn) isn't modeled; explosions don't
+  release silverfish (Explosions.java has no per-block spawnAfterBreak
+  hook); the always_triggers_silverfish magic-damage tag isn't wired
+  (potion "magic" damage doesn't arm the wake goal — entity-attributed
+  damage only); no FloatGoal/powder-snow-climb counterparts; the
+  getWalkTargetValue 10.0 loiter-near-infestable-stone bias not ported;
+  infested destroy-time halving + flat 0.75 blast resistance not modeled
+  (block hardness comes from Minestom's registry); no natural spawning
+  (vanilla only spawns them from spawners/infested blocks; stronghold
+  portal-room spawners are themselves still inert — see worldgen);
+  spawn-poof particles skipped (client visual).
 - **Warden (mobs/ai/WardenMob.java, 2026-07-12, Fable)** — full port of
   Warden/WardenAi/AngerManagement/AngerLevel + the behavior/warden package
   as one explicit state machine over VBrain navigation; summoned by the

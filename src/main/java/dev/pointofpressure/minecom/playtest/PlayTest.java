@@ -136,6 +136,7 @@ public final class PlayTest {
         scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds", PlayTest::scenarioRandomTicks);
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
+        scenario("silverfish: infested-block ambush, silk-touch bypass, wake-up-friends, merge-into-stone", PlayTest::scenarioSilverfish);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -5087,6 +5088,98 @@ public final class PlayTest {
                     }
                 }
             }
+        }
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Silverfish + infested blocks (decompiled Silverfish/InfestedBlock 26.1.2):
+     * mining without silk touch springs the ambush (one silverfish, no drop),
+     * silk touch takes the host item and never wakes the bug, entity damage to
+     * a silverfish releases friends from nearby infested blocks ~1s later, and
+     * an idle silverfish merges into adjacent stone (block turns infested, mob
+     * discarded).
+     */
+    private static void scenarioSilverfish() {
+        int z = 260;
+        clearEntitiesExceptPlayer();
+        var fish = Mobs.spawn("silverfish", world, new Pos(50.5, Y + 1, z + 0.5));
+        check("silverfish spawns with real vanilla stats (8 HP, 1 attack damage)",
+                fish.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 8.0
+                        && fish.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 1.0);
+        fish.remove();
+
+        // bare-handed mining: ambush spawn, loot table drops nothing
+        player.teleport(new Pos(52.5, Y + 1, z - 2.5, 0f, 0f)).join();
+        player.setItemInMainHand(ItemStack.AIR);
+        rs(52, Y + 1, z, Block.INFESTED_STONE);
+        long itemsBefore = world.getEntities().stream()
+                .filter(e -> e instanceof ItemEntity).count();
+        breakBlock(new BlockVec(52, Y + 1, z));
+        check("mining infested stone without silk touch springs a silverfish ambush",
+                waitFor(() -> world.getEntities().stream()
+                        .anyMatch(e -> e.getEntityType() == EntityType.SILVERFISH), 3000));
+        tick(5);
+        check("the infested block drops no item without silk touch",
+                world.getEntities().stream().filter(e -> e instanceof ItemEntity).count() == itemsBefore);
+        clearEntitiesExceptPlayer();
+
+        // silk touch: host item drops, no ambush
+        ItemStack silkPick = dev.pointofpressure.minecom.data.Enchants.with(
+                ItemStack.of(Material.IRON_PICKAXE),
+                net.minestom.server.item.enchant.Enchantment.SILK_TOUCH, 1);
+        player.setItemInMainHand(silkPick);
+        rs(54, Y + 1, z, Block.INFESTED_STONE_BRICKS);
+        breakBlock(new BlockVec(54, Y + 1, z));
+        boolean hostDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(e -> e instanceof ItemEntity item
+                        && item.getItemStack().material() == Material.STONE_BRICKS), 2000);
+        check("silk touch takes the host block item instead", hostDropped);
+        check("silk touch never springs the ambush", world.getEntities().stream()
+                .noneMatch(e -> e.getEntityType() == EntityType.SILVERFISH));
+        player.setItemInMainHand(ItemStack.AIR);
+        clearEntitiesExceptPlayer();
+
+        // wake-up-friends: hurting one releases friends from infested blocks around it
+        rs(58, Y + 1, z, Block.INFESTED_COBBLESTONE);
+        rs(60, Y + 1, z, Block.INFESTED_STONE);
+        var victim = Mobs.spawn("silverfish", world, new Pos(59.5, Y + 1, z + 0.5));
+        EventDispatcher.call(new EntityAttackEvent(player, victim));
+        boolean woke = waitFor(() -> "air".equals(blockKey(58, Y + 1, z))
+                || "air".equals(blockKey(60, Y + 1, z)), 4000);
+        check("a hurt silverfish wakes friends out of nearby infested blocks (~1s delay)", woke);
+        check("each destroyed infested block released a fresh silverfish",
+                world.getEntities().stream()
+                        .filter(e -> e.getEntityType() == EntityType.SILVERFISH).count() >= 2);
+        rs(58, Y + 1, z, Block.AIR);
+        rs(60, Y + 1, z, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer(); // idle merge below needs the player out of targeting range
+
+        // merge-with-stone: boxed in by stone, an idle silverfish hides into a wall
+        for (int dy = 1; dy <= 2; dy++) {
+            rs(64, Y + dy, z, Block.STONE);
+            rs(66, Y + dy, z, Block.STONE);
+            rs(65, Y + dy, z - 1, Block.STONE);
+            rs(65, Y + dy, z + 1, Block.STONE);
+        }
+        var merger = Mobs.spawn("silverfish", world, new Pos(65.5, Y + 1, z + 0.5));
+        check("an idle silverfish merges into adjacent stone (mob discarded)",
+                waitFor(merger::isRemoved, 15000));
+        boolean converted = false;
+        for (int dy = 1; dy <= 2 && !converted; dy++) {
+            converted = "infested_stone".equals(blockKey(64, Y + dy, z))
+                    || "infested_stone".equals(blockKey(66, Y + dy, z))
+                    || "infested_stone".equals(blockKey(65, Y + dy, z - 1))
+                    || "infested_stone".equals(blockKey(65, Y + dy, z + 1));
+        }
+        check("the merged wall block became its infested variant", converted);
+        for (int dy = 1; dy <= 2; dy++) {
+            rs(64, Y + dy, z, Block.AIR);
+            rs(66, Y + dy, z, Block.AIR);
+            rs(65, Y + dy, z - 1, Block.AIR);
+            rs(65, Y + dy, z + 1, Block.AIR);
         }
         clearEntitiesExceptPlayer();
         resetPlayer();

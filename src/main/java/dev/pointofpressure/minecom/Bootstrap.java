@@ -5,6 +5,7 @@ import dev.pointofpressure.minecom.blocks.BlockRules;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.blocks.Farming;
 import dev.pointofpressure.minecom.blocks.Fluids;
+import dev.pointofpressure.minecom.blocks.InfestedBlocks;
 import dev.pointofpressure.minecom.blocks.Placement;
 import dev.pointofpressure.minecom.data.VanillaData;
 import dev.pointofpressure.minecom.mobs.Combat;
@@ -135,6 +136,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.redstone.Crafters.register(events);
         dev.pointofpressure.minecom.redstone.Vibrations.register(events);
         BlockRules.register(events);
+        InfestedBlocks.register(events);
         Placement.register(events);
         Containers.register(events);
         Fluids.register(events);

@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.mobs.ai;
 
+import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Entity;
@@ -245,6 +246,134 @@ public final class VanillaMobs {
         mob.scheduler().buildTask(() -> { if (!mob.isRemoved()) mob.remove(); })
                 .delay(TaskSchedule.tick(2400)).schedule();
         return mob;
+    }
+
+    /**
+     * Silverfish (decompile-verified Silverfish.java 26.1.2): 8 HP / 0.25 speed /
+     * 1 attack / follow 16. Goals: wake-up-friends 3, melee 4 (1.0, not
+     * followEvenIfNotSeen), merge-with-stone 5; targets: hurt-by(alert others) 1,
+     * nearest-player(must see) 2. Not modeled (AUDIT.md): FloatGoal /
+     * ClimbOnTopOfPowderSnowGoal (no counterparts in this project's goal set),
+     * the getWalkTargetValue 10.0 loiter-near-infestable-stone bias, the
+     * always_triggers_silverfish magic-damage tag (wake-up only arms on
+     * entity-attributed damage here), and natural spawning (vanilla silverfish
+     * only spawn from spawners/infested blocks, neither via NaturalSpawner).
+     */
+    public static EntityCreature silverfish(Instance instance, Pos pos) {
+        EntityCreature mob = new EntityCreature(EntityType.SILVERFISH);
+        VBrain brain = brain(mob, 0.25, 16, 1, 8, 0);
+        brain.addGoal(3, new SilverfishWakeUpFriends(brain));
+        brain.addGoal(4, new Goals.MeleeAttack(brain, 1.0, false));
+        brain.addGoal(5, new SilverfishMergeWithStone(brain));
+        brain.addTargetGoal(1, new Goals.HurtByTarget(brain, true));
+        brain.addTargetGoal(2, new Goals.NearestAttackablePlayer(brain, true));
+        mob.setInstance(instance, pos);
+        return mob;
+    }
+
+    /**
+     * Silverfish.SilverfishWakeUpFriendsGoal: entity-attributed damage arms a
+     * one-shot countdown (adjustedTickDelay(20) ≈ 20 real ticks — vanilla's
+     * "friends arrive ~1s after the hit"; repeat hits while armed don't reset
+     * it), then InfestedBlocks.wakeFriends runs the destroy-and-release scan.
+     */
+    private static final class SilverfishWakeUpFriends extends VGoal {
+        private final VBrain brain;
+        private long seenHurtTimestamp = -1;
+        private int countdown;
+
+        SilverfishWakeUpFriends(VBrain brain) {
+            this.brain = brain;
+        }
+
+        @Override
+        public boolean canUse() {
+            if (brain.lastHurtTimestamp != seenHurtTimestamp && brain.lastHurtBy != null) {
+                seenHurtTimestamp = brain.lastHurtTimestamp;
+                if (countdown == 0) countdown = 20;
+            }
+            return countdown > 0;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return countdown > 0;
+        }
+
+        @Override
+        public void tick() {
+            if (--countdown > 0) return;
+            Instance instance = brain.mob.getInstance();
+            if (instance == null) return;
+            dev.pointofpressure.minecom.blocks.InfestedBlocks.wakeFriends(
+                    instance, brain.mob.getPosition());
+        }
+    }
+
+    /**
+     * Silverfish.SilverfishMergeWithStoneGoal: while idle (no target,
+     * navigation done), roll a merge before falling back to plain strolling —
+     * vanilla rolls 1-in-reducedTickDelay(10)=5 per every-other-tick goal
+     * evaluation; this brain evaluates every tick, so 1-in-10 keeps the same
+     * rate. The candidate is the single block one random direction (of 6) away
+     * from the body center (+0.5 y); a compatible host converts to its
+     * infested variant and the silverfish is discarded (no death, no drops).
+     */
+    private static final class SilverfishMergeWithStone extends Goals.WaterAvoidingRandomStroll {
+        private static final int[][] DIRECTIONS =
+                {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
+        private final VBrain brain;
+        private boolean doMerge;
+        private Point mergePos;
+
+        SilverfishMergeWithStone(VBrain brain) {
+            super(brain, 1.0, 10);
+            this.brain = brain;
+        }
+
+        @Override
+        public boolean canUse() {
+            if (brain.target != null) return false;
+            if (!brain.navigationDone()) return false;
+            if (brain.random.nextInt(10) == 0) {
+                int[] dir = DIRECTIONS[brain.random.nextInt(6)];
+                Pos at = brain.mob.getPosition();
+                Point pos = new Vec(at.blockX() + dir[0],
+                        (int) Math.floor(at.y() + 0.5) + dir[1], at.blockZ() + dir[2]);
+                Instance instance = brain.mob.getInstance();
+                if (instance != null && dev.pointofpressure.minecom.blocks.InfestedBlocks
+                        .infestedOf(instance.getBlock(pos)) != null) {
+                    doMerge = true;
+                    mergePos = pos;
+                    return true;
+                }
+            }
+            doMerge = false;
+            return super.canUse();
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return !doMerge && super.canContinueToUse();
+        }
+
+        @Override
+        public void start() {
+            if (!doMerge) {
+                super.start();
+                return;
+            }
+            // re-validated like vanilla start(): the block may have changed since canUse
+            Instance instance = brain.mob.getInstance();
+            if (instance == null) return;
+            Block infested = dev.pointofpressure.minecom.blocks.InfestedBlocks
+                    .infestedOf(instance.getBlock(mergePos));
+            if (infested != null) {
+                instance.setBlock(mergePos, infested);
+                brain.mob.remove();
+            }
+        }
     }
 
     /** Creeper: swell 2, melee-approach 4, stroll 5; swell counter explodes at 30 (radius 3). */

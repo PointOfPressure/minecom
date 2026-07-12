@@ -1297,6 +1297,32 @@ public final class SelfTest {
                             && dev.pointofpressure.minecom.mobs.ai.WardenMob.MAX_ANGER == 150);
         }
 
+        // ---- infested blocks (InfestedBlock host<->infested table + scan order) ----
+        {
+            check("infested: stone <-> infested_stone round-trips",
+                    Block.INFESTED_STONE.equals(
+                            dev.pointofpressure.minecom.blocks.InfestedBlocks.infestedOf(Block.STONE))
+                            && Block.STONE.equals(dev.pointofpressure.minecom.blocks.InfestedBlocks
+                                    .hostOf(Block.INFESTED_STONE)));
+            check("infested: all 7 host blocks map and round-trip",
+                    java.util.stream.Stream.of(Block.STONE, Block.COBBLESTONE, Block.STONE_BRICKS,
+                            Block.MOSSY_STONE_BRICKS, Block.CRACKED_STONE_BRICKS,
+                            Block.CHISELED_STONE_BRICKS, Block.DEEPSLATE).allMatch(host -> {
+                        Block infested = dev.pointofpressure.minecom.blocks.InfestedBlocks.infestedOf(host);
+                        return infested != null && host.key().equals(
+                                dev.pointofpressure.minecom.blocks.InfestedBlocks.hostOf(infested).key());
+                    }));
+            check("infested: granite has no infested form",
+                    dev.pointofpressure.minecom.blocks.InfestedBlocks.infestedOf(Block.GRANITE) == null);
+            check("infested: deepslate pillar keeps its axis through conversion",
+                    "x".equals(dev.pointofpressure.minecom.blocks.InfestedBlocks
+                            .infestedOf(Block.DEEPSLATE.withProperty("axis", "x")).getProperty("axis")));
+            check("infested: wake scan order expands outward per axis (0,1,-1,2,-2)",
+                    java.util.Arrays.equals(
+                            dev.pointofpressure.minecom.blocks.InfestedBlocks.expandingOrder(2),
+                            new int[]{0, 1, -1, 2, -2}));
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }
