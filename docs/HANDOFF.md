@@ -16,7 +16,29 @@ of what got escalated and why.
 
 ## Open
 
-### Minestom 26.2 upgrade (from pinned 2026.07.01-26.1.2) — Opus/Fable, needs a scoping decision first
+**At-a-glance triage (2026-07-12, Sonnet)** — all Sonnet-tier work is done;
+everything left is one of these 5 items. Opus/Fable split done explicitly
+this pass, reserving Fable for the one item that's genuinely hardest:
+
+- **Opus:** Minestom 26.2 upgrade (investigative/migration, not novel
+  design), the two rare playtest flakes (diagnostic work, one already has
+  a strong lead).
+- **Fable:** Piston reorder-collision differential test — already in
+  progress, deepest context on their own algorithm port.
+- **Fable, but blocked:** Unification-pass mechanical cleanups — a
+  project-owner sequencing decision (STRATEGY.md §6), and the highest-risk
+  item here on the merits too (splitting a 5.3k-line test file without
+  breaking 600+ scenarios). Not ready to start yet regardless.
+
+### Minestom 26.2 upgrade (from pinned 2026.07.01-26.1.2) — Opus
+
+**Triaged 2026-07-12 (Sonnet), Opus not Fable:** big blast radius (148
+breaking changes cascading into a likely Minecraft-version bump, touching
+every "decompile-verified" claim in this project), but the work itself is
+investigative/migration in shape — audit the changelog against this
+project's actual API surface, decide what's additive-only vs. real rework,
+scope the re-decompile — not a novel algorithm or design problem. Careful,
+thorough triage is what this needs, not Fable-tier problem-solving.
 
 Minestom released `2026.07.12-26.2` today (github.com/Minestom/Minestom/
 releases/tag/2026.07.12-26.2). This is a real version bump, not a patch:
@@ -149,7 +171,14 @@ removed after): two real, separate causes, both fixed.
 silverfish`, test-logs/playtest_silverfish_fix_verify.log has one). One
 adjacent, still-open, much rarer flake below.
 
-### Rare silk-touch-ambush-contamination flake — unassigned
+### Rare silk-touch-ambush-contamination flake — Opus
+
+**Triaged 2026-07-12 (Sonnet):** needs live instrumentation + careful
+diagnostic reasoning once caught, not novel design work — Opus-sized.
+Only escalate to Fable if instrumentation turns up something genuinely
+structural (a real concurrency bug in the entity/instance system itself)
+rather than another local timing/ordering issue like the two already
+fixed in this same scenario.
 
 Surfaced once (1/29 reruns) chasing the entry above, in the SAME scenario:
 "silk touch never springs the ambush" occasionally sees a stray silverfish
@@ -165,7 +194,12 @@ the trial chambers persistence work below disturbed anything nearby) — 0
 failures, consistent with a still-real but genuinely rare event, not
 caught this pass either.
 
-### Rare (~1/15-1/25?) dispensed-animal-spawn flake — unassigned, unconfirmed lead
+### Rare (~1/15-1/25?) dispensed-animal-spawn flake — Opus
+
+**Triaged 2026-07-12 (Sonnet):** already has a strong, specific lead (see
+below) — this is confirm-and-fix work (get real before/after statistics
+or a live instrumented catch before touching a path shared by ~20 mob
+types), not a from-scratch investigation. Opus-sized, not Fable-sized.
 
 Found 2026-07-12 (Sonnet) during a full-suite verification pass unrelated
 to this scenario: `scenarioDispenserBehaviors`'s "dispensed spawn egg
@@ -533,7 +567,16 @@ meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
      one candidate position per tick ever has a flammable neighbor in that
      test's layout); bumped to 2000, 8/8 clean after.
 
-### Piston reorder-collision differential test — Opus (IN PROGRESS 2026-07-12 ~05:20, overnight Fable queue session)
+### Piston reorder-collision differential test — Fable (IN PROGRESS 2026-07-12 ~05:20, overnight Fable queue session)
+
+**Triaged 2026-07-12 (Sonnet): confirmed as Fable, not Opus** (the header
+above said Opus, but the body already noted Fable is the one actively
+working it — fixing the mismatch, not reassigning). Fable ported the
+`PistonStructureResolver` graph-traversal algorithm this work verifies
+from scratch; they have the deepest context on its exact collision-path
+semantics, and a differential test against real vanilla for this is
+exactly the kind of "confirm a hard algorithm port is bit-exact" work
+worth reserving Fable for, not routing to Opus.
 
 The 2026-07-11 slime/honey structure-resolver port (see the Done entry below)
 ships `reorderListAtCollision` as a verbatim port, but none of the three new
@@ -621,15 +664,24 @@ fixed by placing 3. All affected sections run clean 10x in a row with the
 new filter; full selftest (210/0) and playtest green after the fix
 (test-logs/playtest_determinism_pass.log, test-logs/selftest_determinism_pass.log).
 
-### Unification-pass mechanical cleanups — strongest model available (BLOCKED until first pass done)
+### Unification-pass mechanical cleanups — Fable (BLOCKED until first pass done)
 
-**Mislabeled below as "Sonnet" — corrected 2026-07-12 (Sonnet).**
-docs/STRATEGY.md §6 step 3 explicitly says this pass runs on "strongest
-model available," not Sonnet — that's a project-sequencing decision (it's
-step 3 of the launch roadmap, after "finish first pass" and "suite
-hardening," both still open per this file), not a difficulty judgment
-about the individual renames below. Don't pick this up as a quick Sonnet
-task even once it's unblocked.
+**Mislabeled below as "Sonnet" — corrected 2026-07-12 (Sonnet). Explicit
+Opus-vs-Fable triage 2026-07-12 (Sonnet): kept as Fable, not downgraded
+to Opus.** docs/STRATEGY.md §6 step 3 says "strongest model available" —
+in this project's own three-tier vocabulary (see this file's own intro:
+"Sonnet 5 for routine work, Opus for harder problems, Fable for the
+hardest"), that's Fable specifically, a project-owner sequencing decision
+already on record, not something to second-guess. It also holds up on
+the merits, not just deference: renaming individual identifiers is
+mechanical, but splitting a 5.3k-line PlayTest.java without breaking any
+of 600+ scenarios needs holding the whole file's dependency shape in
+mind at once and executing a wide, high-blast-radius refactor without a
+single subtle regression — closer to the kind of broad-context work
+Fable already did this session (the persistence core, the piston
+structure resolver, trial chambers, the warden state machine) than a
+mechanical Opus cleanup. Still don't pick this up as a quick task even
+once unblocked — it's step 3 of a roadmap, do it as one dedicated pass.
 
 Queued per docs/STRATEGY.md §6 step 3 and docs/CONVENTIONS.md §11 — do these
 as ONE dedicated pass, not opportunistically: (1) rename camelCase
