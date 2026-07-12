@@ -1323,6 +1323,33 @@ public final class SelfTest {
                             new int[]{0, 1, -1, 2, -2}));
         }
 
+        // ---- slime size loot gating (type_specific.size predicate) ----
+        {
+            boolean tinyDrops = false;
+            for (int i = 0; i < 30 && !tinyDrops; i++) {
+                tinyDrops = LootTables.entityDrops(EntityType.SLIME, ItemStack.AIR, 1).stream()
+                        .anyMatch(s -> s.material() == Material.SLIME_BALL);
+            }
+            check("slime loot: a size-1 slime drops slimeballs (0-2 roll)", tinyDrops);
+            boolean bigNever = true;
+            for (int i = 0; i < 30; i++) {
+                bigNever &= LootTables.entityDrops(EntityType.SLIME, ItemStack.AIR, 4).isEmpty();
+            }
+            check("slime loot: size>1 slimes drop nothing", bigNever);
+            boolean tinyMagmaNever = true;
+            for (int i = 0; i < 30; i++) {
+                tinyMagmaNever &= LootTables.entityDrops(EntityType.MAGMA_CUBE, ItemStack.AIR, 1)
+                        .stream().noneMatch(s -> s.material() == Material.MAGMA_CREAM);
+            }
+            check("magma loot: a tiny magma cube drops no magma cream", tinyMagmaNever);
+            boolean bigMagma = false;
+            for (int i = 0; i < 80 && !bigMagma; i++) {
+                bigMagma = LootTables.entityDrops(EntityType.MAGMA_CUBE, ItemStack.AIR, 2).stream()
+                        .anyMatch(s -> s.material() == Material.MAGMA_CREAM);
+            }
+            check("magma loot: a size-2 magma cube can drop magma cream", bigMagma);
+        }
+
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
         return REPORT.toString();
     }

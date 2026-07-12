@@ -518,7 +518,9 @@ public final class Combat {
             killer = p;
             weapon = killer.getItemInMainHand();
         }
-        for (ItemStack drop : LootTables.entityDrops(mob.getEntityType(), weapon)) {
+        // slime/magma-cube size feeds the loot size predicate, xpReward and the split
+        Integer slimeSize = mob.getTag(dev.pointofpressure.minecom.mobs.ai.VanillaMobs.SLIME_SIZE);
+        for (ItemStack drop : LootTables.entityDrops(mob.getEntityType(), weapon, slimeSize)) {
             ItemEntity item = new ItemEntity(drop);
             item.setPickupDelay(Duration.ofMillis(500));
             item.setInstance(instance, pos.add(0, 0.5, 0));
@@ -526,8 +528,9 @@ public final class Combat {
         }
         if (killer != null) dropEquipment(mob, instance, pos, weapon);
         boolean baby = mob.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.zombie.ZombieMeta zm && zm.isBaby();
-        int xp = Experience.mobXp(mob.getEntityType(), baby);
+        int xp = slimeSize != null ? slimeSize : Experience.mobXp(mob.getEntityType(), baby);
         if (xp > 0) Experience.orb(instance, pos, xp);
+        dev.pointofpressure.minecom.mobs.ai.VanillaMobs.maybeSplitSlime(mob, instance, pos);
     }
 
     private static final EquipmentSlot[] DEATH_DROP_SLOTS = {

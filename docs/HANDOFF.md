@@ -16,19 +16,39 @@ of what got escalated and why.
 
 ## Open
 
+### Rare (~1/30) unarmored zombie melee damage flake — unassigned
+
+Found 2026-07-12 (Sonnet) while fixing the flake pass below: the trident
+scenario's "melee hit deals ~8 damage" check occasionally measures 1.0
+instead. Reproduced and instrumented directly — the zombie has no equipped
+armor (already stripped defensively, since a DIFFERENT known bug lets
+`maybeEquipArmor` roll gear onto it), isn't a baby, isn't a "leader" zombie
+(max health unboosted so no attribute-scaling path applies), and its armor
+attribute reads a flat 2.0 every time (mathematically nowhere near enough to
+explain an 8->1 reduction on its own). Armor-stripping was applied as a
+defensive measure regardless (it guards a real, different failure mode) but
+does not explain this specific case — root cause still unknown. Rare enough
+(~1/30) that chasing it further wasn't worth it in the same pass; needs
+either a dedicated repro harness (loop the melee check many times with a
+per-run damage-source log) or an instrumented `Combat.damaged` dump the next
+time it's caught live.
+
 ### Random-tick consumers tail — Sonnet/Opus
 
 The engine landed 2026-07-12 (Fable, `blocks/RandomTicks.java`) with eight
-handlers (see AUDIT). Remaining consumers, roughly by size: bamboo growth
-(S — BambooStalkBlock cached in vanilla-src), vine spread (M — VineBlock
-cached, face-property accumulation like resin clumps), grass/mycelium
-bonemeal vegetation features (M — needs placed-feature rolls), fire spread
-(L — its own risk analysis first: griefing semantics + block burn odds),
-and the deliberate crop-growth migration off Farming's scheduled task onto
-vanilla randomTick pacing + the moisture growth-speed formula (M — must
-update the farming/villager playtest scenarios which assume the faster
-approximation, and wants the harness section filter first). Sapling
-migration rides along with crops.
+handlers (see AUDIT). ~~Bamboo growth~~ **done 2026-07-12 (Sonnet)** —
+BambooStalkBlock port (1/3 roll, air+light>=9 gate, 16-block cap with an
+unconditional stage-flip at height 15, leaf-crown cascade), playtest
+coverage added to `scenarioRandomTicks`. Remaining consumers, roughly by
+size: vine spread (M — VineBlock cached, face-property accumulation like
+resin clumps), grass/mycelium bonemeal vegetation features (M — needs
+placed-feature rolls), fire spread (L — its own risk analysis first:
+griefing semantics + block burn odds), and the deliberate crop-growth
+migration off Farming's scheduled task onto vanilla randomTick pacing + the
+moisture growth-speed formula (M — must update the farming/villager
+playtest scenarios which assume the faster approximation; the harness now
+has the section filter this wanted, see the determinism-pass Done entry).
+Sapling migration rides along with crops.
 
 ### Persistence adapter tail — Sonnet
 
@@ -90,9 +110,12 @@ meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
    firework (cosmetic flight), splash/lingering potions (via #1). Still
    blocked on missing base systems: armor stands, brush/archaeology,
    candles, chest-onto-donkey (no chested-horse inventory). AUDIT.md
-   updated. (2026-07-12: honeycomb/waxing UNBLOCKED — the oxidation system
-   landed with the random-tick engine; the waxing interaction itself is
-   still Sonnet-sized work.)
+   updated. ~~Honeycomb/waxing~~ **done 2026-07-12 (Sonnet)** —
+   `blocks/CopperWaxing.java`: honeycomb waxes any unwaxed copper-family
+   block (blocking the oxidation handler for good), an axe strips wax back
+   off or scrapes an unwaxed weathered block back one stage. Axe log-
+   stripping (a separate AxeItem mechanic, no stripped-log system exists)
+   and sign-waxing (no sign system exists) are out of scope — AUDIT.md.
 4. **Update-order semantics** (DESIGN DECISION, not a task yet) — minecom
    batches dirty positions per tick instead of vanilla's depth-first
    neighbor-update recursion, so update-order-dependent contraptions
@@ -121,7 +144,7 @@ same randomized slime/honey structures through real vanilla (region diff,
 same harness pattern as worldgen) and compare final block layouts. Until
 then the reorder path is faithful-by-construction but unverified.
 
-### Flaky villager-breeding playtest scenarios — Sonnet
+### ~~Flaky villager-breeding playtest scenarios~~ — DONE 2026-07-12 (Sonnet)
 
 Observed 2026-07-11 across two consecutive full playtest runs of the same
 jar: run 1 failed 5 villager checks (breeding pair, baby offspring, bread
@@ -156,6 +179,43 @@ While in here: add a **section filter to the harness** (`--playtest redstone`
 runs only matching scenario names). The suite is now 500+ checks with
 real-time waits (~7 min per full run on this box); focused iteration needs
 sub-minute cycles. Trivial change in PlayTest's scenario runner.
+
+**Done 2026-07-12 (Sonnet).** `--playtest <section>` landed first (Main.java
+passes argv[1] through to a new `PlayTest.sectionFilter`, checked before the
+pre-existing `MINECOM_TEST_ONLY` env var so old muscle-memory still works) —
+cut iteration on the affected scenarios from ~7 min to seconds. Fixed by
+determinism, not wider timeouts, per the prescription: villager food economy
+(`scenarioVillagerFood`) now drives `VillagerFood.pickupSweep`/`farmerSweep`
+directly inside the poll loop instead of racing the real 10-/40-tick
+schedulers, and re-teleports the villager/farmer/thrown-item back to a fixed
+spawn point on every poll — root cause was AI wander during the wait, not
+just scheduler timing (confirmed via instrumentation: a villager reproducibly
+12+ blocks from its own dropped bread). Enderman block-interaction
+(`endermanBlockInteraction`, extracted to a public method) is now driven in a
+tight loop for both the 1/20 pickup and 1/2000 placement rolls instead of a
+real-time `waitFor` — the placement roll's old 480s budget was still only
+~4.8x the geometric expectation, a measured ~0.8% false-negative floor no
+timeout width fixes. Fire aspect's ignite window widened 1000ms->3000ms to
+match its sibling burning-damage check. The zombie-unarmored-damage flake
+was a held-item contamination bug (`maybeEquipZombieWeapon`'s 1% roll), fixed
+by stripping the test zombie's main hand before measuring — applied the same
+defensive strip to armor slots in the trident melee check, though that
+uncovered a second, separate, rarer (~1/30) "took 1.0 instead of ~8" flake
+with an unarmored, non-baby, non-leader zombie that armor-stripping does NOT
+explain; logged below as a new Open item rather than guessed at further.
+Trident loyalty-return was investigated with the same "drive it directly"
+technique first (teleporting the returning trident onto the player) but that
+made it CONSISTENTLY fail (0/10) — root cause traced to `Combat.java`'s
+same-shooter collision no-op guard misfiring on the teleport-triggered
+collision event; reverted to the original plain `waitFor` (natural flight
+already completes in ~250ms against a 5000ms budget, so it was never really
+the flake) — not every scenario in this class wants the same fix. The
+villager-breeding sub-test itself turned out to be a genuine, 10/10-
+reproducible test-setup bug, not flakiness: `Villagers.hasSpareBed` requires
+`beds > villagerCount`, and the test only placed 1 bed for 2 villagers;
+fixed by placing 3. All affected sections run clean 10x in a row with the
+new filter; full selftest (210/0) and playtest green after the fix
+(test-logs/playtest_determinism_pass.log, test-logs/selftest_determinism_pass.log).
 
 ### Unification-pass mechanical cleanups — Sonnet (BLOCKED until first pass done)
 
@@ -302,7 +362,21 @@ this as bigger than the rest of that batch; decompile `Silverfish.java`
 (cached in vanilla-src/, read but not implemented) plus whatever block
 class encodes "infested_*" variants before scoping the real size.
 
-### Slime/magma cube split-on-death (+ mob size scaling) — Opus
+### ~~Slime/magma cube split-on-death (+ mob size scaling)~~ — DONE 2026-07-12 (Fable, overnight queue session)
+
+Exactly the shape this entry prescribed: the size system first
+(`VanillaMobs.slimeLike` — setSize formulas HP size²/speed 0.2+0.1·size/
+attack size (+2 magma)/armor 3·size, scaled hitbox + SlimeMeta, the
+finalizeSpawn 1<<rand(3) roll with the 0.5×specialMultiplier bump through
+both factories and every spawn path), then split-on-death nearly for free
+(`maybeSplitSlime` from Combat.death: 2+rand(3) half-size children,
+quadrant offsets, size-1 terminal). Loot wired through the real
+type_specific.size predicates (new LootTables entityDrops overload +
+Combat.death size tag), XP = size. Playtest scenario at z=265 runs the
+4→2→1→nothing chain + the tiny-slime/tiny-magma damage asymmetry; selftest
+covers the loot gating. Simplifications in AUDIT.md. Original scoping below.
+
+### Slime/magma cube split-on-death (+ mob size scaling) — Opus (original scoping)
 
 AUDIT.md asked to "verify Slime handling — magma cube too"; investigated
 2026-07-11 and it's a real gap, but bigger than a missing death hook.

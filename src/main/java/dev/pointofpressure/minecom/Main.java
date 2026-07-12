@@ -31,7 +31,7 @@ public final class Main {
             System.exit(0);
         }
         if (args.length > 0 && args[0].equals("--playtest")) {
-            System.exit(PlayTest.run());
+            System.exit(PlayTest.run(args.length > 1 ? args[1] : null));
         }
 
         MinecraftServer server = MinecraftServer.init();

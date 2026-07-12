@@ -574,34 +574,13 @@ public final class VanillaMobs {
         }
     }
 
-    /** Magma cube: slime hop movement toward targets, contact damage. */
+    /** Magma cube: sized like slimes (MagmaCube.setSize adds armor 3*size). */
     public static EntityCreature magmaCube(Instance instance, Pos pos) {
-        EntityCreature mob = new EntityCreature(EntityType.MAGMA_CUBE);
-        VBrain brain = brain(mob, 0.2, 16, 6, 16, 3);
-        brain.addTargetGoal(1, new Goals.NearestAttackablePlayer(brain, false));
-        brain.addTargetGoal(2, new Goals.HurtByTarget(brain, false));
-        mob.scheduler().buildTask(() -> {
-            if (mob.isDead() || mob.getInstance() == null || !mob.isOnGround()) return;
-            if (brain.random.nextInt(20) != 0) return;
-            LivingEntity target = brain.target;
-            Vec dir;
-            if (target != null && !target.isDead()) {
-                brain.lookAt(target);
-                dir = target.getPosition().sub(mob.getPosition()).asVec();
-                if (dir.length() < 0.1) dir = new Vec(0, 0, 0);
-                else dir = dir.normalize();
-                // contact damage
-                if (mob.getPosition().distanceSquared(target.getPosition()) < 2.5) {
-                    mob.attack(target, false);
-                }
-            } else {
-                double angle = brain.random.nextDouble() * Math.PI * 2;
-                dir = new Vec(Math.cos(angle), 0, Math.sin(angle));
-            }
-            mob.setVelocity(new Vec(dir.x() * 4, 8.5, dir.z() * 4));
-        }).repeat(TaskSchedule.tick(1)).schedule();
-        mob.setInstance(instance, pos);
-        return mob;
+        return magmaCube(instance, pos, rollSlimeSize(instance, pos));
+    }
+
+    public static EntityCreature magmaCube(Instance instance, Pos pos, int size) {
+        return slimeLike(EntityType.MAGMA_CUBE, instance, pos, size);
     }
 
     // ---------------------------------------------------------------- hostile variants
@@ -1386,40 +1365,54 @@ public final class VanillaMobs {
                 mob.damage(DamageType.DROWN, 1f);
                 waterDamageCooldown[0] = 20;
             }
-            var rng = java.util.concurrent.ThreadLocalRandom.current();
-            var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) mob.getEntityMeta();
-            Block carried = meta.getCarriedBlock();
-            Pos p = selfPos;
-            if (carried == null || carried.isAir()) {
-                if (rng.nextInt(20) == 0) {
-                    int tx = (int) Math.floor(p.x() - 2 + rng.nextDouble() * 4);
-                    int ty = (int) Math.floor(p.y() + rng.nextDouble() * 3);
-                    int tz = (int) Math.floor(p.z() - 2 + rng.nextDouble() * 4);
-                    if (in.isChunkLoaded(tx >> 4, tz >> 4)) {
-                        Block b = in.getBlock(tx, ty, tz);
-                        if (!b.isAir() && dev.pointofpressure.minecom.data.VanillaData
-                                .blockTag("enderman_holdable").contains(b.key().asString())) {
-                            in.setBlock(tx, ty, tz, Block.AIR);
-                            meta.setCarriedBlock(b);
-                        }
-                    }
-                }
-            } else if (rng.nextInt(2000) == 0) {
-                int tx = (int) Math.floor(p.x() - 1 + rng.nextDouble() * 2);
-                int ty = (int) Math.floor(p.y() + rng.nextDouble() * 2);
-                int tz = (int) Math.floor(p.z() - 1 + rng.nextDouble() * 2);
-                if (in.isChunkLoaded(tx >> 4, tz >> 4)) {
-                    Block target = in.getBlock(tx, ty, tz);
-                    Block below = in.getBlock(tx, ty - 1, tz);
-                    if (target.isAir() && !below.isAir() && below.isSolid() && !below.key().value().equals("bedrock")) {
-                        in.setBlock(tx, ty, tz, carried);
-                        meta.setCarriedBlock(Block.AIR);
-                    }
-                }
-            }
+            endermanBlockInteraction(mob);
         }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);
         return mob;
+    }
+
+    /**
+     * EndermanTakeBlockGoal/EndermanLeaveBlockGoal per-tick roll (decompile-verified: 1/20
+     * chance to take a nearby ENDERMAN_HOLDABLE block when not carrying one, 1/2000 to place
+     * the carried one back down). Public so tests can drive many rolls back-to-back in a tight
+     * loop instead of racing real wall-clock ticks against a low-probability event (HANDOFF's
+     * flaky-scenarios determinism pass) — a plain method call, unlike tick()'s real-time sleep,
+     * so thousands of rolls cost microseconds and the enderman's position never drifts.
+     */
+    public static void endermanBlockInteraction(EntityCreature mob) {
+        Instance in = mob.getInstance();
+        if (in == null) return;
+        var rng = java.util.concurrent.ThreadLocalRandom.current();
+        var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) mob.getEntityMeta();
+        Block carried = meta.getCarriedBlock();
+        Pos p = mob.getPosition();
+        if (carried == null || carried.isAir()) {
+            if (rng.nextInt(20) == 0) {
+                int tx = (int) Math.floor(p.x() - 2 + rng.nextDouble() * 4);
+                int ty = (int) Math.floor(p.y() + rng.nextDouble() * 3);
+                int tz = (int) Math.floor(p.z() - 2 + rng.nextDouble() * 4);
+                if (in.isChunkLoaded(tx >> 4, tz >> 4)) {
+                    Block b = in.getBlock(tx, ty, tz);
+                    if (!b.isAir() && dev.pointofpressure.minecom.data.VanillaData
+                            .blockTag("enderman_holdable").contains(b.key().asString())) {
+                        in.setBlock(tx, ty, tz, Block.AIR);
+                        meta.setCarriedBlock(b);
+                    }
+                }
+            }
+        } else if (rng.nextInt(2000) == 0) {
+            int tx = (int) Math.floor(p.x() - 1 + rng.nextDouble() * 2);
+            int ty = (int) Math.floor(p.y() + rng.nextDouble() * 2);
+            int tz = (int) Math.floor(p.z() - 1 + rng.nextDouble() * 2);
+            if (in.isChunkLoaded(tx >> 4, tz >> 4)) {
+                Block target = in.getBlock(tx, ty, tz);
+                Block below = in.getBlock(tx, ty - 1, tz);
+                if (target.isAir() && !below.isAir() && below.isSolid() && !below.key().value().equals("bedrock")) {
+                    in.setBlock(tx, ty, tz, carried);
+                    meta.setCarriedBlock(Block.AIR);
+                }
+            }
+        }
     }
 
     /**
@@ -1497,30 +1490,121 @@ public final class VanillaMobs {
         @Override public void stop() { brain.setTarget(null); }
     }
 
-    /** Overworld slime: Slime.registerGoals bounce + touch damage (small size, 4 HP). */
+    /** The mob's slime size (vanilla entityData ID_SIZE); read by Combat.death for loot/XP/split. */
+    public static final net.minestom.server.tag.Tag<Integer> SLIME_SIZE =
+            net.minestom.server.tag.Tag.Integer("minecom:slime_size");
+
+    /** Overworld slime: size rolled per Slime.finalizeSpawn (see rollSlimeSize). */
     public static EntityCreature slime(Instance instance, Pos pos) {
-        EntityCreature mob = new EntityCreature(EntityType.SLIME);
-        VBrain brain = brain(mob, 0.2, 16, 2, 4, 0);
+        return slime(instance, pos, rollSlimeSize(instance, pos));
+    }
+
+    public static EntityCreature slime(Instance instance, Pos pos, int size) {
+        return slimeLike(EntityType.SLIME, instance, pos, size);
+    }
+
+    /**
+     * Slime.finalizeSpawn's size roll: tier = rand(3), bumped one tier with
+     * probability 0.5 x regional special multiplier (so Hard/late worlds skew
+     * large), size = 1 << tier — always 1, 2 or 4. Applies to every spawn path
+     * without explicit size (natural, /summon), matching vanilla.
+     */
+    static int rollSlimeSize(Instance instance, Pos pos) {
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        int tier = rng.nextInt(3);
+        if (tier < 2 && rng.nextFloat()
+                < 0.5f * dev.pointofpressure.minecom.Difficulty.specialMultiplierAt(instance, pos)) {
+            tier++;
+        }
+        return 1 << tier;
+    }
+
+    /**
+     * Shared slime/magma-cube body, ported from decompiled Slime/MagmaCube:
+     * setSize attributes (HP size^2, speed 0.2+0.1*size, attack size — magma
+     * folds MagmaCube.getAttackDamage's +2 into the attribute, armor 3*size),
+     * 0.52*size cube hitbox + SlimeMeta for the client, hop movement on
+     * vanilla's 10+rand(20) jump delay (x4 for magma cubes, /3 while chasing),
+     * and touch damage on a 20gt cadence (approximates the victim-side
+     * hurt-immunity window this project doesn't model) gated by isDealsDamage:
+     * a tiny slime is harmless, a tiny magma cube still burns. Split-on-death
+     * runs from Combat.death via maybeSplitSlime. Not modeled (AUDIT.md):
+     * size-scaled magma jump height, squish/landing particles, slime-chunk
+     * seeding and the swamp surface-spawn chance.
+     */
+    private static EntityCreature slimeLike(EntityType type, Instance instance, Pos pos, int size) {
+        boolean magma = type == EntityType.MAGMA_CUBE;
+        int clamped = Math.max(1, Math.min(127, size)); // Slime.setSize's MIN_SIZE..MAX_SIZE clamp
+        EntityCreature mob = new EntityCreature(type);
+        VBrain brain = brain(mob, 0.2 + 0.1 * clamped, 16,
+                magma ? clamped + 2 : clamped, clamped * clamped, magma ? clamped * 3 : 0);
+        mob.setTag(SLIME_SIZE, clamped);
+        if (mob.getEntityMeta() instanceof net.minestom.server.entity.metadata.other.SlimeMeta meta) {
+            meta.setSize(clamped);
+        }
+        mob.setBoundingBox(0.52 * clamped, 0.52 * clamped, 0.52 * clamped);
         brain.addTargetGoal(1, new Goals.NearestAttackablePlayer(brain, false));
         brain.addTargetGoal(2, new Goals.HurtByTarget(brain, false));
+        int[] jumpIn = {0};
+        long[] meleeReadyAt = {0};
+        long[] age = {0};
         mob.scheduler().buildTask(() -> {
-            if (mob.isDead() || mob.getInstance() == null || !mob.isOnGround()) return;
-            if (brain.random.nextInt(20) != 0) return;
+            if (mob.isDead() || mob.getInstance() == null) return;
+            age[0]++;
             LivingEntity target = brain.target;
+            boolean chasing = target != null && !target.isDead();
+            // touch damage whenever the (size-scaled) contact range holds, rate-limited
+            if (chasing && (magma || clamped > 1) && age[0] >= meleeReadyAt[0]) {
+                double reach = 0.26 * clamped + 0.8
+                        + target.getEntityType().registry().width() / 2;
+                if (mob.getPosition().distanceSquared(target.getPosition()) < reach * reach) {
+                    meleeReadyAt[0] = age[0] + 20;
+                    mob.attack(target, false);
+                }
+            }
+            if (!mob.isOnGround() || --jumpIn[0] > 0) return;
+            int delay = 10 + brain.random.nextInt(20); // Slime.getJumpDelay
+            if (magma) delay *= 4;                     // MagmaCube.getJumpDelay
             Vec dir;
-            if (target != null && !target.isDead()) {
+            if (chasing) {
+                delay /= 3;                            // SlimeMoveControl aggressive speedup
                 brain.lookAt(target);
                 dir = target.getPosition().sub(mob.getPosition()).asVec();
                 dir = dir.length() < 0.1 ? new Vec(0, 0, 0) : dir.normalize();
-                if (mob.getPosition().distanceSquared(target.getPosition()) < 2.5) mob.attack(target, false);
             } else {
                 double angle = brain.random.nextDouble() * Math.PI * 2;
                 dir = new Vec(Math.cos(angle), 0, Math.sin(angle));
             }
-            mob.setVelocity(new Vec(dir.x() * 3, 7.0, dir.z() * 3));
+            jumpIn[0] = delay;
+            mob.setVelocity(new Vec(dir.x() * (magma ? 4 : 3), magma ? 8.5 : 7.0,
+                    dir.z() * (magma ? 4 : 3)));
         }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);
         return mob;
+    }
+
+    /**
+     * Slime.remove: a dying size>1 slime/magma cube spawns 2+rand(3) children of
+     * half its size on the parent's 2x2 quadrant grid (offsets +-parentWidth/4,
+     * +0.5 y, random yaw). Size-1 mobs die without splitting — the recursion's
+     * base case. Called from Combat.death.
+     */
+    public static void maybeSplitSlime(EntityCreature mob, Instance instance, Pos pos) {
+        EntityType type = mob.getEntityType();
+        if (type != EntityType.SLIME && type != EntityType.MAGMA_CUBE) return;
+        Integer size = mob.getTag(SLIME_SIZE);
+        if (size == null || size <= 1) return;
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        int half = size / 2;
+        double offset = 0.52 * size / 2.0; // parent width / 2, pre-split
+        int count = 2 + rng.nextInt(3);
+        for (int i = 0; i < count; i++) {
+            double xd = (i % 2 - 0.5) * offset;
+            double zd = (i / 2 - 0.5) * offset;
+            Pos at = new Pos(pos.x() + xd, pos.y() + 0.5, pos.z() + zd,
+                    rng.nextFloat() * 360f, 0f);
+            slimeLike(type, instance, at, half);
+        }
     }
 
     // ---------------------------------------------------------------- animals

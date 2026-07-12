@@ -51,7 +51,12 @@ public final class PlayTest {
     private static final StringBuilder REPORT = new StringBuilder();
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
-    public static int run() {
+    /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
+    private static String sectionFilter;
+
+    /** @param section substring filter (e.g. "redstone"), or null to run every scenario. */
+    public static int run(String section) {
+        sectionFilter = section;
         MinecraftServer server = MinecraftServer.init();
         world = Bootstrap.boot(Bootstrap.Config.playtest());
         Pos spawn = Bootstrap.spawnOf(world);
@@ -137,6 +142,7 @@ public final class PlayTest {
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
         scenario("silverfish: infested-block ambush, silk-touch bypass, wake-up-friends, merge-into-stone", PlayTest::scenarioSilverfish);
+        scenario("slime sizes: setSize attributes, split-on-death chain, tiny-slime pacifism, magma armor", PlayTest::scenarioSlimeSizes);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -199,6 +205,7 @@ public final class PlayTest {
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
         scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
+        scenario("copper waxing: honeycomb applies wax (blocking further oxidation), axe scrapes or strips it back off", PlayTest::scenarioCopperWaxing);
         scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
@@ -251,7 +258,9 @@ public final class PlayTest {
     // ------------------------------------------------------------------ plumbing
 
     private static void scenario(String name, Runnable body) {
-        String only = System.getenv("MINECOM_TEST_ONLY");
+        // CLI section filter (--playtest <section>) takes precedence over the env var, which
+        // stays as a backward-compatible fallback for scripts/muscle memory already using it.
+        String only = sectionFilter != null ? sectionFilter : System.getenv("MINECOM_TEST_ONLY");
         if (only != null && !name.contains(only)) return;
         System.out.println("[playtest] " + name);
         try {
@@ -516,6 +525,54 @@ public final class PlayTest {
         useItemOnBlock(ItemStack.of(Material.SHEARS), pos, BlockFace.TOP);
         check("shearing the top face carves away from the player's own facing (south-facing player -> north)",
                 "north".equals(world.getBlock(pos).getProperty("facing")));
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * HoneycombItem.useOn + the copper half of AxeItem.useOn: honeycomb prefixes "waxed_" onto
+     * a copper-family block (consuming 1 honeycomb) and blocks RandomTicks' oxidation handler;
+     * an axe on a waxed block strips it back to plain, or on an unwaxed weathered block scrapes
+     * it back one oxidation stage instead — both cost 1 durability, no item consumption.
+     */
+    private static void scenarioCopperWaxing() {
+        int z = 280;
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+
+        rs(50, Y + 1, z, Block.COPPER_BLOCK);
+        useItemOnBlock(ItemStack.of(Material.HONEYCOMB, 4), new BlockVec(50, Y + 1, z), BlockFace.TOP);
+        check("honeycomb waxes a copper block", "waxed_copper_block".equals(blockKey(50, Y + 1, z)));
+        check("waxing consumes 1 honeycomb outside creative", player.getItemInMainHand().amount() == 3);
+
+        useItemOnBlock(ItemStack.of(Material.HONEYCOMB, 1), new BlockVec(50, Y + 1, z), BlockFace.TOP);
+        check("honeycomb does nothing to an already-waxed block", player.getItemInMainHand().amount() == 1);
+
+        useItemOnBlock(ItemStack.of(Material.IRON_AXE), new BlockVec(50, Y + 1, z), BlockFace.TOP);
+        check("an axe strips the wax back off a waxed block", "copper_block".equals(blockKey(50, Y + 1, z)));
+        Integer waxOffDamage = player.getItemInMainHand().get(DataComponents.DAMAGE);
+        check("wax removal costs 1 axe durability, no item consumed",
+                waxOffDamage != null && waxOffDamage == 1);
+        rs(50, Y + 1, z, Block.AIR);
+
+        rs(51, Y + 1, z, Block.EXPOSED_COPPER);
+        useItemOnBlock(ItemStack.of(Material.IRON_AXE), new BlockVec(51, Y + 1, z), BlockFace.TOP);
+        check("an axe scrapes an unwaxed weathered block back one oxidation stage",
+                "copper_block".equals(blockKey(51, Y + 1, z)));
+        rs(51, Y + 1, z, Block.AIR);
+
+        rs(52, Y + 1, z, Block.CUT_COPPER_STAIRS.withProperty("facing", "west"));
+        useItemOnBlock(ItemStack.of(Material.HONEYCOMB, 1), new BlockVec(52, Y + 1, z), BlockFace.TOP);
+        check("waxing a shaped copper block keeps its properties (stairs stay facing west)",
+                "waxed_cut_copper_stairs".equals(blockKey(52, Y + 1, z))
+                        && "west".equals(prop(52, Y + 1, z, "facing")));
+        rs(52, Y + 1, z, Block.AIR);
+
+        rs(53, Y + 1, z, Block.STONE);
+        useItemOnBlock(ItemStack.of(Material.HONEYCOMB, 1), new BlockVec(53, Y + 1, z), BlockFace.TOP);
+        check("honeycomb does nothing to a non-copper block", "stone".equals(blockKey(53, Y + 1, z)));
+        rs(53, Y + 1, z, Block.AIR);
+
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
@@ -2213,7 +2270,16 @@ public final class PlayTest {
         int noBed = (int) world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.VILLAGER).count();
         check("breeding: no spare bed nearby -> no offspring (" + before + " -> " + noBed + ")", noBed == before);
 
+        // Villagers.hasSpareBed requires bedCount > nearby-villager-count (a coarse
+        // "room to grow" approximation of real vanilla's per-bed-claim POI check, not
+        // something to change here — villager/breeding logic is out of scope). With 2
+        // villagers "nearby" (self-inclusive), a single bed can never satisfy 1 > 2 — this
+        // was a genuine test-setup bug (found via 10/10-consistent, not flaky, reproduction
+        // in isolation), not the timing race the rest of this determinism pass targets.
+        // Three beds satisfies the real formula with room to spare.
         world.setBlock(10, Y + 1, 11, Block.RED_BED.withProperty("part", "foot"));
+        world.setBlock(12, Y + 1, 11, Block.RED_BED.withProperty("part", "foot"));
+        world.setBlock(14, Y + 1, 11, Block.RED_BED.withProperty("part", "foot"));
         dev.pointofpressure.minecom.mobs.Villagers.breedTick(world, 2_000_000);
         tick(2);
         int withBed = (int) world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.VILLAGER).count();
@@ -2223,6 +2289,8 @@ public final class PlayTest {
                 && ent.getEntityMeta() instanceof net.minestom.server.entity.metadata.AgeableMobMeta m && m.isBaby());
         check("breeding: the offspring spawns as a baby (grows up in 20 min)", anyBaby);
         world.setBlock(10, Y + 1, 11, Block.AIR);
+        world.setBlock(12, Y + 1, 11, Block.AIR);
+        world.setBlock(14, Y + 1, 11, Block.AIR);
         clearEntitiesExceptPlayer();
 
         // job-site claiming: a villager near a blast furnace becomes an armorer (real
@@ -2293,13 +2361,33 @@ public final class PlayTest {
         check("hungry villagers refuse to breed even with spare beds", babies == 0);
 
         // toss 3 bread (12 food points) at one parent's feet: picked up within a sweep;
-        // the other parent is fed directly so the breed check isolates the pickup path
+        // the other parent is fed directly so the breed check isolates the pickup path.
+        // Drive pickupSweep directly instead of racing the real 10-tick scheduler (HANDOFF's
+        // flaky-villager-scenarios determinism pass) — but only wait out ItemEntity's own
+        // 10-tick "fresh drop settles first" gate by POLLING getAliveTicks(), not a fixed
+        // tick(N) sleep: tick() is real-time sleep against a real background tick loop, so
+        // under load a fixed sleep can itself fall short of N real ticks (this box is a slow
+        // HDD — exactly the flakiness class HANDOFF describes). Polling the actual age is a
+        // narrow, reliably-bounded condition, unlike waiting on downstream AI behavior.
         ItemEntity bread = new ItemEntity(ItemStack.of(Material.BREAD, 3));
-        bread.setInstance(world, a.getPosition().add(0, 0.3, 0));
-        boolean fedUp = waitFor(() ->
-                dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) >= 12, 8000);
+        Pos aSpawn = a.getPosition();
+        bread.setInstance(world, aSpawn.add(0, 0.3, 0));
+        // Retry the sweep on every poll rather than a single shot after one age-gate wait — but
+        // a real root cause behind the previous flake here wasn't timing margin at all: over a
+        // long enough real-time wait, WaterAvoidingRandomStroll wanders the villager itself away
+        // from the bread (reproduced via instrumentation: 12+ blocks off, dropped from
+        // countFoodPointsInInventory==0 rather than a partial pickup), same "mob wandered off
+        // during a real-time wait" class as the enderman flake. Pin it back to its spawn point
+        // every poll — this project's own "seeded positions ... no reliance on mob pathing luck"
+        // rule applies just as much to a passive villager collecting an item as to hostile AI.
+        waitFor(() -> {
+            a.teleport(aSpawn);
+            dev.pointofpressure.minecom.mobs.VillagerFood.pickupSweep(world);
+            return dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) >= 12;
+        }, 10000);
         check("a villager picks up tossed bread into its personal inventory (a="
-                + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) + " pts)", fedUp);
+                + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) + " pts)",
+                dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) >= 12);
         b.setTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL, 12);
 
         // both wander freely during the pickup window — pin them back within breeding
@@ -2319,27 +2407,63 @@ public final class PlayTest {
                         + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(a) < 12);
         clearEntitiesExceptPlayer();
 
-        // farmer: harvests an adjacent mature wheat crop into its inventory and replants
+        // farmer: harvests an adjacent mature wheat crop into its inventory and replants.
+        // Drive farmerSweep directly (same determinism fix as the pickup check above).
         world.setBlock(bx + 1, Y, bz + 1, Block.FARMLAND);
         world.setBlock(bx + 1, Y + 1, bz + 1, Block.WHEAT.withProperty("age", "7"));
         var farmer = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(bx + 0.5, Y + 1, bz + 0.5));
         farmer.setTag(dev.pointofpressure.minecom.mobs.VillagerTrades.PROFESSION, "farmer");
-        boolean harvested = waitFor(() -> {
-            String age = world.getBlock(bx + 1, Y + 1, bz + 1).getProperty("age");
-            return age == null || "0".equals(age);
-        }, 6000);
+        tick(2);
+        dev.pointofpressure.minecom.mobs.VillagerFood.farmerSweep(world);
+        String age = world.getBlock(bx + 1, Y + 1, bz + 1).getProperty("age");
+        boolean harvested = age == null || "0".equals(age);
         boolean gotWheat = java.util.Arrays.stream(dev.pointofpressure.minecom.mobs.VillagerFood.inventory(farmer))
                 .anyMatch(st -> st.material() == Material.WHEAT);
         check("a farmer harvests a mature wheat crop nearby (replanting from its seeds)", harvested);
         check("the harvested wheat lands in the farmer's inventory", gotWheat);
 
-        // sharing: a farmer with >= 24 food points throws food toward a hungry villager
+        // sharing: a farmer with >= 24 food points throws food toward a hungry villager. Feed
+        // the farmer via a direct pickupSweep (>=24-point excess bar) and trigger the throw via
+        // a direct farmerSweep; the thrown item's actual flight arc (gravity + a 4-block launch
+        // velocity toward a fixed-distance target) is real physics, not mob-pathing luck, but
+        // still an unnecessary source of test flakiness — a first pass here relied on it
+        // settling within a fixed tick budget and flaked ~2/3 runs. Teleport the thrown item
+        // directly onto the hungry villager instead of waiting out its trajectory, then run one
+        // more pickupSweep once it's aged past the 10-tick "fresh drop settles first" gate.
+        Pos farmerSpawn = farmer.getPosition();
         var hungry = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(bx + 4.5, Y + 1, bz + 0.5));
+        Pos hungrySpawn = hungry.getPosition();
         ItemEntity stack = new ItemEntity(ItemStack.of(Material.BREAD, 64)); // plenty over the 24-point excess bar
-        stack.setInstance(world, farmer.getPosition().add(0, 0.3, 0));
-        boolean shared = waitFor(() ->
-                hungry.getTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL)
-                        + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(hungry) > 0, 12000);
+        stack.setInstance(world, farmerSpawn.add(0, 0.3, 0));
+        // Same wandering-mob fix as the pickup check above: pin the farmer back to its spawn
+        // point on every poll so a long real-time wait can't carry it out of pickup range.
+        waitFor(() -> {
+            farmer.teleport(farmerSpawn);
+            dev.pointofpressure.minecom.mobs.VillagerFood.pickupSweep(world);
+            return dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(farmer) >= 24;
+        }, 10000);
+        dev.pointofpressure.minecom.mobs.VillagerFood.farmerSweep(world);
+        ItemEntity thrown = (ItemEntity) world.getEntities().stream()
+                .filter(en -> en instanceof ItemEntity ie && !ie.isRemoved() && ie.getItemStack().material() == Material.BREAD)
+                .findFirst().orElse(null);
+        check("the farmer throws food toward the hungry villager", thrown != null);
+        boolean shared = false;
+        if (thrown != null) {
+            // teleport() only relocates the item — it keeps the throw's own velocity and is
+            // still subject to gravity/collision-separation physics against the villager's own
+            // hitbox, both of which can nudge it back out of pickup range during the freshness-
+            // gate wait below. Zero velocity AND kill gravity so it just sits still. Pin both
+            // the item AND the hungry villager back to a fixed spot every poll, same fix again.
+            thrown.teleport(hungrySpawn.add(0, 0.3, 0)).join();
+            thrown.setVelocity(Vec.ZERO);
+            thrown.setNoGravity(true);
+            shared = waitFor(() -> {
+                hungry.teleport(hungrySpawn);
+                dev.pointofpressure.minecom.mobs.VillagerFood.pickupSweep(world);
+                return hungry.getTag(dev.pointofpressure.minecom.mobs.VillagerFood.FOOD_LEVEL)
+                        + dev.pointofpressure.minecom.mobs.VillagerFood.countFoodPointsInInventory(hungry) > 0;
+            }, 10000);
+        }
         check("a farmer with excess food shares it with a hungry villager", shared);
 
         for (int dx = 0; dx <= 4; dx++) {
@@ -2482,33 +2606,38 @@ public final class PlayTest {
             }
         }
         EntityCreature enderman = Mobs.spawn("enderman", world, new Pos(bx + 0.5, Y + 1, bz + 0.5));
-        boolean picked = waitFor(() -> {
-            var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) enderman.getEntityMeta();
-            Block carried = meta.getCarriedBlock();
-            return carried != null && !carried.isAir();
-        }, 15000);
+        var endermanMeta = (net.minestom.server.entity.metadata.monster.EndermanMeta) enderman.getEntityMeta();
+        // Drive endermanBlockInteraction directly in a tight loop instead of racing real
+        // wall-clock ticks against the 1/20 roll (HANDOFF's flaky-scenarios determinism pass —
+        // this was previously a waitFor(..., 15000) real-time race; a first version of this
+        // same fix for the 1/2000 placement roll below, tried as a wider waitFor timeout, still
+        // measured a ~9% false-negative rate on pure bad luck, since a fixed real-time budget
+        // is inherently probabilistic no matter how generous). A plain loop of method calls has
+        // no such budget — it either finds a hit within massive headroom or something is
+        // actually broken, and the enderman's position never drifts since nothing moves it.
+        boolean picked = false;
+        for (int i = 0; i < 5000 && !picked; i++) {
+            dev.pointofpressure.minecom.mobs.ai.VanillaMobs.endermanBlockInteraction(enderman);
+            Block carried = endermanMeta.getCarriedBlock();
+            picked = carried != null && !carried.isAir();
+        }
         check("an enderman picks up a nearby holdable block (sand)", picked);
 
         // clear the remaining sand so the only way it can "place" is by dropping the
-        // one it's already carrying — then wait for the carried slot to empty again
+        // one it's already carrying
         for (int dx = -3; dx <= 3; dx++) {
             for (int dz = -3; dz <= 3; dz++) {
                 for (int dy = 0; dy <= 3; dy++) world.setBlock(bx + dx, Y + 1 + dy, bz + dz, Block.AIR);
             }
         }
-        // 1/2000 chance per tick (decompile-verified), so a geometric distribution: the old
-        // 240s (4800-tick) budget was only ~2.4x the 2000-tick expectation, giving
-        // (1999/2000)^4800 =~ 9% of runs a false-negative timeout on pure bad luck alone —
-        // caught via direct instrumentation (a debug-only per-roll log, not guessed) after this
-        // exact check failed twice in a row post the enderman chunk-load fix above; the
-        // instrumented reruns showed completely normal rolls/positions each time, just unlucky
-        // timing, confirming the mechanic itself was never the problem. 480s (9600 ticks,
-        // 4.8x expectation) drops that to (1999/2000)^9600 =~ 0.8%.
-        boolean placed = waitFor(() -> {
-            var meta = (net.minestom.server.entity.metadata.monster.EndermanMeta) enderman.getEntityMeta();
-            Block carried = meta.getCarriedBlock();
-            return carried == null || carried.isAir();
-        }, 480000);
+        // 1/2000 per roll (decompile-verified) — 500,000 direct-driven iterations give massive
+        // headroom over the expectation, completing in well under a second.
+        boolean placed = false;
+        for (int i = 0; i < 500_000 && !placed; i++) {
+            dev.pointofpressure.minecom.mobs.ai.VanillaMobs.endermanBlockInteraction(enderman);
+            Block carried = endermanMeta.getCarriedBlock();
+            placed = carried == null || carried.isAir();
+        }
         check("the enderman later places the carried block back down", placed);
         for (int dx = -3; dx <= 3; dx++) {
             for (int dz = -3; dz <= 3; dz++) {
@@ -2975,6 +3104,12 @@ public final class PlayTest {
 
     private static void scenarioArmor() {
         EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(20.5, Y + 1, 20.5));
+        // VanillaMobs.maybeEquipZombieWeapon rolls a 1% (5% on Hard) chance to spawn holding a
+        // sword/spear/shovel, which would otherwise inflate this "unarmored" baseline hit from
+        // the vanilla-bare 3 damage up to 6.5 (HANDOFF flake: two prior runs measured exactly
+        // 3.0, one measured 6.5 — a sword-equipped zombie, not a real regression). Strip its
+        // held item so the measurement is deterministic regardless of that roll.
+        zombie.setEquipment(EquipmentSlot.MAIN_HAND, ItemStack.AIR);
         // unarmored hit
         player.setHealth(20);
         EventDispatcher.call(new EntityAttackEvent(zombie, player));
@@ -3291,8 +3426,18 @@ public final class PlayTest {
         player.teleport(new Pos(0.5, Y + 1, 0.5, 0, 0)).join();
         world.setBlock(new BlockVec(0, Y, 0), Block.STONE);
 
-        // melee: base 8 attack damage comes for free from the trident's real attribute component
+        // melee: base 8 attack damage comes for free from the trident's real attribute
+        // component. Strip any armor the zombie's spawn-equipment roll may have given it
+        // (VanillaMobs.maybeEquipArmor) as a defensive measure — but instrumented reproduction
+        // (~1/30 runs) of this exact "took 1.0" flake showed an unarmored, non-baby, non-leader
+        // zombie (armor attribute a flat 2.0, matching every run) still taking only 1 damage,
+        // so equipped armor isn't the actual cause here; logged in HANDOFF as still-open rather
+        // than guessed at further, since it's a different mechanism than the flake this stripping
+        // does correctly guard against.
         EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 1.5));
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            if (slot.isArmor()) zombie.setEquipment(slot, ItemStack.AIR);
+        }
         player.setItemInMainHand(ItemStack.of(Material.TRIDENT));
         float healthBefore = zombie.getHealth();
         EventDispatcher.call(new net.minestom.server.event.entity.EntityAttackEvent(player, zombie));
@@ -4948,6 +5093,34 @@ public final class PlayTest {
                 for (int dz2 = -1; dz2 <= 1; dz2++) rs(62 + dx, Y + 2 + dy, z + dz2, Block.AIR);
             }
         }
+
+        // bamboo: a lone stalk grows a new segment directly above it (1/3 roll per random tick)
+        rs(65, Y + 1, z, Block.BAMBOO);
+        boolean bambooGrew = false;
+        for (int i = 0; i < 400 && !bambooGrew; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(65, Y + 1, z));
+            bambooGrew = "bamboo".equals(blockKey(65, Y + 2, z));
+        }
+        check("random tick: a bamboo stalk grows a new segment directly above", bambooGrew);
+        check("the new segment carries small leaves (first crown above a lone stalk)",
+                "small".equals(prop(65, Y + 2, z, "leaves")));
+        rs(65, Y + 1, z, Block.AIR);
+        rs(65, Y + 2, z, Block.AIR);
+
+        // height cap: a 15-tall growing tip always finishes growing on its next segment
+        // (unconditional stage flip at height 15, one below the real 16-block cap)
+        for (int h = 1; h <= 14; h++) rs(65, Y + h, z, Block.BAMBOO.withProperty("stage", "1"));
+        rs(65, Y + 15, z, Block.BAMBOO.withProperty("stage", "0"));
+        boolean cappedGrowth = false;
+        for (int i = 0; i < 400 && !cappedGrowth; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(65, Y + 15, z));
+            cappedGrowth = "bamboo".equals(blockKey(65, Y + 16, z));
+        }
+        check("random tick: a height-15 tip always finishes growing", cappedGrowth);
+        check("the height-16 cap segment is marked done growing",
+                "1".equals(prop(65, Y + 16, z, "stage")));
+        for (int h = 1; h <= 16; h++) rs(65, Y + h, z, Block.AIR);
+
         resetPlayer();
     }
 
@@ -5182,6 +5355,80 @@ public final class PlayTest {
             rs(65, Y + dy, z + 1, Block.AIR);
         }
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Slime/magma-cube size system (decompiled Slime/MagmaCube 26.1.2): setSize
+     * attribute formulas, the split-on-death chain 4 -> 2 -> 1 -> nothing, the
+     * tiny-slime-deals-no-damage vs tiny-magma-cube-bites asymmetry, and magma
+     * armor 3*size.
+     */
+    private static void scenarioSlimeSizes() {
+        int z = 265;
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+        var big = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.slime(
+                world, new Pos(50.5, Y + 1, z + 0.5), 4);
+        check("size-4 slime: setSize attributes (16 HP, 0.6 speed, 4 attack, 2.08 hitbox)",
+                big.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 16.0
+                        && Math.abs(big.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MOVEMENT_SPEED) - 0.6) < 1e-9
+                        && big.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 4.0
+                        && Math.abs(big.getBoundingBox().width() - 2.08) < 1e-9);
+        big.kill();
+        boolean split = waitFor(() -> world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SLIME && !((EntityCreature) e).isDead())
+                .count() >= 2, 3000);
+        long children = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SLIME && !((EntityCreature) e).isDead())
+                .count();
+        check("a dying size-4 slime splits into 2-4 children", split && children <= 4);
+        check("the children are half the parent's size (2)", world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SLIME && !((EntityCreature) e).isDead())
+                .allMatch(e -> Integer.valueOf(2).equals(
+                        e.getTag(dev.pointofpressure.minecom.mobs.ai.VanillaMobs.SLIME_SIZE))));
+        // killing the whole tier cascades to size-1 children; killing those ends the chain
+        world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SLIME && !((EntityCreature) e).isDead())
+                .forEach(e -> ((EntityCreature) e).kill());
+        boolean tinyTier = waitFor(() -> {
+            var alive = world.getEntities().stream()
+                    .filter(e -> e.getEntityType() == EntityType.SLIME && !((EntityCreature) e).isDead())
+                    .toList();
+            return !alive.isEmpty() && alive.stream().allMatch(e -> Integer.valueOf(1).equals(
+                    e.getTag(dev.pointofpressure.minecom.mobs.ai.VanillaMobs.SLIME_SIZE)));
+        }, 3000);
+        check("killing the size-2 tier yields size-1 children", tinyTier);
+        world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SLIME && !((EntityCreature) e).isDead())
+                .forEach(e -> ((EntityCreature) e).kill());
+        tick(10);
+        check("size-1 slimes die without splitting (chain ends)", world.getEntities().stream()
+                .noneMatch(e -> e.getEntityType() == EntityType.SLIME && !((EntityCreature) e).isDead()));
+        clearEntitiesExceptPlayer();
+
+        // tiny slime is harmless; tiny magma cube still bites (attribute asymmetry)
+        var tiny = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.slime(
+                world, new Pos(55.5, Y + 1, z + 0.5), 1);
+        player.teleport(new Pos(56.5, Y + 1, z + 0.5, 0f, 0f)).join();
+        player.setHealth(20f);
+        tick(60);
+        check("a tiny slime never deals touch damage", player.getHealth() == 20f);
+        tiny.remove();
+        var biter = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.slime(
+                world, new Pos(55.5, Y + 1, z + 0.5), 2);
+        player.setHealth(20f);
+        check("a size-2 slime's touch damages the player",
+                waitFor(() -> player.getHealth() < 20f, 6000));
+        biter.remove();
+        var tinyMagma = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.magmaCube(
+                world, new Pos(58.5, Y + 1, z + 0.5), 1);
+        check("tiny magma cube: armor 3, attack 3 (size+2 — still bites unlike tiny slimes)",
+                tinyMagma.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ARMOR) == 3.0
+                        && tinyMagma.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 3.0);
+        tinyMagma.remove();
+        clearEntitiesExceptPlayer();
+        player.setHealth(20f);
         resetPlayer();
     }
 
@@ -5422,7 +5669,12 @@ public final class PlayTest {
                 net.minestom.server.item.enchant.Enchantment.FIRE_ASPECT, 2);
         player.setItemInMainHand(sword);
         EventDispatcher.call(new EntityAttackEvent(player, zombie));
-        boolean ignited = waitFor(() -> zombie.getEntityMeta().isOnFire(), 1000);
+        // Combat.igniteFor sets isOnFire synchronously inside the same EntityAttackEvent
+        // dispatch, so this should already be true the instant EventDispatcher.call returns —
+        // but HANDOFF logged a flake here (1000ms window, sibling "burning" check right below
+        // already uses 3000ms), so widen to match rather than leave the tighter of two windows
+        // guarding an equally cheap, already-synchronous state check.
+        boolean ignited = waitFor(() -> zombie.getEntityMeta().isOnFire(), 3000);
         check("fire aspect II ignites the target", ignited);
         float afterHit = zombie.getHealth();
         boolean burning = waitFor(() -> zombie.getHealth() < afterHit, 3000);

@@ -3,6 +3,7 @@ package dev.pointofpressure.minecom;
 import dev.pointofpressure.minecom.blocks.Beds;
 import dev.pointofpressure.minecom.blocks.BlockRules;
 import dev.pointofpressure.minecom.blocks.Containers;
+import dev.pointofpressure.minecom.blocks.CopperWaxing;
 import dev.pointofpressure.minecom.blocks.Farming;
 import dev.pointofpressure.minecom.blocks.Fluids;
 import dev.pointofpressure.minecom.blocks.InfestedBlocks;
@@ -166,6 +167,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.mobs.Shearing.register(events);
         dev.pointofpressure.minecom.mobs.Bartering.register(events);
         dev.pointofpressure.minecom.blocks.PumpkinCarving.register(events);
+        CopperWaxing.register(events);
         dev.pointofpressure.minecom.blocks.Harvesting.register(events);
         dev.pointofpressure.minecom.blocks.NoteBlocks.register(events);
         dev.pointofpressure.minecom.blocks.Campfires.register(events);

@@ -134,8 +134,12 @@ public final class VillagerFood {
                 .repeat(TaskSchedule.tick(40)).schedule();
     }
 
-    /** Mob.aiStep item pickup: villagers collect wanted items overlapping their box. */
-    private static void pickupSweep(Instance instance) {
+    /**
+     * Mob.aiStep item pickup: villagers collect wanted items overlapping their box. Public so
+     * tests can drive it directly (PlayTest.scenarioVillagerFood) instead of racing the real
+     * 10-tick scheduler with a sleep-based wait — same shape as Villagers.breedTick.
+     */
+    public static void pickupSweep(Instance instance) {
         for (Entity v : instance.getEntities()) {
             if (v.getEntityType() != EntityType.VILLAGER || v.isRemoved()) continue;
             for (Entity near : instance.getNearbyEntities(v.getPosition(), 1.5)) {
@@ -155,7 +159,7 @@ public final class VillagerFood {
      * real loot-table drops, replanting from a held seed), and throw one food item
      * toward a hungry villager when carrying excess (>= 24 food points).
      */
-    private static void farmerSweep(Instance instance) {
+    public static void farmerSweep(Instance instance) {
         for (Entity v : instance.getEntities()) {
             if (v.getEntityType() != EntityType.VILLAGER || v.isRemoved()) continue;
             if (!"farmer".equals(v.getTag(VillagerTrades.PROFESSION))) continue;

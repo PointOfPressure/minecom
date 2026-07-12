@@ -32,15 +32,29 @@ leftovers.
   block light > 11, sugar cane + cactus growth (incl. 26.x cactus flowers),
   farmland moisture, copper oxidation (full ChangeOverTimeBlock port:
   0.05688889 roll, Manhattan-4 scan, squared age ratio, 0.75 unaffected
-  modifier, key-derived NEXT_BY_BLOCK chain), and budding amethyst. Light is
+  modifier, key-derived NEXT_BY_BLOCK chain), budding amethyst, and bamboo
+  column growth (2026-07-12, Sonnet — BambooStalkBlock port: 1/3 roll gated
+  on air+light>=9 above, 16-block cap with an unconditional stage flip at
+  height 15, leaf-crown cascade onto the segment(s) below). Light is
   the project's behavioural model (VNaturalSpawner precedent). Still on old
   approximations or missing: crop growth stays on Farming's scheduled task
   (migrating it would need vanilla's much slower random-tick pacing plus the
   moisture-speed formula — do it deliberately with scenario updates), snow
   accumulation stays in survival/Snow.java, sapling growth stays scheduled;
-  fire spread, vines, bamboo, grass/mycelium bonemeal features, leaf-decay
-  random timing not implemented. Copper WAXING (honeycomb interaction, axe
-  scraping) is now unblocked but not built.
+  fire spread, vines, grass/mycelium bonemeal features, leaf-decay random
+  timing not implemented.
+- ~~Copper WAXING (honeycomb interaction, axe scraping)~~ **Done 2026-07-12
+  (Sonnet)** — `blocks/CopperWaxing.java`: honeycomb prefixes "waxed_" onto
+  any unwaxed copper-family block (RandomTicks.isWeatheringCopper gate,
+  consumes 1 outside creative), which blocks the oxidation handler above for
+  good; an axe on a waxed block strips the wax back off, or on an unwaxed
+  weathered block scrapes it back one stage (RandomTicks.previousOxidation,
+  the key-derived mirror of the oxidation handler's own next-stage lookup)
+  — both cost 1 durability, no item consumed. Not modeled: axe log-stripping
+  (AxeItem.STRIPPABLES — a separate, still-missing gap, no stripped-log
+  system in this codebase at all), sign-waxing (HoneycombItem also
+  implements SignApplicator — no sign block-entity/text system exists to
+  apply it to), particles/sounds (client-visual).
 - **No attack-cooldown model** (Combat.java:82-86 admits it) — vanilla 1.9+
   attack charge scales damage 0.2x-1x and gates sweep; minecom always
   full-strength + sweep on grounded sword hits. (M)
@@ -69,8 +83,10 @@ leftovers.
   (no tool durability in containers), armor equipping onto living entities
   with empty slots, firework rockets (cosmetic flight only — no explosion
   or elytra boost). Still missing: armor stands (no armor-stand system),
-  honeycomb/waxing (no oxidation), brush (no archaeology), candle
-  placement, chest-onto-donkey (no chested-horse inventory). Sculk
+  brush (no archaeology), candle placement, chest-onto-donkey (no
+  chested-horse inventory). Honeycomb/waxing landed 2026-07-12 (Sonnet,
+  `blocks/CopperWaxing.java` — see the random-tick engine entry above, now
+  that oxidation exists for it to block). Sculk
   shriekers landed too (Vibrations.java): player-caused shrieks, Darkness,
   warning levels; the warden itself landed 2026-07-12 (Fable — see the
   mobs/ section entry). (each S once its base system exists)
@@ -199,6 +215,31 @@ leftovers.
   night window (vanilla reads the day timeline), hearts are session-scoped
   like TrialChambers (placement/test tracking only — no worldgen pale
   gardens yet, no Anvil reload re-link), body-rotation control not ported.
+- **Slime/magma cube sizes + split-on-death (VanillaMobs.slimeLike +
+  Combat.death + LootTables size predicate, 2026-07-12, Fable)** —
+  decompile-verified Slime/MagmaCube setSize: HP size², speed 0.2+0.1·size,
+  attack size (magma folds getAttackDamage's +2 into the attribute — same
+  melee result, but attribute readers see size+2 where vanilla shows size),
+  magma armor 3·size, 0.52·size cube hitbox + SlimeMeta, XP = size,
+  finalizeSpawn roll (1<<rand(3), bump chance 0.5×regional special
+  multiplier — the real DifficultyInstance formula, no approximation),
+  Slime.remove split (2+rand(3) children of size/2 on the parent-width
+  quadrant grid, +0.5y, random yaw; size 1 terminal), vanilla jump cadence
+  (10+rand(20), ×4 magma, ÷3 aggressive), tiny-slime-harmless vs
+  tiny-magma-bites, and the loot tables' type_specific.size predicate wired
+  through Combat.death (slimeballs only from size-1 slimes, magma cream only
+  from size-2+). Simplifications: touch damage on a 20gt per-mob cadence
+  (approximates the victim hurt-immunity window this project doesn't model);
+  hop velocity is the pre-existing fixed approximation (no size-scaled magma
+  jump height, no SlimeMoveControl yaw easing); no squish/landing particles
+  or _SMALL sound variants (client visuals); split children don't inherit
+  custom name/persistence flags (no name tags in this project); no
+  slime-chunk seeding or swamp surface-spawn chance (natural slime spawning
+  itself is the spawner's existing biome roll); frog-predation loot entries
+  inert (damage_source_properties source_entity predicates evaluate false —
+  no kill attribution; this pass also FIXED the pre-existing hardcoded-true
+  that made magma cubes drop froglights instead of magma cream and slimes
+  always drop a flat frog-predation slimeball).
 - **Silverfish + infested blocks (VanillaMobs.silverfish +
   blocks/InfestedBlocks.java, 2026-07-12, Fable)** — decompile-verified
   Silverfish/InfestedBlock/InfestedRotatedPillarBlock: 8 HP / 0.25 speed /
@@ -263,8 +304,9 @@ leftovers.
   (holds it, melee only?) — verify; no swim-up-at-night AI (admitted bounded).
   Enderman: no block pick-up/place, no water damage, no teleport-on-projectile
   dodge (blink-on-hurt exists). Witch: verify drinking heal/fire-res potions
-  mid-fight exists; witch raid participation. Slime: split-on-death sizes
-  (verify Slime handling — magma cube too). Piglin: no bartering (gold ingot
+  mid-fight exists; witch raid participation. ~~Slime: split-on-death sizes
+  (verify Slime handling — magma cube too)~~ (done 2026-07-12, Fable — see
+  the Slime sizes entry below). Piglin: no bartering (gold ingot
   toss), no gold-armor aggro rules, no portal zombification (piglins_zombify
   attribute), no hoglin hunting. Ghast: fireball deflection by hitting it back
   (verify projectileHit handles ghast fireball reflect). (S-M each)

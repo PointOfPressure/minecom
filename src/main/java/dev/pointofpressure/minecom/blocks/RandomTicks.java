@@ -27,13 +27,14 @@ import java.util.concurrent.ThreadLocalRandom;
  * sugar cane + cactus growth (age 15 column growth, cactus flowers), farmland
  * moisture (FarmlandBlock), copper oxidation (ChangeOverTimeBlock /
  * WeatheringCopper: 0.05688889 roll, Manhattan-4 neighbor scan, squared
- * age-ratio chance, 0.75 modifier while unaffected), and budding amethyst
- * (1/5 bud growth per face). Light is the project's behavioural model
- * (VNaturalSpawner precedent): sky-exposed = at/above surface, 15 by day /
- * 4 at night, plus real Minestom block light. Crop growth stays on
- * Farming.java's scheduled approximation for now (AUDIT.md); snow
- * accumulation stays in survival/Snow.java. Precipitation ice freeze, fire
- * spread, vines and bamboo are follow-ups (AUDIT.md).
+ * age-ratio chance, 0.75 modifier while unaffected), budding amethyst
+ * (1/5 bud growth per face), and bamboo column growth (1/3 roll, 16-block
+ * cap, leaf-crown cascade, stage-based growth stop). Light is the project's
+ * behavioural model (VNaturalSpawner precedent): sky-exposed = at/above
+ * surface, 15 by day / 4 at night, plus real Minestom block light. Crop
+ * growth stays on Farming.java's scheduled approximation for now
+ * (AUDIT.md); snow accumulation stays in survival/Snow.java. Precipitation
+ * ice freeze, fire spread, and vine spread are follow-ups (AUDIT.md).
  */
 public final class RandomTicks {
     private RandomTicks() {}
@@ -123,6 +124,59 @@ public final class RandomTicks {
         HANDLERS.put("cactus", RandomTicks::growCactus);
         HANDLERS.put("farmland", RandomTicks::tickFarmland);
         HANDLERS.put("budding_amethyst", RandomTicks::growAmethyst);
+        HANDLERS.put("bamboo", RandomTicks::growBamboo);
+    }
+
+    /**
+     * BambooStalkBlock.randomTick (decompile-verified): only while STAGE 0 ("still growing").
+     * 1/3 roll per random tick, needs the block directly above to be air lit &gt;= 9; grows one
+     * segment if the existing column (counting downward from this block) is under the 16 cap.
+     * Covers an already-generated/grown bamboo column continuing to grow taller — the separate
+     * bamboo_sapling -&gt; bamboo maturation isn't modelled here (a different block/mechanic,
+     * not yet decompiled — AUDIT.md).
+     */
+    private static void growBamboo(Instance in, Point pos, Block block) {
+        if (!"0".equals(block.getProperty("stage"))) return;
+        var rng = ThreadLocalRandom.current();
+        if (rng.nextInt(3) != 0) return;
+        if (!in.getBlock(pos.add(0, 1, 0)).isAir()) return;
+        if (brightness(in, pos.add(0, 1, 0)) < 9) return;
+        int heightBelow = 0;
+        while (in.getBlock(pos.add(0, -heightBelow - 1, 0)).key().value().equals("bamboo")) heightBelow++;
+        int height = heightBelow + 1;
+        if (height >= 16) return;
+        growBambooSegment(in, pos, block, rng, height);
+    }
+
+    /**
+     * BambooStalkBlock.growBamboo: LEAVES cascades down one crown when a third segment stacks
+     * (the block below keeps LARGE only as long as nothing sits below IT too), AGE carries the
+     * "thick stalk" flag once either this segment is thick or the block two below is bamboo,
+     * and STAGE flips to "done growing" past height 11 on a 25% roll, or always at height 15.
+     */
+    private static void growBambooSegment(Instance in, Point pos, Block state, ThreadLocalRandom rng, int height) {
+        Block below = in.getBlock(pos.add(0, -1, 0));
+        Block twoBelow = in.getBlock(pos.add(0, -2, 0));
+        boolean belowIsBamboo = below.key().value().equals("bamboo");
+        boolean twoBelowIsBamboo = twoBelow.key().value().equals("bamboo");
+        String leaves = "none";
+        if (height >= 1) {
+            if (!belowIsBamboo || "none".equals(below.getProperty("leaves"))) {
+                leaves = "small";
+            } else {
+                leaves = "large";
+                if (twoBelowIsBamboo) {
+                    in.setBlock(pos.add(0, -1, 0), below.withProperty("leaves", "small"));
+                    in.setBlock(pos.add(0, -2, 0), twoBelow.withProperty("leaves", "none"));
+                }
+            }
+        }
+        boolean thick = "1".equals(state.getProperty("age")) || twoBelowIsBamboo;
+        boolean doneGrowing = (height >= 11 && rng.nextFloat() < 0.25f) || height == 15;
+        in.setBlock(pos.add(0, 1, 0), Block.BAMBOO
+                .withProperty("age", thick ? "1" : "0")
+                .withProperty("leaves", leaves)
+                .withProperty("stage", doneGrowing ? "1" : "0"));
     }
 
     /**
@@ -326,7 +380,8 @@ public final class RandomTicks {
         }
     }
 
-    private static boolean isWeatheringCopper(String key) {
+    /** Public so CopperWaxing can gate honeycomb application to real copper-family blocks. */
+    public static boolean isWeatheringCopper(String key) {
         return nextOxidation(key) != null || key.startsWith("oxidized_");
     }
 
@@ -361,6 +416,34 @@ public final class RandomTicks {
         else if (!base.contains("copper")) return null;
         String next = nextPrefix + base;
         return Block.fromKey(next) != null ? next : null;
+    }
+
+    /**
+     * WeatheringCopper.PREVIOUS_BY_BLOCK (the NEXT_BY_BLOCK bimap's inverse) — the exact
+     * mirror of nextOxidation above: peel one exposed_/weathered_/oxidized_ prefix back off,
+     * restoring the copper_block/copper irregular base-name swap. Null at the unweathered
+     * base (nothing to scrape further) or for waxed/non-copper keys. Public for AxeItem's
+     * scrape interaction (CopperWaxing).
+     */
+    public static String previousOxidation(String key) {
+        if (key.startsWith("waxed_")) return null;
+        String rest, prevPrefix;
+        if (key.startsWith("oxidized_")) {
+            rest = key.substring("oxidized_".length());
+            prevPrefix = "weathered_";
+        } else if (key.startsWith("weathered_")) {
+            rest = key.substring("weathered_".length());
+            prevPrefix = "exposed_";
+        } else if (key.startsWith("exposed_")) {
+            rest = key.substring("exposed_".length());
+            prevPrefix = "";
+        } else {
+            return null; // already the unweathered base
+        }
+        String candidate = prevPrefix.isEmpty()
+                ? (rest.equals("copper") ? "copper_block" : rest)
+                : prevPrefix + rest;
+        return Block.fromKey(candidate) != null ? candidate : null;
     }
 
     // ------------------------------------------------------------------ light

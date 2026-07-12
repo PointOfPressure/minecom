@@ -30,8 +30,9 @@ public final class LootTables {
      * calculateOpenWater's own is_open_water entity_properties predicate, which the
      * generic entity_properties condition handler below reads off this flag.
      */
-    record Ctx(ItemStack tool, Block block, boolean openWater) {
-        Ctx(ItemStack tool, Block block) { this(tool, block, false); }
+    record Ctx(ItemStack tool, Block block, boolean openWater, Integer entitySize) {
+        Ctx(ItemStack tool, Block block) { this(tool, block, false, null); }
+        Ctx(ItemStack tool, Block block, boolean openWater) { this(tool, block, openWater, null); }
     }
 
     public static List<ItemStack> blockDrops(Block block, ItemStack tool) {
@@ -46,9 +47,19 @@ public final class LootTables {
 
     /** Entity drops with the killer's weapon (looting applies). */
     public static List<ItemStack> entityDrops(EntityType type, ItemStack weapon) {
+        return entityDrops(type, weapon, null);
+    }
+
+    /**
+     * Entity drops for size-carrying mobs (slime/magma cube): the size feeds the
+     * type_specific.size predicate (slimeballs only from size-1 slimes, magma
+     * cream only from size-2+ cubes). Null size keeps the predicate permissive.
+     */
+    public static List<ItemStack> entityDrops(EntityType type, ItemStack weapon, Integer entitySize) {
         JsonElement table = VanillaData.lootEntities.get(type.key().value());
         if (table == null) return List.of();
-        return evaluate(table.getAsJsonObject(), new Ctx(weapon == null ? ItemStack.AIR : weapon, null));
+        return evaluate(table.getAsJsonObject(),
+                new Ctx(weapon == null ? ItemStack.AIR : weapon, null, false, entitySize));
     }
 
     /** Gameplay tables: fishing, cat gifts, bartering... by path e.g. "fishing". */
@@ -284,8 +295,16 @@ public final class LootTables {
 
     private static boolean condition(JsonObject cond, Ctx ctx) {
         return switch (VanillaData.path(cond.get("condition").getAsString())) {
-            case "survives_explosion", "killed_by_player", "location_check",
-                 "damage_source_properties" -> true;
+            case "survives_explosion", "killed_by_player", "location_check" -> true;
+            case "damage_source_properties" -> {
+                // No damage-source entity attribution is modeled (nothing is ever
+                // "killed by a frog"), so source_entity predicates fail — this is what
+                // routes slime/magma tables to their normal entries instead of the
+                // frog-predation ones. Tag predicates (turtle's is_lightning, ghast's
+                // is_projectile) keep the historical permissive true.
+                JsonObject predicate = cond.getAsJsonObject("predicate");
+                yield predicate == null || !predicate.has("source_entity");
+            }
             case "block_state_property" -> blockStateMatches(cond, ctx.block());
             case "match_tool" -> matchTool(cond.getAsJsonObject("predicate"), ctx.tool());
             case "table_bonus" -> {
@@ -326,11 +345,26 @@ public final class LootTables {
                     if (typeSpecific.has("in_open_water")) {
                         yield typeSpecific.get("in_open_water").getAsBoolean() == ctx.openWater();
                     }
+                    if (typeSpecific.has("size")) {
+                        yield sizeMatches(typeSpecific.get("size"), ctx.entitySize());
+                    }
                 }
                 yield !predicate.has("vehicle");
             }
             default -> false; // unknown (incl. enchantment-based): behave like unenchanted vanilla
         };
+    }
+
+    /** type_specific.size: an exact number or {min,max} range vs the dying mob's slime size. */
+    private static boolean sizeMatches(JsonElement expected, Integer actual) {
+        if (actual == null) return true; // sizeless caller: predicate stays permissive (pre-size behavior)
+        if (expected.isJsonObject()) {
+            JsonObject range = expected.getAsJsonObject();
+            if (range.has("min") && actual < range.get("min").getAsInt()) return false;
+            if (range.has("max") && actual > range.get("max").getAsInt()) return false;
+            return true;
+        }
+        return actual == expected.getAsInt();
     }
 
     /** {"properties":{"age":"7", ...}} compared against the actual block state. */
