@@ -162,7 +162,7 @@ and interaction) as a real but unconfirmed mitigation. Next session: if it
 recurs despite that, the `.join()` theory is likely wrong and needs a real
 `Combat.attack`/`damage()` dump on next live catch instead.
 
-### Random-tick consumers tail — Sonnet/Opus
+### ~~Random-tick consumers tail~~ — ALL DONE 2026-07-12 (Sonnet)
 
 The engine landed 2026-07-12 (Fable, `blocks/RandomTicks.java`) with eight
 handlers (see AUDIT). ~~Bamboo growth~~ **done 2026-07-12 (Sonnet)** —
@@ -242,11 +242,23 @@ just `CROPS`-tracked ones, matching real vanilla. New coverage folded into
 `scenarioRandomTicks` (light gate, both growth-speed branches, the
 per-crop maxAge cap), 5/5 clean reruns.
 
-Sapling growth was flagged to "ride along" but turned out to be a
-genuinely separate mechanic (its own one-shot scheduled delay per sapling,
-not a `growthTick`/`RandomTicks` consumer at all) — real vanilla
-`SaplingBlock` has its own randomTick/stage-based growth, not yet ported.
-Left as its own small (S) follow-up, not bundled into this entry.
+~~Sapling growth~~ **done 2026-07-12 (Sonnet)** — the small (S) follow-up
+this entry deferred. `RandomTicks.growSapling`/`Farming.advanceTree` ports
+`SaplingBlock.randomTick`/`advanceTree` exactly (decompile-verified): light
+gate (raw brightness above the sapling >= 9), a 1/7 roll, and — the part
+the old scheduled-delay approximation missed entirely — a real two-stage
+climb, not a straight jump to a tree. A stage-0 sapling that rolls
+successfully just cycles to stage 1; only a SECOND successful roll against
+a stage-1 sapling actually grows the tree. `Farming.boneMeal`'s sapling
+branch was calling `growTree` directly (instant tree, ignoring the stage
+entirely) — real vanilla's `performBonemeal` also just calls
+`advanceTree`, so bone meal needed the same two-application fix, found and
+fixed as the same change (not a separate gap). Covers all 8 real sapling
+types (oak/spruce/birch/jungle/acacia/dark_oak/cherry/pale_oak); the tree
+SHAPE logic itself (`Farming.growTree`) is unchanged, only the
+trigger/pacing around it. New coverage folded into `scenarioRandomTicks`
+(stage-1 climb, tree growth, light gate) and `scenarioFarming` (the
+bonemeal two-application behavior), 5/5 clean reruns.
 
 ### Persistence adapter tail — Sonnet
 
@@ -725,7 +737,7 @@ water-flow disruption) without it.
 
 ## Done
 
-### Lightning-rod redirection (tracked-position registry) — Sonnet/Opus
+### ~~Lightning-rod redirection (tracked-position registry)~~ — DONE 2026-07-11 (Fable)
 
 `Lightning.java` claims this was "logged in docs/HANDOFF.md" but no entry
 existed until now. Strikes should first redirect to a lightning rod within 128

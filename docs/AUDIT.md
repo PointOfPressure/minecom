@@ -47,11 +47,8 @@ leftovers.
   on air+light>=9 above, 16-block cap with an unconditional stage flip at
   height 15, leaf-crown cascade onto the segment(s) below). Light is
   the project's behavioural model (VNaturalSpawner precedent). Still on old
-  approximations or missing: snow accumulation stays in survival/Snow.java,
-  sapling growth stays on its own one-shot scheduled delay (a separate
-  mechanic from crop growth's old sweep — SaplingBlock has its own
-  randomTick/stage system in real vanilla, not yet ported); leaf-decay
-  random timing not implemented.
+  approximations or missing: snow accumulation stays in survival/Snow.java;
+  leaf-decay random timing not implemented.
 - ~~Crop growth~~ **Done 2026-07-12 (Sonnet)** — `RandomTicks.growCrop`/
   `cropGrowthSpeed`, decompile-verified against `CropBlock.randomTick`/
   `getGrowthSpeed`: light gate (raw brightness >= 9), the 3x3
@@ -101,6 +98,18 @@ leftovers.
   path at all (no `mobGriefing`-class check found in `FireBlock.tick`) —
   the "no gamerule store" note elsewhere in this file doesn't even apply
   here, there's nothing to gate.
+- ~~Sapling growth~~ **Done 2026-07-12 (Sonnet)** — `RandomTicks.growSapling`/
+  `Farming.advanceTree`, decompile-verified against `SaplingBlock.randomTick`/
+  `advanceTree`: light gate (raw brightness above the sapling >= 9), a 1/7
+  roll, and a real two-stage climb the old one-shot scheduled-delay
+  approximation didn't have at all — stage 0 just cycles to stage 1 on a
+  successful roll, only a SECOND successful roll against a now-stage-1
+  sapling actually grows the tree. `Farming.boneMeal`'s sapling branch
+  called `growTree` straight through (instant tree, no stage check) —
+  real vanilla's `performBonemeal` also just calls `advanceTree`, so bone
+  meal needed the exact same fix, not a separate one. Covers all 8 real
+  sapling types; `Farming.growTree`'s tree-shape logic is unchanged, only
+  the trigger/pacing around it moved off the scheduled delay.
 - ~~Grass bonemeal~~ **Done 2026-07-12 (Sonnet)** — `Farming.boneMealGrass`:
   GrassBlock.performBonemeal's 128-attempt scatter walk (quantized into 8
   groups of 16 with a progressively longer random walk, staying on top of

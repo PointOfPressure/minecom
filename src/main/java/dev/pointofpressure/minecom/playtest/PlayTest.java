@@ -107,7 +107,7 @@ public final class PlayTest {
         scenario("channeling: thunderstorm melee/throw strikes lightning, clear weather doesn't", PlayTest::scenarioLightning);
         scenario("water spread + decay", PlayTest::scenarioWater);
         scenario("bucket place", PlayTest::scenarioBucket);
-        scenario("farming full cycle + grass bonemeal scatter", PlayTest::scenarioFarming);
+        scenario("farming full cycle + sapling/grass bonemeal", PlayTest::scenarioFarming);
         scenario("door placement + toggle", PlayTest::scenarioDoor);
         scenario("bed sleep skips night", PlayTest::scenarioBed);
         scenario("death drops + respawn", PlayTest::scenarioDeath);
@@ -138,7 +138,7 @@ public final class PlayTest {
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
         scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), and per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size)", PlayTest::scenarioPersistence);
-        scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread, crop growth", PlayTest::scenarioRandomTicks);
+        scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread, crop growth, sapling growth", PlayTest::scenarioRandomTicks);
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
         scenario("silverfish: infested-block ambush, silk-touch bypass, wake-up-friends, merge-into-stone", PlayTest::scenarioSilverfish);
@@ -3856,6 +3856,23 @@ public final class PlayTest {
         check("ripe wheat drops wheat", countItems(new Pos(15, Y + 1, -15), 3, Material.WHEAT) >= 1);
         clearEntitiesExceptPlayer();
 
+        // sapling bonemeal (SaplingBlock.performBonemeal -> advanceTree, decompile-verified):
+        // real vanilla needs TWO applications to grow a tree, not one — the first just cycles
+        // stage 0->1, matching the same two-stage climb random ticks use
+        BlockVec saplingPos = new BlockVec(18, Y + 1, -15);
+        world.setBlock(saplingPos, Block.OAK_SAPLING.withProperty("stage", "0"));
+        useItemOnBlock(ItemStack.of(Material.BONE_MEAL), saplingPos, BlockFace.TOP);
+        check("bone meal on a stage-0 sapling only advances it to stage 1, doesn't grow a tree",
+                "oak_sapling".equals(blockKey(18, Y + 1, -15)) && "1".equals(prop(18, Y + 1, -15, "stage")));
+        useItemOnBlock(ItemStack.of(Material.BONE_MEAL), saplingPos, BlockFace.TOP);
+        check("a second bone meal application on a stage-1 sapling grows an actual tree",
+                "oak_log".equals(blockKey(18, Y + 1, -15)));
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dy = 0; dy <= 7; dy++) {
+                for (int dz2 = -2; dz2 <= 2; dz2++) world.setBlock(18 + dx, Y + 1 + dy, -15 + dz2, Block.AIR);
+            }
+        }
+
         // grass bonemeal: 128-attempt scatter walk (GrassBlock.performBonemeal), landing on
         // air ~7/8 of the time places a short_grass; the first 16 of 128 attempts all target
         // the exact clicked position, so it's virtually always covered too
@@ -5496,6 +5513,39 @@ public final class PlayTest {
                 "3".equals(prop(86, Y + 1, z, "age")));
         rs(86, Y + 1, z, Block.AIR);
         rs(86, Y, z, Block.AIR);
+
+        // sapling growth (SaplingBlock.randomTick/advanceTree): light gate, then a two-stage
+        // climb — stage 0->1 on the first successful roll, the actual tree only on a second
+        // one against the now-stage-1 sapling
+        rs(90, Y + 1, z, Block.OAK_SAPLING.withProperty("stage", "0"));
+        boolean flippedStage = false;
+        for (int i = 0; i < 400 && !flippedStage; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(90, Y + 1, z));
+            flippedStage = "1".equals(prop(90, Y + 1, z, "stage"));
+        }
+        check("random tick: a sapling's first successful roll only advances to stage 1", flippedStage);
+        boolean grewTree = false;
+        for (int i = 0; i < 400 && !grewTree; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(90, Y + 1, z));
+            grewTree = !"oak_sapling".equals(blockKey(90, Y + 1, z));
+        }
+        check("random tick: a stage-1 sapling's second successful roll grows an actual tree",
+                grewTree && "oak_log".equals(blockKey(90, Y + 1, z)));
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dy = 0; dy <= 7; dy++) {
+                for (int dz2 = -2; dz2 <= 2; dz2++) rs(90 + dx, Y + 1 + dy, z + dz2, Block.AIR);
+            }
+        }
+
+        rs(92, Y + 1, z, Block.OAK_SAPLING.withProperty("stage", "0"));
+        rs(92, Y + 2, z, Block.STONE); // blocks sky exposure -> brightness < 9
+        for (int i = 0; i < 200; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(92, Y + 1, z));
+        }
+        check("random tick: a sapling below light 9 never advances",
+                "0".equals(prop(92, Y + 1, z, "stage")));
+        rs(92, Y + 2, z, Block.AIR);
+        rs(92, Y + 1, z, Block.AIR);
 
         resetPlayer();
     }

@@ -32,8 +32,11 @@ import java.util.concurrent.ThreadLocalRandom;
  * cap, leaf-crown cascade, stage-based growth stop), and vine spread
  * (1/4 roll, corner-wrapping horizontal extension, upward/downward face
  * copying, 9x3x9 density cap — growth only, no neighbor-update-driven
- * detach), and crop growth (CropBlock: light gate, 3x3 farmland-moisture
- * growth-speed scan, same-type-neighbor halving). Light is the project's
+ * detach), crop growth (CropBlock: light gate, 3x3 farmland-moisture
+ * growth-speed scan, same-type-neighbor halving), and sapling growth
+ * (SaplingBlock: light gate, 1/7 roll, a two-stage climb shared with bone
+ * meal — stage 0 just advances to stage 1, only a stage-1 sapling actually
+ * grows a tree). Light is the project's
  * behavioural model (VNaturalSpawner precedent): sky-exposed = at/above
  * surface, 15 by day / 4 at night, plus real Minestom block light. Snow
  * accumulation stays in survival/Snow.java. Precipitation ice freeze is a
@@ -133,6 +136,10 @@ public final class RandomTicks {
         HANDLERS.put("carrots", RandomTicks::growCrop);
         HANDLERS.put("potatoes", RandomTicks::growCrop);
         HANDLERS.put("beetroots", RandomTicks::growCrop);
+        for (String kind : new String[]{"oak", "spruce", "birch", "jungle", "acacia",
+                "dark_oak", "cherry", "pale_oak"}) {
+            HANDLERS.put(kind + "_sapling", RandomTicks::growSapling);
+        }
     }
 
     /**
@@ -505,6 +512,20 @@ public final class RandomTicks {
 
     private static boolean sameCrop(Instance in, Point pos, String cropKey) {
         return in.getBlock(pos).key().value().equals(cropKey);
+    }
+
+    /**
+     * SaplingBlock.randomTick/advanceTree (decompile-verified): light gate (raw brightness
+     * directly above the sapling &gt;= 9), then a 1/7 roll. A stage-0 sapling that passes just
+     * cycles to stage 1 — growing the actual tree needs a SECOND successful roll on a stage-1
+     * sapling (Farming.advanceTree, shared with bone meal). Replaces Farming's old one-shot
+     * 60-120-second scheduled-delay approximation that grew straight to a tree on placement,
+     * ignoring both the light gate and the two-stage climb.
+     */
+    private static void growSapling(Instance in, Point pos, Block block) {
+        if (brightness(in, pos.add(0, 1, 0)) < 9) return;
+        if (ThreadLocalRandom.current().nextInt(7) != 0) return;
+        Farming.advanceTree(in, pos, block);
     }
 
     /** BuddingAmethystBlock.randomTick: 1/5 to advance a bud on a random face. */

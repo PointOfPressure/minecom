@@ -9,13 +9,11 @@ import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.GameMode;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.GlobalEventHandler;
-import net.minestom.server.event.player.PlayerBlockPlaceEvent;
 import net.minestom.server.event.player.PlayerUseItemOnBlockEvent;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
-import net.minestom.server.timer.TaskSchedule;
 
 import java.util.Map;
 import java.util.Random;
@@ -46,12 +44,6 @@ public final class Farming {
 
     public static void register(GlobalEventHandler events) {
         events.addListener(PlayerUseItemOnBlockEvent.class, Farming::useOnBlock);
-        events.addListener(PlayerBlockPlaceEvent.class, e -> {
-            String key = e.getBlock().key().value();
-            if (key.endsWith("_sapling")) {
-                schedulSaplingGrowth(e.getInstance(), e.getBlockPosition(), 1200 + RANDOM.nextInt(1200));
-            }
-        });
         Persist.register(persistence());
     }
 
@@ -127,7 +119,7 @@ public final class Farming {
             return true;
         }
         if (target.key().value().endsWith("_sapling")) {
-            growTree(instance, pos, target);
+            advanceTree(instance, pos, target);
             return true;
         }
         if (target.key().value().equals("grass_block")) {
@@ -192,13 +184,19 @@ public final class Farming {
 
     // ------------------------------------------------------------------ saplings
 
-    private static void schedulSaplingGrowth(Instance inst, Point pos, int delayTicks) {
-        inst.scheduler().buildTask(() -> {
-            Block block = inst.getBlock(pos);
-            if (block.key().value().endsWith("_sapling")) {
-                growTree(inst, pos, block);
-            }
-        }).delay(TaskSchedule.tick(delayTicks)).schedule();
+    /**
+     * SaplingBlock.advanceTree (decompile-verified): a two-stage climb, not a straight-to-tree
+     * jump — stage 0 just cycles to stage 1, only a SECOND advance (another successful random
+     * tick, or a second bone meal application) on a stage-1 sapling actually grows the tree.
+     * Shared by bone meal (BoneMealItem calls this directly, not growTree) and
+     * RandomTicks.growSapling.
+     */
+    static void advanceTree(Instance inst, Point pos, Block sapling) {
+        if ("0".equals(sapling.getProperty("stage"))) {
+            inst.setBlock(pos, sapling.withProperty("stage", "1"));
+        } else {
+            growTree(inst, pos, sapling);
+        }
     }
 
     private static void growTree(Instance inst, Point pos, Block sapling) {
