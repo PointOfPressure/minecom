@@ -118,7 +118,8 @@ public final class Farming {
     }
 
     /**
-     * Bone-meal a position: crops jump 2-3 ages, saplings grow into trees.
+     * Bone-meal a position: crops jump 2-3 ages, saplings grow into trees, grass blocks
+     * scatter a burst of short_grass nearby (boneMealGrass).
      * Shared by player use above and the dispenser BONE_MEAL behavior
      * (DispenseItemBehavior.bootStrap -> BoneMealItem.growCrop).
      */
@@ -135,7 +136,49 @@ public final class Farming {
             growTree(instance, pos, target);
             return true;
         }
+        if (target.key().value().equals("grass_block")) {
+            return boneMealGrass(instance, pos);
+        }
         return false;
+    }
+
+    /**
+     * GrassBlock.performBonemeal (decompile-verified): 128 attempts, quantized into 8 groups of
+     * 16 with a progressively longer random walk (0 steps for attempts 0-15, 1 step for 16-31,
+     * ..., 7 steps for 112-127), each step re-checking the walker is still directly above
+     * grass_block and hasn't wandered into a solid block. A landing on air scatters a
+     * short_grass there ~7/8 of the time — the real GRASS_BONEMEAL placed feature (bundled data,
+     * not approximated: {@code minecraft:grass_bonemeal} -> {@code minecraft:grass} -> a plain
+     * simple_block short_grass placement, verified against placed_features.json/
+     * configured_features.json). Two secondary branches are simplified out, documented in
+     * AUDIT.md: re-rolling an existing short_grass into tall_grass, and the other 1/8
+     * "biome-specific decoration feature" branch (flowers/mushrooms/saplings, even whole trees
+     * for some biomes) — the real per-biome feature list is bundled (biome_features.json's
+     * VEGETAL_DECORATION step), but placing an arbitrarily complex feature needs this project's
+     * worldgen-time Canvas system, which isn't bridged to live gameplay.
+     */
+    private static boolean boneMealGrass(Instance instance, Point pos) {
+        Point above = pos.add(0, 1, 0);
+        if (!instance.getBlock(above).isAir()) return false; // isValidBonemealTarget
+
+        attempts:
+        for (int j = 0; j < 128; j++) {
+            int steps = j / 16;
+            Point testPos = above;
+            for (int i = 0; i < steps; i++) {
+                testPos = testPos.add(RANDOM.nextInt(3) - 1,
+                        (RANDOM.nextInt(3) - 1) * (RANDOM.nextInt(3) / 2), RANDOM.nextInt(3) - 1);
+                Block below = instance.getBlock(testPos.add(0, -1, 0));
+                if (!below.key().value().equals("grass_block") || instance.getBlock(testPos).isSolid()) {
+                    continue attempts;
+                }
+            }
+            if (instance.getBlock(testPos).isAir() && RANDOM.nextInt(8) != 0) {
+                instance.setBlock(testPos, Block.SHORT_GRASS);
+            }
+            // else air + 1/8 roll: biome-specific decoration feature branch, simplified out
+        }
+        return true;
     }
 
     private static void consume(Player player, PlayerUseItemOnBlockEvent e) {

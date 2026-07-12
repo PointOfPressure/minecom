@@ -107,7 +107,7 @@ public final class PlayTest {
         scenario("channeling: thunderstorm melee/throw strikes lightning, clear weather doesn't", PlayTest::scenarioLightning);
         scenario("water spread + decay", PlayTest::scenarioWater);
         scenario("bucket place", PlayTest::scenarioBucket);
-        scenario("farming full cycle", PlayTest::scenarioFarming);
+        scenario("farming full cycle + grass bonemeal scatter", PlayTest::scenarioFarming);
         scenario("door placement + toggle", PlayTest::scenarioDoor);
         scenario("bed sleep skips night", PlayTest::scenarioBed);
         scenario("death drops + respawn", PlayTest::scenarioDeath);
@@ -3688,6 +3688,31 @@ public final class PlayTest {
         breakBlock(cropPos);
         check("ripe wheat drops wheat", countItems(new Pos(15, Y + 1, -15), 3, Material.WHEAT) >= 1);
         clearEntitiesExceptPlayer();
+
+        // grass bonemeal: 128-attempt scatter walk (GrassBlock.performBonemeal), landing on
+        // air ~7/8 of the time places a short_grass; the first 16 of 128 attempts all target
+        // the exact clicked position, so it's virtually always covered too
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                world.setBlock(20 + dx, Y, -15 + dz, Block.GRASS_BLOCK);
+                world.setBlock(20 + dx, Y + 1, -15 + dz, Block.AIR);
+            }
+        }
+        useItemOnBlock(ItemStack.of(Material.BONE_MEAL), new BlockVec(20, Y, -15), BlockFace.TOP);
+        int scattered = 0;
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                if ("short_grass".equals(blockKey(20 + dx, Y + 1, -15 + dz))) scattered++;
+            }
+        }
+        check("bone meal on a grass block scatters a burst of short_grass nearby (" + scattered + " placed)",
+                scattered >= 5);
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                world.setBlock(20 + dx, Y, -15 + dz, Block.STONE);
+                world.setBlock(20 + dx, Y + 1, -15 + dz, Block.AIR);
+            }
+        }
     }
 
     private static void scenarioDoor() {

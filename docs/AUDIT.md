@@ -51,8 +51,21 @@ leftovers.
   (migrating it would need vanilla's much slower random-tick pacing plus the
   moisture-speed formula — do it deliberately with scenario updates), snow
   accumulation stays in survival/Snow.java, sapling growth stays scheduled;
-  fire spread, grass/mycelium bonemeal features, leaf-decay random timing
-  not implemented.
+  fire spread, leaf-decay random timing not implemented.
+- ~~Grass bonemeal~~ **Done 2026-07-12 (Sonnet)** — `Farming.boneMealGrass`:
+  GrassBlock.performBonemeal's 128-attempt scatter walk (quantized into 8
+  groups of 16 with a progressively longer random walk, staying on top of
+  grass_block, landing on air scatters a short_grass ~7/8 of the time via
+  the real bundled GRASS_BONEMEAL placed-feature data). Mycelium turned out
+  to not be bonemealable at all in real vanilla (decompile-verified —
+  MyceliumBlock has no BonemealableBlock implementation, only a
+  client-visual particle tick; HANDOFF's "grass/mycelium" framing was
+  imprecise). Not modeled: re-rolling an existing short_grass into
+  tall_grass (a rare 1/10 sub-case), and the other 1/8 "biome-specific
+  decoration feature" branch (flowers/mushrooms/trees — the real per-biome
+  feature list is bundled in biome_features.json, but placing an
+  arbitrarily complex feature needs this project's worldgen-time Canvas
+  system, which isn't bridged to live gameplay — a bigger, separate task).
 - ~~Vine spread~~ **Done 2026-07-12 (Sonnet)** — VineBlock.randomTick, the
   growth half (RandomTicks.spreadVine): 1/4 roll, then a uniform pick among
   6 directions; horizontal + not-yet-connected tries to extend outward

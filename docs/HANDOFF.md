@@ -56,14 +56,24 @@ the 9x3x9/5-vine density cap; reused `Placement`'s existing clockwise/
 counterclockwise/opposite/offset helpers (same package) rather than
 duplicating direction math. Neighbor-update-driven detach isn't ported (no
 generic block-support-removal system in this codebase to hook into) —
-AUDIT.md. Remaining consumers, roughly by size: grass/mycelium bonemeal
-vegetation features (M — needs placed-feature rolls), fire spread (L — its
-own risk analysis first: griefing semantics + block burn odds), and the
-deliberate crop-growth migration off Farming's scheduled task onto vanilla
-randomTick pacing + the moisture growth-speed formula (M — must update the
-farming/villager playtest scenarios which assume the faster approximation;
-the harness now has the section filter this wanted, see the
-determinism-pass Done entry). Sapling migration rides along with crops.
+AUDIT.md. ~~Grass bonemeal~~ **done 2026-07-12 (Sonnet)** — not actually a
+random-tick consumer (it's a direct `Farming.boneMealGrass` player/dispenser
+interaction, same dispatch point as crop/sapling bonemeal), and "mycelium"
+turned out to be the wrong framing entirely — decompile-verified real
+vanilla MyceliumBlock isn't bonemealable at all. Ported GrassBlock.
+performBonemeal's real 128-attempt scatter walk against the real bundled
+GRASS_BONEMEAL feature data (not approximated); two secondary sub-branches
+simplified out and documented (AUDIT.md) — short-grass-to-tall-grass
+re-rolls, and the 1/8 biome-specific-decoration branch (would need bridging
+this project's worldgen-time Canvas system to live gameplay, a separate,
+bigger task). New playtest coverage folded into `scenarioFarming`. Remaining
+consumers, roughly by size: fire spread (L — its own risk analysis first:
+griefing semantics + block burn odds), and the deliberate crop-growth
+migration off Farming's scheduled task onto vanilla randomTick pacing + the
+moisture growth-speed formula (M — must update the farming/villager
+playtest scenarios which assume the faster approximation; the harness now
+has the section filter this wanted, see the determinism-pass Done entry).
+Sapling migration rides along with crops.
 
 ### Persistence adapter tail — Sonnet
 
