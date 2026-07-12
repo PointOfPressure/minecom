@@ -41,8 +41,23 @@ leftovers.
   (migrating it would need vanilla's much slower random-tick pacing plus the
   moisture-speed formula — do it deliberately with scenario updates), snow
   accumulation stays in survival/Snow.java, sapling growth stays scheduled;
-  fire spread, vines, grass/mycelium bonemeal features, leaf-decay random
-  timing not implemented.
+  fire spread, grass/mycelium bonemeal features, leaf-decay random timing
+  not implemented.
+- ~~Vine spread~~ **Done 2026-07-12 (Sonnet)** — VineBlock.randomTick, the
+  growth half (RandomTicks.spreadVine): 1/4 roll, then a uniform pick among
+  6 directions; horizontal + not-yet-connected tries to extend outward
+  (corner-wrap via an existing CW/CCW face, else hang a fresh face off the
+  CW/CCW neighbor, else a rare 5% upward poke), otherwise tries to grow a
+  new vine above or below by copying a random subset of this block's own
+  horizontal faces (VineBlock.copyRandomFaces), gated by the same 9x3x9/
+  5-vine density cap (canSpread) as real vanilla. Not modeled: the
+  neighbor-update-driven detach/survival check (canSurvive/updateShape —
+  this codebase has no generic block-support-removal system to hook into),
+  world min/max Y bounds (no established height-bounds accessor elsewhere),
+  MultifaceBlock.canAttachTo's exact per-face voxel shape (approximated as
+  `block.isSolid()`, same coarse-solidity pattern used elsewhere in this
+  file), SPREAD_VINES gamerule (assumed always true — no gamerule store in
+  this project).
 - ~~Copper WAXING (honeycomb interaction, axe scraping)~~ **Done 2026-07-12
   (Sonnet)** — `blocks/CopperWaxing.java`: honeycomb prefixes "waxed_" onto
   any unwaxed copper-family block (RandomTicks.isWeatheringCopper gate,

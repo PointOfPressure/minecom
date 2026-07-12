@@ -28,13 +28,16 @@ import java.util.concurrent.ThreadLocalRandom;
  * moisture (FarmlandBlock), copper oxidation (ChangeOverTimeBlock /
  * WeatheringCopper: 0.05688889 roll, Manhattan-4 neighbor scan, squared
  * age-ratio chance, 0.75 modifier while unaffected), budding amethyst
- * (1/5 bud growth per face), and bamboo column growth (1/3 roll, 16-block
- * cap, leaf-crown cascade, stage-based growth stop). Light is the project's
+ * (1/5 bud growth per face), bamboo column growth (1/3 roll, 16-block
+ * cap, leaf-crown cascade, stage-based growth stop), and vine spread
+ * (1/4 roll, corner-wrapping horizontal extension, upward/downward face
+ * copying, 9x3x9 density cap — growth only, no neighbor-update-driven
+ * detach). Light is the project's
  * behavioural model (VNaturalSpawner precedent): sky-exposed = at/above
  * surface, 15 by day / 4 at night, plus real Minestom block light. Crop
  * growth stays on Farming.java's scheduled approximation for now
  * (AUDIT.md); snow accumulation stays in survival/Snow.java. Precipitation
- * ice freeze, fire spread, and vine spread are follow-ups (AUDIT.md).
+ * ice freeze and fire spread are follow-ups (AUDIT.md).
  */
 public final class RandomTicks {
     private RandomTicks() {}
@@ -125,6 +128,7 @@ public final class RandomTicks {
         HANDLERS.put("farmland", RandomTicks::tickFarmland);
         HANDLERS.put("budding_amethyst", RandomTicks::growAmethyst);
         HANDLERS.put("bamboo", RandomTicks::growBamboo);
+        HANDLERS.put("vine", RandomTicks::spreadVine);
     }
 
     /**
@@ -177,6 +181,139 @@ public final class RandomTicks {
                 .withProperty("age", thick ? "1" : "0")
                 .withProperty("leaves", leaves)
                 .withProperty("stage", doneGrowing ? "1" : "0"));
+    }
+
+    // ------------------------------------------------------------------ vine spread
+
+    private static final String[] VINE_HORIZONTAL = {"north", "south", "east", "west"};
+
+    /**
+     * VineBlock.randomTick (decompile-verified), the growth half only — the neighbor-update-
+     * driven detach/survival check (canSurvive/updateShape) isn't ported, matching this
+     * project's "grow via random tick, no generic support-removal system" scope (AUDIT.md).
+     * SPREAD_VINES gamerule assumed true (no gamerule store in this project — behavioural
+     * default, matches vanilla's own default). 1/4 roll, then a random one of 6 directions:
+     * horizontal + not-yet-connected -> try to extend outward one block (preferring to wrap
+     * around a corner via whichever of the CW/CCW neighbor faces this vine already has, else
+     * hang a fresh face off the CW/CCW neighbor block itself, else a rare 5% upward-face poke);
+     * otherwise (UP roll, or DOWN, or an already-connected horizontal face) try to grow upward
+     * by copying a random subset of this block's own faces onto the block above, or fall
+     * through to growing downward the same way. Density-capped at 5 vines in a 9x3x9 box
+     * (canSpread) before any spread attempt. World min/max Y bounds aren't checked (no
+     * established height-bounds accessor elsewhere in this codebase — AUDIT.md).
+     */
+    private static void spreadVine(Instance in, Point pos, Block block) {
+        var rng = ThreadLocalRandom.current();
+        if (rng.nextInt(4) != 0) return;
+        String[] all = {"north", "south", "east", "west", "up", "down"};
+        String testDirection = all[rng.nextInt(6)];
+
+        if (isHorizontal(testDirection) && !hasVineFace(block, testDirection)) {
+            if (!canSpreadVine(in, pos)) return;
+            Point testPos = vineOffset(pos, testDirection);
+            Block edge = in.getBlock(testPos);
+            if (edge.isAir()) {
+                String cw = Placement.clockwise(testDirection), ccw = Placement.counterClockwise(testDirection);
+                boolean cwHas = hasVineFace(block, cw), ccwHas = hasVineFace(block, ccw);
+                Point cwTestPos = vineOffset(testPos, cw), ccwTestPos = vineOffset(testPos, ccw);
+                if (cwHas && isAcceptableVineNeighbor(in, cwTestPos, cw)) {
+                    in.setBlock(testPos, Block.VINE.withProperty(cw, "true"));
+                } else if (ccwHas && isAcceptableVineNeighbor(in, ccwTestPos, ccw)) {
+                    in.setBlock(testPos, Block.VINE.withProperty(ccw, "true"));
+                } else {
+                    String opp = Placement.opposite(testDirection);
+                    if (cwHas && in.getBlock(cwTestPos).isAir() && isAcceptableVineNeighbor(in, vineOffset(pos, cw), opp)) {
+                        in.setBlock(cwTestPos, Block.VINE.withProperty(opp, "true"));
+                    } else if (ccwHas && in.getBlock(ccwTestPos).isAir() && isAcceptableVineNeighbor(in, vineOffset(pos, ccw), opp)) {
+                        in.setBlock(ccwTestPos, Block.VINE.withProperty(opp, "true"));
+                    } else if (rng.nextFloat() < 0.05f && isAcceptableVineNeighbor(in, testPos.add(0, 1, 0), "up")) {
+                        in.setBlock(testPos, Block.VINE.withProperty("up", "true"));
+                    }
+                }
+            } else if (isAcceptableVineNeighbor(in, testPos, testDirection)) {
+                in.setBlock(pos, block.withProperty(testDirection, "true"));
+            }
+            return;
+        }
+
+        if (testDirection.equals("up")) {
+            Point abovePos = pos.add(0, 1, 0);
+            if (isAcceptableVineNeighbor(in, abovePos, "up")) {
+                in.setBlock(pos, block.withProperty("up", "true"));
+                return;
+            }
+            if (in.getBlock(abovePos).isAir()) {
+                if (!canSpreadVine(in, pos)) return;
+                Block above = Block.VINE.withProperties(block.properties());
+                for (String dir : VINE_HORIZONTAL) {
+                    if (rng.nextBoolean() || !isAcceptableVineNeighbor(in, vineOffset(abovePos, dir), dir)) {
+                        above = above.withProperty(dir, "false");
+                    }
+                }
+                if (hasHorizontalVineConnection(above)) in.setBlock(abovePos, above);
+                return;
+            }
+        }
+
+        Point belowPos = pos.add(0, -1, 0);
+        Block below = in.getBlock(belowPos);
+        if (below.isAir() || below.key().value().equals("vine")) {
+            Block before = below.isAir() ? Block.VINE : below;
+            Block after = copyRandomVineFaces(block, before, rng);
+            if (!after.equals(before) && hasHorizontalVineConnection(after)) {
+                in.setBlock(belowPos, after);
+            }
+        }
+    }
+
+    private static Block copyRandomVineFaces(Block from, Block to, ThreadLocalRandom rng) {
+        for (String dir : VINE_HORIZONTAL) {
+            if (rng.nextBoolean() && hasVineFace(from, dir)) to = to.withProperty(dir, "true");
+        }
+        return to;
+    }
+
+    private static boolean hasHorizontalVineConnection(Block block) {
+        for (String dir : VINE_HORIZONTAL) if (hasVineFace(block, dir)) return true;
+        return false;
+    }
+
+    private static boolean hasVineFace(Block block, String dir) {
+        return "true".equals(block.getProperty(dir));
+    }
+
+    private static boolean isHorizontal(String dir) {
+        return dir.equals("north") || dir.equals("south") || dir.equals("east") || dir.equals("west");
+    }
+
+    private static Point vineOffset(Point pos, String dir) {
+        return dir.equals("up") ? pos.add(0, 1, 0) : dir.equals("down") ? pos.add(0, -1, 0) : Placement.offset(pos, dir);
+    }
+
+    /**
+     * MultifaceBlock.canAttachTo, behavioural: real vanilla checks the neighbor's exact face
+     * shape; this project has no per-face voxel-shape model (same coarse-solidity
+     * approximation used elsewhere, e.g. RandomTicks' own skyExposed/enderman-holdable
+     * checks), so any solid neighbor block counts as an acceptable attachment surface
+     * regardless of which specific face is queried.
+     */
+    private static boolean isAcceptableVineNeighbor(Instance in, Point pos, String directionToNeighbor) {
+        return in.getBlock(pos).isSolid();
+    }
+
+    /** VineBlock.canSpread: a 9x3x9 box (radius 4 horizontally, 1 vertically) caps at 5 vines. */
+    private static boolean canSpreadVine(Instance in, Point pos) {
+        int count = 5;
+        for (int dx = -4; dx <= 4; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -4; dz <= 4; dz++) {
+                    if (in.getBlock(pos.add(dx, dy, dz)).key().value().equals("vine")) {
+                        if (--count <= 0) return false;
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     /**

@@ -138,7 +138,7 @@ public final class PlayTest {
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
         scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, and a live sensor", PlayTest::scenarioPersistence);
-        scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds", PlayTest::scenarioRandomTicks);
+        scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread", PlayTest::scenarioRandomTicks);
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
         scenario("silverfish: infested-block ambush, silk-touch bypass, wake-up-friends, merge-into-stone", PlayTest::scenarioSilverfish);
@@ -5120,6 +5120,46 @@ public final class PlayTest {
         check("the height-16 cap segment is marked done growing",
                 "1".equals(prop(65, Y + 16, z, "stage")));
         for (int h = 1; h <= 16; h++) rs(65, Y + h, z, Block.AIR);
+
+        // vine: a south-hanging vine wraps a corner east onto a continuing wall (1/4 roll,
+        // then a 1/6 direction pick each attempt, so retry generously)
+        rs(70, Y + 2, z + 1, Block.STONE);
+        rs(71, Y + 2, z + 1, Block.STONE);
+        rs(70, Y + 2, z, Block.VINE.withProperty("south", "true"));
+        boolean cornerWrap = false;
+        for (int i = 0; i < 2000 && !cornerWrap; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(70, Y + 2, z));
+            cornerWrap = "vine".equals(blockKey(71, Y + 2, z)) && "true".equals(prop(71, Y + 2, z, "south"));
+        }
+        check("random tick: a vine wraps a corner onto a continuing wall", cornerWrap);
+        rs(70, Y + 2, z, Block.AIR);
+        rs(71, Y + 2, z, Block.AIR);
+        rs(70, Y + 2, z + 1, Block.AIR);
+        rs(71, Y + 2, z + 1, Block.AIR);
+
+        // vine: a fully-wrapped vine (all 4 horizontal faces) grows a new vine below it
+        rs(74, Y + 2, z, Block.VINE.withProperty("north", "true").withProperty("south", "true")
+                .withProperty("east", "true").withProperty("west", "true"));
+        boolean grewDown = false;
+        for (int i = 0; i < 500 && !grewDown; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(74, Y + 2, z));
+            grewDown = "vine".equals(blockKey(74, Y + 1, z));
+        }
+        check("random tick: a fully-wrapped vine copies faces onto the block below", grewDown);
+        rs(74, Y + 1, z, Block.AIR);
+        rs(74, Y + 2, z, Block.AIR);
+
+        // vine: a lone vine attaches an "up" face when a solid ceiling sits directly above it
+        rs(76, Y + 3, z, Block.STONE);
+        rs(76, Y + 2, z, Block.VINE.withProperty("south", "true"));
+        boolean attachedUp = false;
+        for (int i = 0; i < 500 && !attachedUp; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(76, Y + 2, z));
+            attachedUp = "true".equals(prop(76, Y + 2, z, "up"));
+        }
+        check("random tick: a vine attaches an up face against a solid ceiling", attachedUp);
+        rs(76, Y + 2, z, Block.AIR);
+        rs(76, Y + 3, z, Block.AIR);
 
         resetPlayer();
     }

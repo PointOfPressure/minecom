@@ -39,16 +39,21 @@ The engine landed 2026-07-12 (Fable, `blocks/RandomTicks.java`) with eight
 handlers (see AUDIT). ~~Bamboo growth~~ **done 2026-07-12 (Sonnet)** —
 BambooStalkBlock port (1/3 roll, air+light>=9 gate, 16-block cap with an
 unconditional stage-flip at height 15, leaf-crown cascade), playtest
-coverage added to `scenarioRandomTicks`. Remaining consumers, roughly by
-size: vine spread (M — VineBlock cached, face-property accumulation like
-resin clumps), grass/mycelium bonemeal vegetation features (M — needs
-placed-feature rolls), fire spread (L — its own risk analysis first:
-griefing semantics + block burn odds), and the deliberate crop-growth
-migration off Farming's scheduled task onto vanilla randomTick pacing + the
-moisture growth-speed formula (M — must update the farming/villager
-playtest scenarios which assume the faster approximation; the harness now
-has the section filter this wanted, see the determinism-pass Done entry).
-Sapling migration rides along with crops.
+coverage added to `scenarioRandomTicks`. ~~Vine spread~~ **done 2026-07-12
+(Sonnet)** — VineBlock.randomTick's growth half (`RandomTicks.spreadVine`):
+corner-wrapping horizontal extension, upward/downward face-copying growth,
+the 9x3x9/5-vine density cap; reused `Placement`'s existing clockwise/
+counterclockwise/opposite/offset helpers (same package) rather than
+duplicating direction math. Neighbor-update-driven detach isn't ported (no
+generic block-support-removal system in this codebase to hook into) —
+AUDIT.md. Remaining consumers, roughly by size: grass/mycelium bonemeal
+vegetation features (M — needs placed-feature rolls), fire spread (L — its
+own risk analysis first: griefing semantics + block burn odds), and the
+deliberate crop-growth migration off Farming's scheduled task onto vanilla
+randomTick pacing + the moisture growth-speed formula (M — must update the
+farming/villager playtest scenarios which assume the faster approximation;
+the harness now has the section filter this wanted, see the
+determinism-pass Done entry). Sapling migration rides along with crops.
 
 ### Persistence adapter tail — Sonnet
 
