@@ -97,7 +97,10 @@ leftovers.
   `doFireTick`-style gating doesn't exist in real vanilla's fire-spread
   path at all (no `mobGriefing`-class check found in `FireBlock.tick`) —
   the "no gamerule store" note elsewhere in this file doesn't even apply
-  here, there's nothing to gate.
+  here, there's nothing to gate. ~~No persistence for the tracked-position
+  countdown~~ **done 2026-07-12 (Sonnet)** — a `StateAdapter` (Campfires'
+  exact shape) now saves/restores `POSITIONS`/`COUNTDOWN`, so a restart
+  doesn't silently stop a mid-countdown fire's spreading/aging/burning-out.
 - ~~Sapling growth~~ **Done 2026-07-12 (Sonnet)** — `RandomTicks.growSapling`/
   `Farming.advanceTree`, decompile-verified against `SaplingBlock.randomTick`/
   `advanceTree`: light gate (raw brightness above the sapling >= 9), a 1/7

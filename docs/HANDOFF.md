@@ -352,8 +352,25 @@ task, not tracked state, so a restored baby gets a fresh 24000-tick timer)
 — noted in AUDIT.md. 4 new scenarioPersistence checks, 17/17 clean across
 reruns.
 
-Still open: trial chambers and position-anchored scheduled ticks, the two
-non-trivial stragglers — scope them before starting.
+~~Position-anchored scheduled ticks~~ **done 2026-07-12 (Sonnet), the
+FireSpread slice of it** — scoped and found smaller than feared: the only
+system in this project shaped like "a position tracks its own
+self-rescheduling countdown, not polled reactively" is `FireSpread.java`
+(built earlier this session — Redstone's daylight-detector/lightning-rod
+trackers are a different idiom, power sources polled by the redstone
+sweep, not counting down on their own). Added a `StateAdapter` copying
+Campfires' exact shape (`POSITIONS`/`COUNTDOWN` collected/restored keyed
+by position), so a restart no longer silently stops spreading/aging/
+burning-out for every fire that was mid-countdown — previously
+indistinguishable from the block just sitting inert, since the block
+itself was already persisted as ordinary chunk data regardless. 2 new
+scenarioPersistence checks (wipe drops the tracking, reload re-arms it),
+19/19 clean reruns.
+
+Still open: trial chambers persistence (a bigger, separate concern —
+already documented as deliberately session-scoped in AUDIT.md, needs
+persisting per-chamber config assignments and wave/vault state, not a
+quick addition — scope it as its own task before starting).
 
 ### Redstone parity — remaining summit after the 2026-07-11 pass — mixed
 ### (summit COMPLETE 2026-07-12: items 1-3 done; 4 is a design decision, 5 is cleanup)

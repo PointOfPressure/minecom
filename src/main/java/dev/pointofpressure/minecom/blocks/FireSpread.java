@@ -101,8 +101,45 @@ public final class FireSpread {
 
     public static void start(Instance overworld) {
         instance = overworld;
+        dev.pointofpressure.minecom.Persist.register(persistence());
         MinecraftServer.getSchedulerManager().buildTask(FireSpread::tickAll)
                 .repeat(TaskSchedule.tick(1)).schedule();
+    }
+
+    /**
+     * Fire's own scheduled-tick countdown survives a restart too (docs/PERSISTENCE.md) — the
+     * block itself was already persisted as part of chunk data regardless, but without this a
+     * restart would silently stop spreading/aging/burning-out for every fire that was
+     * mid-countdown, indistinguishable from the block just sitting inert.
+     */
+    private static dev.pointofpressure.minecom.StateAdapter persistence() {
+        return new dev.pointofpressure.minecom.StateAdapter() {
+            @Override
+            public String kind() {
+                return "fire_tick";
+            }
+
+            @Override
+            public void collect(Instance in, java.util.function.BiConsumer<Point, com.google.gson.JsonObject> out) {
+                POSITIONS.forEach((key, pos) -> {
+                    com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+                    o.addProperty("countdown", COUNTDOWN.getOrDefault(key, fireTickDelay()));
+                    out.accept(pos, o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, com.google.gson.JsonObject data) {
+                String key = Containers.posKey(pos);
+                POSITIONS.put(key, pos);
+                COUNTDOWN.put(key, data.get("countdown").getAsInt());
+            }
+
+            @Override
+            public void wipe() {
+                wipeForTest();
+            }
+        };
     }
 
     /** Arms (or re-arms) a fire block's own scheduled tick. Call after placing fire anywhere. */
@@ -123,6 +160,11 @@ public final class FireSpread {
     public static void wipeForTest() {
         POSITIONS.clear();
         COUNTDOWN.clear();
+    }
+
+    /** Playtest hook: is this position's own scheduled tick currently armed? */
+    public static boolean isTrackedForTest(Point pos) {
+        return POSITIONS.containsKey(Containers.posKey(pos));
     }
 
     private static void untrack(String key) {

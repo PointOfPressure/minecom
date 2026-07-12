@@ -138,7 +138,7 @@ public final class PlayTest {
         scenario("thrown potions: splash scales with distance, lingering leaves a cloud", PlayTest::scenarioThrownPotions);
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
-        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), and per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size)", PlayTest::scenarioPersistence);
+        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size), and fire's own scheduled-tick countdown", PlayTest::scenarioPersistence);
         scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread, crop growth, sapling growth", PlayTest::scenarioRandomTicks);
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
@@ -5290,6 +5290,12 @@ public final class PlayTest {
 
         dev.pointofpressure.minecom.mobs.ai.VanillaMobs.slime(world, new Pos(78.5, Y + 1, z + 0.5), 4);
 
+        // position-anchored scheduled ticks (HANDOFF "Persistence adapter tail"): fire's own
+        // self-rescheduling countdown (FireSpread.java) survives a restart too, not just the
+        // block itself
+        rs(80, Y + 1, z, Block.FIRE);
+        dev.pointofpressure.minecom.blocks.FireSpread.track(new Vec(80, Y + 1, z));
+
         dev.pointofpressure.minecom.Persist.save();
         dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
         clearEntitiesExceptPlayer();
@@ -5297,8 +5303,12 @@ public final class PlayTest {
         dev.pointofpressure.minecom.Difficulty.setInhabitedTicks(world, new Pos(50, Y, z), 1L);
         check("wipe empties the chest registry",
                 dev.pointofpressure.minecom.blocks.Containers.CHESTS.isEmpty());
+        check("wipe also drops fire's own scheduled-tick tracking",
+                !dev.pointofpressure.minecom.blocks.FireSpread.isTrackedForTest(new Vec(80, Y + 1, z)));
 
         dev.pointofpressure.minecom.Persist.loadRegions(world);
+        check("fire's scheduled tick is re-armed after reload",
+                dev.pointofpressure.minecom.blocks.FireSpread.isTrackedForTest(new Vec(80, Y + 1, z)));
         var restoredChest = dev.pointofpressure.minecom.blocks.Containers.CHESTS.get(chestKey);
         check("chest inventory returns from the region shard",
                 restoredChest != null && restoredChest.getItemStack(3).material() == Material.DIAMOND_SWORD);
@@ -5372,6 +5382,7 @@ public final class PlayTest {
         rs(66, Y + 1, z, Block.AIR);
         rs(68, Y + 1, z, Block.AIR);
         rs(70, Y + 1, z, Block.AIR);
+        rs(80, Y + 1, z, Block.AIR);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
