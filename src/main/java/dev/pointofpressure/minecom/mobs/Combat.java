@@ -342,6 +342,7 @@ public final class Combat {
                         (int) Math.floor(hit.z() - vel.z() / len * 0.01));
                 if (instance.getBlock(firePos).isAir()) {
                     instance.setBlock(firePos, net.minestom.server.instance.block.Block.FIRE);
+                    dev.pointofpressure.minecom.blocks.FireSpread.track(firePos);
                 }
             }
             e.getEntity().remove();

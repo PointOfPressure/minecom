@@ -51,7 +51,31 @@ leftovers.
   (migrating it would need vanilla's much slower random-tick pacing plus the
   moisture-speed formula — do it deliberately with scenario updates), snow
   accumulation stays in survival/Snow.java, sapling growth stays scheduled;
-  fire spread, leaf-decay random timing not implemented.
+  leaf-decay random timing not implemented.
+- ~~Fire spread~~ **Done 2026-07-12 (Sonnet)** — `blocks/FireSpread.java`,
+  deliberately NOT a `RandomTicks.java` consumer: real `FireBlock` doesn't
+  use a random tick at all, it self-reschedules a genuine scheduled tick
+  every 30+rand(10) ticks per block, so this is its own tracked-position +
+  shared-periodic-scheduler subsystem (Campfires/Jukebox's shape, not
+  Redstone's tracked-position-registry one). Ported verbatim: age
+  progression, checkBurnOut on the 6 cardinal/vertical neighbors
+  (consume-and-relight or remove, TNT priming included), the 3x3x6
+  spread-attempt volume weighted by igniteOdds/(age+30)+difficulty, rain
+  extinguishing gated on sky exposure, netherrack/magma "infiniburn"
+  exemption. The 207-entry `setFlammable` odds table was machine-diffed
+  against the decompile for an exact match, not hand-transcribed on trust.
+  Wired into the two existing fire-placement sites (fire charge hits,
+  dispenser flint-and-steel) plus a genuinely separate gap found while
+  scoping this: the player-direct flint-and-steel case only handled TNT
+  priming before, general fire-lighting was dispenser-only. Not modeled:
+  `EnvironmentAttributes.INCREASED_FIRE_BURNOUT` (no environment-attribute
+  exposure for it yet — treated as always off), `isFaceSturdy`'s exact
+  per-shape solidity (approximated as `Block.isSolid()`), nether/end
+  infiniburn tags (only the overworld's netherrack/magma_block pair).
+  `doFireTick`-style gating doesn't exist in real vanilla's fire-spread
+  path at all (no `mobGriefing`-class check found in `FireBlock.tick`) —
+  the "no gamerule store" note elsewhere in this file doesn't even apply
+  here, there's nothing to gate.
 - ~~Grass bonemeal~~ **Done 2026-07-12 (Sonnet)** — `Farming.boneMealGrass`:
   GrassBlock.performBonemeal's 128-attempt scatter walk (quantized into 8
   groups of 16 with a progressively longer random walk, staying on top of

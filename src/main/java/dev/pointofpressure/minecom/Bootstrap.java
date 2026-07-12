@@ -5,6 +5,7 @@ import dev.pointofpressure.minecom.blocks.BlockRules;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.blocks.CopperWaxing;
 import dev.pointofpressure.minecom.blocks.Farming;
+import dev.pointofpressure.minecom.blocks.FireSpread;
 import dev.pointofpressure.minecom.blocks.Fluids;
 import dev.pointofpressure.minecom.blocks.InfestedBlocks;
 import dev.pointofpressure.minecom.blocks.Placement;
@@ -145,6 +146,7 @@ public final class Bootstrap {
         Farming.register(events);
         Farming.start(overworld);
         dev.pointofpressure.minecom.blocks.RandomTicks.register(overworld);
+        FireSpread.start(overworld);
         dev.pointofpressure.minecom.blocks.CreakingHearts.register(events, overworld);
         dev.pointofpressure.minecom.mobs.ai.HappyGhastMob.register(events);
         Beds.register(events, overworld);

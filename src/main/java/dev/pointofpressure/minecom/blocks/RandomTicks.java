@@ -592,7 +592,8 @@ public final class RandomTicks {
         return Math.max(block, sky);
     }
 
-    private static boolean skyExposed(Instance in, Point pos) {
+    /** Package-private (not private): reused by FireSpread's isNearRain. */
+    static boolean skyExposed(Instance in, Point pos) {
         for (int y = pos.blockY(); y <= pos.blockY() + 48; y++) {
             Block above = in.getBlock(pos.blockX(), y, pos.blockZ());
             if (above.isSolid() && above.registry().occludes()) return false;

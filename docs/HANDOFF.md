@@ -120,9 +120,43 @@ GRASS_BONEMEAL feature data (not approximated); two secondary sub-branches
 simplified out and documented (AUDIT.md) — short-grass-to-tall-grass
 re-rolls, and the 1/8 biome-specific-decoration branch (would need bridging
 this project's worldgen-time Canvas system to live gameplay, a separate,
-bigger task). New playtest coverage folded into `scenarioFarming`. Remaining
-consumers, roughly by size: fire spread (L — its own risk analysis first:
-griefing semantics + block burn odds), and the deliberate crop-growth
+bigger task). New playtest coverage folded into `scenarioFarming`.
+
+~~Fire spread~~ **done 2026-07-12 (Sonnet)** — the risk analysis this entry
+asked for turned up less risk than feared: real vanilla's fire spread has
+no `mobGriefing`-style gate at all (decompile-verified — confirmed absent
+from `FireBlock.tick`), so "griefing semantics" reduces to the same "no
+gamerule store, assume default-on" simplification already used for
+SPREAD_VINES/GRASS_BONEMEAL, and "block burn odds" is just a big-but-flat
+data table (207 entries), machine-diffed against the decompile for an
+exact match before shipping. The one genuine complication: fire doesn't
+fit `RandomTicks.java`'s chunk-sampled engine at all — real `FireBlock`
+self-reschedules its own SCHEDULED tick every 30+rand(10) ticks per block,
+so this is a new, separate tracked-position + shared-scheduler subsystem
+(`blocks/FireSpread.java`), the same shape Campfires/Jukebox already use
+here (not Redstone's power-source tracked-position idiom). Ported
+verbatim: age progression (0-15, biased to stay put), checkBurnOut on the
+6 cardinal/vertical neighbors (consume-and-maybe-relight or just remove,
+priming TNT if that's what burned), the 3x3x6 spread-attempt volume
+weighted by igniteOdds/(age+30)+difficulty, rain extinguishing (gated on
+sky exposure via `RandomTicks.skyExposed`, widened to package-private for
+reuse) unless the block below is netherrack/magma ("infiniburn"). Also
+wired the two existing fire-placement call sites (Combat.java's fire
+charge, Redstone.java's dispenser flint-and-steel) to register with the
+new tracker, and — a genuinely separate but directly adjacent gap found
+while scoping this — added the missing PLAYER-direct flint-and-steel case
+(`PlayerUseItemOnBlockEvent` only handled TNT priming before; general
+fire-lighting on a clicked face was dispenser-only). Not modeled:
+`EnvironmentAttributes.INCREASED_FIRE_BURNOUT` (this project's
+environment-attribute system doesn't expose it yet — treated as always
+off), `isFaceSturdy`'s exact per-shape solidity (approximated as
+`Block.isSolid()`, matching this file's existing coarse-solidity pattern),
+and the nether/end infiniburn tags (only the overworld's netherrack/
+magma_block pair is modeled). New `scenarioFireSpread` playtest coverage
+(4 checks: player-lit ignition, direct-neighbor burnout, unsupported
+self-extinguish, wider-volume spread), 5/5 clean across reruns.
+
+Remaining random-tick-adjacent consumer: the deliberate crop-growth
 migration off Farming's scheduled task onto vanilla randomTick pacing + the
 moisture growth-speed formula (M — must update the farming/villager
 playtest scenarios which assume the faster approximation; the harness now

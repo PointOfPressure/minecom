@@ -206,6 +206,7 @@ public final class PlayTest {
         scenario("shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared", PlayTest::scenarioShearing);
         scenario("pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds", PlayTest::scenarioPumpkinCarving);
         scenario("copper waxing: honeycomb applies wax (blocking further oxidation), axe scrapes or strips it back off", PlayTest::scenarioCopperWaxing);
+        scenario("fire spread: player-lit flint and steel burns down flammable planks, self-extinguishes unsupported, spreads to a neighbor", PlayTest::scenarioFireSpread);
         scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
@@ -573,6 +574,80 @@ public final class PlayTest {
         check("honeycomb does nothing to a non-copper block", "stone".equals(blockKey(53, Y + 1, z)));
         rs(53, Y + 1, z, Block.AIR);
 
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * FireBlock's own tick (FireSpread.java — not a RandomTicks consumer, fire self-reschedules
+     * a real scheduled tick every 30+rand(10)): player-lit flint and steel creates a tracked
+     * fire block on the clicked face, checkBurnOut consumes directly-touching flammable
+     * neighbors, an unsupported fire self-extinguishes, and the wider spread scan can place a
+     * new fire on an air block near (but not touching) the original.
+     */
+    private static void scenarioFireSpread() {
+        int z = 285;
+        clearEntitiesExceptPlayer();
+
+        // player-lit: flint and steel on the east face of a plank block lights the air beside it
+        rs(50, Y + 1, z, Block.OAK_PLANKS);
+        player.teleport(new Pos(52.5, Y + 1, z + 0.5, 90f, 0f)).join();
+        useItemOnBlock(ItemStack.of(Material.FLINT_AND_STEEL), new BlockVec(50, Y + 1, z), BlockFace.EAST);
+        check("flint and steel lights a fire block on the clicked face", "fire".equals(blockKey(51, Y + 1, z)));
+        rs(50, Y + 1, z, Block.AIR);
+        rs(51, Y + 1, z, Block.AIR);
+
+        // checkBurnOut: a fire block consumes a directly-touching (6-neighbor) flammable block
+        rs(53, Y + 1, z, Block.STONE);
+        rs(53, Y + 2, z, Block.FIRE);
+        rs(54, Y + 2, z, Block.OAK_PLANKS);
+        dev.pointofpressure.minecom.blocks.FireSpread.track(new Vec(53, Y + 2, z));
+        boolean consumed = false;
+        for (int i = 0; i < 400 && !consumed; i++) {
+            dev.pointofpressure.minecom.blocks.FireSpread.forceTick(world, new Vec(53, Y + 2, z));
+            consumed = !"oak_planks".equals(blockKey(54, Y + 2, z));
+            if ("air".equals(blockKey(53, Y + 2, z))) {
+                rs(53, Y + 2, z, Block.FIRE); // keep the driver alive across forced ticks
+            }
+        }
+        check("a fire block eventually consumes a directly-touching flammable neighbor", consumed);
+        rs(53, Y + 1, z, Block.AIR);
+        rs(53, Y + 2, z, Block.AIR);
+        rs(54, Y + 2, z, Block.AIR);
+
+        // unsupported fire (nothing solid below, nothing flammable around) self-extinguishes
+        rs(56, Y + 5, z, Block.FIRE);
+        dev.pointofpressure.minecom.blocks.FireSpread.forceTick(world, new Vec(56, Y + 5, z));
+        check("an unsupported fire with nothing flammable nearby self-extinguishes",
+                "air".equals(blockKey(56, Y + 5, z)));
+
+        // wider spread: a fire can place a new fire on air near (not touching) flammable planks.
+        // isValidFireLocation gates the whole spread section on the fire itself touching SOME
+        // flammable block first (real vanilla: a fire with nothing flammable touching it can
+        // only sit and age out, never spread) — a helper plank above the fire satisfies that
+        // without being the actual spread target, re-placed each iteration alongside the fire
+        // in case checkBurnOut consumes it along the way.
+        rs(59, Y + 1, z, Block.STONE);
+        rs(59, Y + 2, z, Block.FIRE);
+        rs(59, Y + 3, z, Block.OAK_PLANKS);
+        rs(61, Y + 2, z, Block.OAK_PLANKS);
+        dev.pointofpressure.minecom.blocks.FireSpread.track(new Vec(59, Y + 2, z));
+        boolean spread = false;
+        for (int i = 0; i < 400 && !spread; i++) {
+            dev.pointofpressure.minecom.blocks.FireSpread.forceTick(world, new Vec(59, Y + 2, z));
+            spread = "fire".equals(blockKey(60, Y + 2, z));
+            if ("air".equals(blockKey(59, Y + 2, z))) rs(59, Y + 2, z, Block.FIRE);
+            if (!"oak_planks".equals(blockKey(59, Y + 3, z))) rs(59, Y + 3, z, Block.OAK_PLANKS);
+            if (!"oak_planks".equals(blockKey(61, Y + 2, z))) rs(61, Y + 2, z, Block.OAK_PLANKS);
+        }
+        check("fire spreads onto an air block near (not touching) a flammable neighbor", spread);
+        rs(59, Y + 1, z, Block.AIR);
+        rs(59, Y + 2, z, Block.AIR);
+        rs(59, Y + 3, z, Block.AIR);
+        rs(60, Y + 2, z, Block.AIR);
+        rs(61, Y + 2, z, Block.AIR);
+
+        dev.pointofpressure.minecom.blocks.FireSpread.wipeForTest();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

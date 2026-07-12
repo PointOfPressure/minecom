@@ -116,6 +116,17 @@ public final class Redstone {
                 Explosions.primeTnt(instance, clicked, 80, e.getPlayer());
                 e.getPlayer().setItemInHand(e.getHand(),
                         dev.pointofpressure.minecom.data.Items.damageItem(e.getPlayer(), e.getItemStack(), 1));
+            } else {
+                // FlintAndSteelItem.useOn: light the air space on the clicked face, same as the
+                // dispenser path above — feeds FireSpread's own scheduled-tick propagation.
+                var dir = e.getBlockFace().toDirection();
+                Point firePos = clicked.add(dir.normalX(), dir.normalY(), dir.normalZ());
+                if (instance.getBlock(firePos).isAir()) {
+                    instance.setBlock(firePos, Block.FIRE);
+                    dev.pointofpressure.minecom.blocks.FireSpread.track(firePos);
+                    e.getPlayer().setItemInHand(e.getHand(),
+                            dev.pointofpressure.minecom.data.Items.damageItem(e.getPlayer(), e.getItemStack(), 1));
+                }
             }
         });
         events.addListener(PlayerBlockInteractEvent.class, Redstone::interact);
@@ -1076,6 +1087,7 @@ public final class Redstone {
             String tk = target.key().value();
             if (target.isAir()) {
                 instance.setBlock(front, Block.FIRE);
+                dev.pointofpressure.minecom.blocks.FireSpread.track(front);
                 neighborsChanged(front);
             } else if ((tk.endsWith("campfire") || tk.endsWith("candle") || tk.endsWith("candle_cake"))
                     && "false".equals(target.getProperty("lit"))) {
