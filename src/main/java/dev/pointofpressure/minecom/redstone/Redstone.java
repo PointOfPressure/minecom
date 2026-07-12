@@ -854,6 +854,9 @@ public final class Redstone {
             return Crafters.comparatorOutput(pos);
         } else if (key.endsWith("sculk_sensor")) {
             return Vibrations.comparatorOutput(pos, block);
+        } else if (key.equals("creaking_heart")) {
+            // CreakingHeartBlockEntity.computeAnalogOutputSignal: distance-scaled
+            return dev.pointofpressure.minecom.blocks.CreakingHearts.comparatorSignal(pos);
         } else {
             return -1;
         }

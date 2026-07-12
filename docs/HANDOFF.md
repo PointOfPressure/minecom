@@ -16,6 +16,20 @@ of what got escalated and why.
 
 ## Open
 
+### Random-tick consumers tail — Sonnet/Opus
+
+The engine landed 2026-07-12 (Fable, `blocks/RandomTicks.java`) with eight
+handlers (see AUDIT). Remaining consumers, roughly by size: bamboo growth
+(S — BambooStalkBlock cached in vanilla-src), vine spread (M — VineBlock
+cached, face-property accumulation like resin clumps), grass/mycelium
+bonemeal vegetation features (M — needs placed-feature rolls), fire spread
+(L — its own risk analysis first: griefing semantics + block burn odds),
+and the deliberate crop-growth migration off Farming's scheduled task onto
+vanilla randomTick pacing + the moisture growth-speed formula (M — must
+update the farming/villager playtest scenarios which assume the faster
+approximation, and wants the harness section filter first). Sapling
+migration rides along with crops.
+
 ### Persistence adapter tail — Sonnet
 
 The persistence core landed 2026-07-12 (Fable): `StateAdapter` SPI +
@@ -75,8 +89,10 @@ meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
    `Shearing.shear`), armor equipping onto empty-slotted living entities,
    firework (cosmetic flight), splash/lingering potions (via #1). Still
    blocked on missing base systems: armor stands, brush/archaeology,
-   honeycomb/waxing, candles, chest-onto-donkey (no chested-horse
-   inventory). AUDIT.md updated.
+   candles, chest-onto-donkey (no chested-horse inventory). AUDIT.md
+   updated. (2026-07-12: honeycomb/waxing UNBLOCKED — the oxidation system
+   landed with the random-tick engine; the waxing interaction itself is
+   still Sonnet-sized work.)
 4. **Update-order semantics** (DESIGN DECISION, not a task yet) — minecom
    batches dirty positions per tick instead of vanilla's depth-first
    neighbor-update recursion, so update-order-dependent contraptions
@@ -153,7 +169,17 @@ mixed plain/concurrent map pairs (e.g. `Hoppers.COOLDOWN`); (5) split-plan
 for the §11.6 god classes (PlayTest 5.3k lines first). Every rename must
 compile + full selftest/playtest green before commit.
 
-### Creaking + Creaking Heart block entity — Opus
+### ~~Creaking + Creaking Heart block entity~~ — DONE 2026-07-12 (Fable)
+
+Implemented exactly along the extracted spec below: `blocks/CreakingHearts.java`
+(state machine + protector lifecycle + hurt-call emitter + resin BFS +
+comparator + natural XP) and `mobs/ai/CreakingMob.java` (freeze-under-gaze,
+damage redirect via an EntityDamageEvent interceptor, 45gt teardown,
+heartless /summon variant stays mortal). Playtest scenario at z=250 runs the
+whole chain; AUDIT.md lists the simplifications (particles, night-window
+CREAKING_ACTIVE, session-scoped hearts). Original scoping entry kept below.
+
+### Creaking + Creaking Heart block entity — Opus (original scoping)
 
 `VanillaMobs.java` has no creaking factory. Decompiled `Creaking.java` and
 confirmed this isn't a normal mob-stats-and-AI addition (unlike the 6
@@ -212,7 +238,17 @@ so scoping needs no further investigation:
   accumulation) and the Creaking mob itself (`Creaking.java` cached,
   freeze-when-looked-at + damage redirect to heart + tearDown).
 
-### Happy Ghast + multi-passenger riding — Opus
+### ~~Happy Ghast + multi-passenger riding~~ — DONE 2026-07-12 (Fable)
+
+`mobs/ai/HappyGhastMob.java` rides Minestom's native passenger API exactly
+as the scope update below predicted: harness gating, 4-passenger cap,
+first-rider steering from Player.inputs() (the ClientInputPacket sync),
+velocity-only movement while ridden (sidesteps the Navigator gotcha),
+still-platform, continuous heal. Playtest scenario at z=255 covers
+equip/mount/fly/dismount. AUDIT.md lists what's not modeled (per-seat
+offsets, baby ghastling, leash elasticity). Original scoping kept below.
+
+### Happy Ghast + multi-passenger riding — Opus (original scoping)
 
 No `happyGhast()` factory. Decompiled `HappyGhast.java`: unlike every
 other passive mob in this codebase, its whole point is being a rideable
@@ -238,7 +274,7 @@ Discord help channel: the Navigator breaks while an entity has a passenger,
 and passenger movement interpolation misbehaves for far-away mounts —
 design around both.
 
-### Silverfish + infested blocks — Opus
+### Silverfish + infested blocks — Opus (IN PROGRESS 2026-07-12 ~04:05, overnight Fable queue session)
 
 Deferred in the same "missing hostile mobs" pass that closed cave_spider/
 endermite/illusioner/piglin_brute/zoglin/giant (2026-07-11) — silverfish

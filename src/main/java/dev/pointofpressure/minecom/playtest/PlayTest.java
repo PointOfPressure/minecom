@@ -133,6 +133,9 @@ public final class PlayTest {
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
         scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, and a live sensor", PlayTest::scenarioPersistence);
+        scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds", PlayTest::scenarioRandomTicks);
+        scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
+        scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -4867,9 +4870,11 @@ public final class PlayTest {
      */
     private static void scenarioRandomTicks() {
         int z = 245;
-        var rt = dev.pointofpressure.minecom.blocks.RandomTicks.class;
         world.setTime(1000); // day: grass spread needs brightness >= 9 above
         dev.pointofpressure.minecom.survival.WeatherCycle.setRaining(world, false);
+        // the live dispatch only ticks chunks within 8 of a player — stand nearby
+        player.teleport(new Pos(56.5, Y + 1, z + 0.5)).join();
+        tick(2);
 
         // grass spreads to nearby dirt, dies when smothered
         rs(50, Y + 1, z, Block.GRASS_BLOCK);
@@ -4947,6 +4952,144 @@ public final class PlayTest {
 
     private static String blockKey(int x, int y, int z) {
         return world.getBlock(x, y, z).key().value();
+    }
+
+    /**
+     * Happy Ghast (docs/HANDOFF.md spec): the rideable flying mount — a
+     * harness equips the body slot from the hand, right-click mounts through
+     * Minestom's passenger API, rider inputs steer it, sneak dismounts.
+     */
+    private static void scenarioHappyGhast() {
+        int z = 255;
+        clearEntitiesExceptPlayer();
+        EntityCreature ghast = Mobs.spawn("happy_ghast", world, new Pos(50.5, Y + 6, z + 0.5));
+        tick(2);
+        player.teleport(new Pos(52.5, Y + 1, z + 0.5, 0f, 0f)).join();
+        player.setItemInMainHand(ItemStack.of(Material.BLUE_HARNESS));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, ghast, PlayerHand.MAIN, Vec.ZERO));
+        tick(2);
+        check("a harness right-clicked onto the ghast equips its body slot",
+                ghast.getEquipment(net.minestom.server.entity.EquipmentSlot.BODY).material() == Material.BLUE_HARNESS);
+        check("the harness leaves the survival player's hand", player.getItemInMainHand().isAir());
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, ghast, PlayerHand.MAIN, Vec.ZERO));
+        tick(2);
+        check("right-clicking the harnessed ghast mounts the player", player.getVehicle() == ghast);
+
+        Pos before = ghast.getPosition();
+        player.refreshInput(true, false, false, false, false, false, false); // hold W
+        tick(40);
+        player.refreshInput(false, false, false, false, false, false, false);
+        double moved = ghast.getPosition().distance(before);
+        check("holding forward flies the mounted ghast (moved " + String.format("%.1f", moved) + ")",
+                moved > 1.0);
+
+        player.refreshInput(false, false, false, false, false, true, false); // sneak
+        check("sneaking dismounts the rider", waitFor(() -> player.getVehicle() == null, 3000));
+        player.refreshInput(false, false, false, false, false, false, false);
+        ghast.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Creaking + Creaking Heart (docs/HANDOFF.md spec): night heart with its
+     * pale-oak logs wakes, spawns a protector, the protector freezes under
+     * the player's gaze, redirected damage grows resin, and breaking the
+     * heart tears the creaking down.
+     */
+    private static void scenarioCreaking() {
+        int z = 250;
+        world.setTime(14000); // night: CREAKING_ACTIVE
+        clearEntitiesExceptPlayer();
+        rs(50, Y + 1, z, Block.PALE_OAK_LOG);
+        rs(50, Y + 2, z, Block.CREAKING_HEART);
+        rs(50, Y + 3, z, Block.PALE_OAK_LOG);
+        dev.pointofpressure.minecom.blocks.CreakingHearts.track(new Vec(50, Y + 2, z));
+        player.teleport(new Pos(58.5, Y + 1, z + 0.5, 90f, 0f)).join(); // in range, facing away
+        check("night heart with matching logs wakes up",
+                waitFor(() -> "awake".equals(prop(50, Y + 2, z, "creaking_heart_state")), 5000));
+        boolean spawned = waitFor(() -> world.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.CREAKING), 6000);
+        check("awake heart spawns a creaking protector near a player", spawned);
+        if (!spawned) {
+            rs(50, Y + 1, z, Block.AIR);
+            rs(50, Y + 2, z, Block.AIR);
+            rs(50, Y + 3, z, Block.AIR);
+            resetPlayer();
+            return;
+        }
+        Entity creakingEntity = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.CREAKING).findFirst().orElseThrow();
+        var creaking = dev.pointofpressure.minecom.mobs.ai.CreakingMob.of(creakingEntity);
+        check("comparator reads a distance-scaled signal while linked",
+                dev.pointofpressure.minecom.blocks.CreakingHearts.comparatorSignal(new Vec(50, Y + 2, z)) > 0);
+
+        // activation needs the gaze within 12 blocks — step up to it first
+        Pos cp0 = creakingEntity.getPosition();
+        player.teleport(new Pos(cp0.x() + 6, Y + 1, cp0.z() + 0.5, 90f, 0f)).join();
+        tick(2);
+
+        // stare at it (re-aim each poll — it may wander) -> frozen
+        boolean froze = false;
+        for (int i = 0; i < 40 && !froze; i++) {
+            Pos cp = creakingEntity.getPosition(), pp = player.getPosition();
+            double dx = cp.x() - pp.x(), dy = (cp.y() + 1.5) - (pp.y() + 1.62), dz = cp.z() - pp.z();
+            double dist = Math.max(0.01, Math.sqrt(dx * dx + dy * dy + dz * dz));
+            float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+            float pitch = (float) Math.toDegrees(-Math.asin(dy / dist));
+            player.teleport(new Pos(pp.x(), pp.y(), pp.z(), yaw, pitch)).join();
+            tick(5);
+            froze = !creaking.canMoveNow();
+        }
+        check("a watched creaking freezes in place", froze);
+
+        // redirected damage: the creaking survives and the heart grows resin
+        EventDispatcher.call(new EntityAttackEvent(player, creakingEntity));
+        tick(10);
+        check("hitting a heart-bound creaking never kills it (damage redirects to the heart)",
+                !creakingEntity.isRemoved() && !((EntityCreature) creakingEntity).isDead());
+        boolean resin = waitFor(() -> {
+            for (int dy2 = 0; dy2 <= 4; dy2++) {
+                for (int dx2 = -2; dx2 <= 2; dx2++) {
+                    for (int dz2 = -2; dz2 <= 2; dz2++) {
+                        if ("resin_clump".equals(blockKey(50 + dx2, Y + 1 + dy2, z + dz2))) return true;
+                    }
+                }
+            }
+            return false;
+        }, 4000);
+        check("the hurt call grows resin clumps on the pale-oak trunk", resin);
+
+        // look away -> unfreezes (compute the actual away-facing yaw — a fixed
+        // yaw 90 faces WEST, i.e. back toward the creaking the player stepped
+        // up to at cp0.x()+6, so the gaze never actually left it)
+        Pos cpNow = creakingEntity.getPosition();
+        Pos pp = player.getPosition();
+        double awayDx = pp.x() - cpNow.x(), awayDz = pp.z() - cpNow.z();
+        float awayYaw = (float) Math.toDegrees(Math.atan2(-awayDx, awayDz));
+        player.teleport(new Pos(pp.x(), pp.y(), pp.z(), awayYaw, 0f)).join();
+        check("looking away unfreezes it", waitFor(creaking::canMoveNow, 4000));
+
+        // breaking the heart tears the protector down (45gt sequence)
+        rs(50, Y + 2, z, Block.AIR);
+        check("destroying the heart tears the creaking down",
+                waitFor(creakingEntity::isRemoved, 8000));
+        rs(50, Y + 1, z, Block.AIR);
+        rs(50, Y + 3, z, Block.AIR);
+        for (int dy2 = 0; dy2 <= 4; dy2++) {
+            for (int dx2 = -2; dx2 <= 2; dx2++) {
+                for (int dz2 = -2; dz2 <= 2; dz2++) {
+                    if ("resin_clump".equals(blockKey(50 + dx2, Y + 1 + dy2, z + dz2))) {
+                        rs(50 + dx2, Y + 1 + dy2, z + dz2, Block.AIR);
+                    }
+                }
+            }
+        }
+        clearEntitiesExceptPlayer();
+        resetPlayer();
     }
 
     private static void scenarioButton() {

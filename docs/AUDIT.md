@@ -24,13 +24,23 @@ leftovers.
   cooldowns), warden anger (deliberate), item entities in flight, and the
   registries are overworld-only (position keys would collide across
   dimensions — pre-existing limitation).
-- **No random-tick engine.** Harvesting.java:18 admits it: crop growth is a
-  scheduled-task approximation (Farming.java), and there's no generic random
-  tick for: grass/mycelium spread, leaf decay timing (leaf decay exists but
-  event-driven), fire spread, ice/snow melt by light, copper oxidation, sugar
-  cane/cactus/bamboo growth (check Farming coverage), sapling growth, vine
-  spread, budding amethyst. (L — a bounded random-tick scheduler would unlock
-  many S items)
+- ~~No random-tick engine~~ **Core landed 2026-07-12 (Fable)** —
+  `blocks/RandomTicks.java`: the ServerLevel.tickChunk dispatch (3 rolls per
+  non-empty 16³ section per tick, chunks within 8 of players; vanilla's
+  per-section ticking-block index is approximated by a palette-empty skip)
+  with handlers for grass/mycelium spread + death, ice + snow-layer melt at
+  block light > 11, sugar cane + cactus growth (incl. 26.x cactus flowers),
+  farmland moisture, copper oxidation (full ChangeOverTimeBlock port:
+  0.05688889 roll, Manhattan-4 scan, squared age ratio, 0.75 unaffected
+  modifier, key-derived NEXT_BY_BLOCK chain), and budding amethyst. Light is
+  the project's behavioural model (VNaturalSpawner precedent). Still on old
+  approximations or missing: crop growth stays on Farming's scheduled task
+  (migrating it would need vanilla's much slower random-tick pacing plus the
+  moisture-speed formula — do it deliberately with scenario updates), snow
+  accumulation stays in survival/Snow.java, sapling growth stays scheduled;
+  fire spread, vines, bamboo, grass/mycelium bonemeal features, leaf-decay
+  random timing not implemented. Copper WAXING (honeycomb interaction, axe
+  scraping) is now unblocked but not built.
 - **No attack-cooldown model** (Combat.java:82-86 admits it) — vanilla 1.9+
   attack charge scales damage 0.2x-1x and gates sweep; minecom always
   full-strength + sweep on grounded sword hits. (M)
@@ -157,6 +167,37 @@ leftovers.
   giant/unused. 26.x additions to check against the jar's entity registry:
   creaking (+ creaking heart), copper golem?, happy ghast?, parched (exists!),
   nautilus (exists as water animal). (each S-M given the factory pattern)
+- **Happy Ghast (mobs/ai/HappyGhastMob.java, 2026-07-12, Fable)** — the
+  rideable flying mount, ported from decompiled HappyGhast.java over
+  Minestom's native passenger API: harness equip/strip (any *_harness item
+  onto BODY, sneak+shears removes), up to 4 passengers, first-passenger
+  steering (strafe + pitch-projected forward with the backward -0.5x rule,
+  jump +0.5 up, 3.9xFLYING_SPEED scaling, 0.91 flying friction, 8%/tick yaw
+  ease, half-pitch), player-on-top still-platform (10gt timeout + 60gt
+  grace), ghast-drift idle, continuous heal (600gt / 20gt in rain), 20 HP.
+  Movement is velocity-only while ridden (the HANDOFF-flagged Navigator+
+  passenger breakage never engages). Not modeled: per-seat passenger
+  attachment offsets (riders share the client's default point), baby
+  ghastling (brain AI, 0.2375 scale, dried-ghast rehydration pipeline),
+  snowball tempt goal, leash quad-offsets/elasticity, home-restriction
+  radius, natural spawning, cloud detection for fast heal.
+- **Creaking + Creaking Heart (mobs/ai/CreakingMob.java +
+  blocks/CreakingHearts.java, 2026-07-12, Fable)** — full port of
+  Creaking/CreakingAi + CreakingHeartBlock/BlockEntity/State: heart state
+  machine (uprooted/dormant/awake on a 20+rand(5) ticker, matching-axis
+  pale-oak log requirement), one linked protector (5×(±16,±8)
+  not-on-leaves spawn, unlink at day/34-blocks/player-stuck),
+  freeze-under-gaze (cone + LOS approximation of isLookingAtMe's
+  0.5-tolerance three-height check; carved-pumpkin disguise honored
+  post-activation), damage redirect to the heart's 100gt hurt call with
+  interpolated sounds and 2-3 resin clumps (BFS depth 2/64 over pale-oak
+  logs, multiface accumulation, waterlogged on source water), 45gt
+  teardown, distance-scaled comparator, natural-heart 20-24 XP.
+  Simplifications: teardown/trail particles and eye-flicker not sent
+  (client visuals), CREAKING_ACTIVE modeled as the standard 13000-23000
+  night window (vanilla reads the day timeline), hearts are session-scoped
+  like TrialChambers (placement/test tracking only — no worldgen pale
+  gardens yet, no Anvil reload re-link), body-rotation control not ported.
 - **Warden (mobs/ai/WardenMob.java, 2026-07-12, Fable)** — full port of
   Warden/WardenAi/AngerManagement/AngerLevel + the behavior/warden package
   as one explicit state machine over VBrain navigation; summoned by the

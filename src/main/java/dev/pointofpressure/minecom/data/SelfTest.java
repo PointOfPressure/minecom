@@ -1268,6 +1268,21 @@ public final class SelfTest {
                             && dev.pointofpressure.minecom.Persist.posKey(pos).equals("-31,64,207"));
         }
 
+        // ---- copper oxidation chain (WeatheringCopper.NEXT_BY_BLOCK, key-derived) ----
+        {
+            check("oxidation: copper_block -> exposed -> weathered -> oxidized -> terminal",
+                    "exposed_copper".equals(dev.pointofpressure.minecom.blocks.RandomTicks.nextOxidation("copper_block"))
+                            && "weathered_copper".equals(dev.pointofpressure.minecom.blocks.RandomTicks.nextOxidation("exposed_copper"))
+                            && "oxidized_copper".equals(dev.pointofpressure.minecom.blocks.RandomTicks.nextOxidation("weathered_copper"))
+                            && dev.pointofpressure.minecom.blocks.RandomTicks.nextOxidation("oxidized_copper") == null);
+            check("oxidation: cut_copper_stairs family weathers, keeping its shape",
+                    "exposed_cut_copper_stairs".equals(
+                            dev.pointofpressure.minecom.blocks.RandomTicks.nextOxidation("cut_copper_stairs")));
+            check("oxidation: waxed and non-copper blocks never weather",
+                    dev.pointofpressure.minecom.blocks.RandomTicks.nextOxidation("waxed_copper_block") == null
+                            && dev.pointofpressure.minecom.blocks.RandomTicks.nextOxidation("stone") == null);
+        }
+
         // ---- warden anger arbitration (AngerManagement.Sorter, decompile-verified) ----
         {
             check("warden suspects: an angry (>=80) mob outranks a calm player",

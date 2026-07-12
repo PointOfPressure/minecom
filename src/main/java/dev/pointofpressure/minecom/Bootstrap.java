@@ -141,6 +141,9 @@ public final class Bootstrap {
         Fluids.start(overworld);
         Farming.register(events);
         Farming.start(overworld);
+        dev.pointofpressure.minecom.blocks.RandomTicks.register(overworld);
+        dev.pointofpressure.minecom.blocks.CreakingHearts.register(events, overworld);
+        dev.pointofpressure.minecom.mobs.ai.HappyGhastMob.register(events);
         Beds.register(events, overworld);
         dev.pointofpressure.minecom.redstone.Hoppers.start(overworld);
         dev.pointofpressure.minecom.data.Enchants.register(events, overworld);
