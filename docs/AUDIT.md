@@ -138,8 +138,10 @@ leftovers.
   into containers or as item, slot locking via empty-cursor click, comparator
   = filled+locked. Not modeled: recipe remainder items (bucket returns),
   fail/success level events, locked-slot client visuals (container property
-  packets), smallest-stack insert balancing, crafter persistence
-  (session-scoped like dispensers).
+  packets), smallest-stack insert balancing. ~~Crafter persistence
+  (session-scoped like dispensers)~~ — done, rides the persistence core
+  landed 2026-07-12 (Fable): crafters + locked slots are in the region
+  shards now, same as chests/hoppers/furnaces.
 - ~~Redstone.java — sculk sensors: no vibration system~~ **Done 2026-07-11
   (Fable)**: `redstone/Vibrations.java` — full frequency table, 1 block/gt
   travel, distance power, sensor 8/30gt + calibrated 16/10gt with back-face
@@ -154,9 +156,14 @@ leftovers.
   within 48, amortized -1-per-12000gt quiet decay, darkness + reply
   sound/summon when the 90gt shriek ends) plus the warden itself
   (mobs/ai/WardenMob.java). Still not modeled: amethyst resonance,
-  container open/close + eat/drink/equip-class events, waterlogged
-  silencing, swim/splash/flap emissions, the spawn_wardens gamerule (no
-  gamerule system). Note the behavior change: non-summon shriekers
+  container open/close + eat/drink/equip-class events (a real, diffuse
+  gap — see HANDOFF's redstone-parity item 5 for scope), swim/splash/flap
+  emissions, the spawn_wardens gamerule (no gamerule system). "Waterlogged
+  silencing" was on this list but turned out to be a non-issue — checked
+  2026-07-12 (Sonnet): `SculkSensorBlock`'s WATERLOGGED references are all
+  about suppressing the click *sound*, not detection; a waterlogged sensor
+  activates/powers/reads identically to a dry one in real vanilla. Note
+  the behavior change: non-summon shriekers
   (can_summon=false, the player-placed default) no longer apply Darkness —
   that matches vanilla (tryRespond requires an actual warning).
 - ~~Pistons.java — no slime/honey chains~~ **Done 2026-07-11 (Fable)** — full

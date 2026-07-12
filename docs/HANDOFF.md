@@ -252,9 +252,31 @@ meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
    porting THAT is the right target, but do NOT attempt it before the
    multi-core redstone design lands (COMMUNITY-INTEL.md: region-threaded
    redstone islands), or the update-order work gets done twice.
-5. **Crafter persistence + locked-slot client visuals**, vibration-tap gaps
-   (container open/close, eat/drink/equip), waterlogged sensor silencing —
-   AUDIT.md has the itemized list.
+5. **Cleanup grab-bag, re-scoped 2026-07-12 (Sonnet) — sized per item,
+   ~~crafter persistence~~ dropped (already done, see the Persistence
+   adapter tail entry: crafters + locked slots landed in the persistence
+   core itself):**
+   - Locked-slot client visuals (crafter's locked-slot container property
+     packets) — pure client-visual state sync, no gameplay effect; matches
+     dozens of already-accepted sound/particle-class simplifications
+     elsewhere in this project. Low value, skip unless picked up as part
+     of a broader crafter-polish pass. (S, cosmetic)
+   - Waterlogged sensor silencing — decompile-checked this session:
+     `SculkSensorBlock`'s WATERLOGGED references are ALL about suppressing
+     the click *sound* (`if (!waterlogged) playSound(...)`); a waterlogged
+     sensor still activates/powers/reads on comparator identically to a
+     dry one in real vanilla. Also pure client-audio, not a real gameplay
+     gap. (S, cosmetic)
+   - Vibration-tap gaps (container open/close, eat/drink/equip-class
+     entity events) — the one item here with real gameplay effect
+     (sculk sensors/shriekers/wardens currently can't hear these event
+     categories at all). Genuinely diffuse, not small: needs new
+     `Vibrations.emit(...)` call sites threaded through every container
+     type (chests, shulker boxes, furnaces, brewing stands, the new small
+     block entities from this session's persistence work...) plus
+     Survival.java's eat/drink logic plus wherever equipment gets set —
+     10+ files, not a single-file fix. Scope as its own task before
+     starting, don't treat as a quick addition. (M, real gap)
 
 ### Piston reorder-collision differential test — Opus
 
@@ -344,7 +366,15 @@ fixed by placing 3. All affected sections run clean 10x in a row with the
 new filter; full selftest (210/0) and playtest green after the fix
 (test-logs/playtest_determinism_pass.log, test-logs/selftest_determinism_pass.log).
 
-### Unification-pass mechanical cleanups — Sonnet (BLOCKED until first pass done)
+### Unification-pass mechanical cleanups — strongest model available (BLOCKED until first pass done)
+
+**Mislabeled below as "Sonnet" — corrected 2026-07-12 (Sonnet).**
+docs/STRATEGY.md §6 step 3 explicitly says this pass runs on "strongest
+model available," not Sonnet — that's a project-sequencing decision (it's
+step 3 of the launch roadmap, after "finish first pass" and "suite
+hardening," both still open per this file), not a difficulty judgment
+about the individual renames below. Don't pick this up as a quick Sonnet
+task even once it's unblocked.
 
 Queued per docs/STRATEGY.md §6 step 3 and docs/CONVENTIONS.md §11 — do these
 as ONE dedicated pass, not opportunistically: (1) rename camelCase
@@ -355,6 +385,15 @@ imported simple names consistently (42 FQN call sites); (4) unify the
 mixed plain/concurrent map pairs (e.g. `Hoppers.COOLDOWN`); (5) split-plan
 for the §11.6 god classes (PlayTest 5.3k lines first). Every rename must
 compile + full selftest/playtest green before commit.
+
+**Also noticed 2026-07-12 (Sonnet) while checking this blocking condition:**
+STRATEGY.md §6 step 2's "verification-suite hardening" (a co-prerequisite
+alongside "finish first pass") isn't defined anywhere else in the docs —
+no concrete scope, checklist, or size estimate exists for it yet. Whoever
+picks this pass up needs to scope that step first (or confirm with the
+project owner what it means) rather than assuming it's already satisfied
+by this session's flake fixes, which were incidental bug fixes, not a
+deliberate hardening pass.
 
 ### ~~Creaking + Creaking Heart block entity~~ — DONE 2026-07-12 (Fable)
 
