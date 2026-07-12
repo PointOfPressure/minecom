@@ -3,6 +3,8 @@ package dev.pointofpressure.minecom.blocks;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.LootTables;
 import dev.pointofpressure.minecom.data.VanillaData;
 import net.kyori.adventure.nbt.CompoundBinaryTag;
@@ -40,9 +42,18 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * Positions and per-block config ids are captured at structure placement time
  * (VStructureGen sees each template block's entity NBT: the spawner's
- * normal_config/ominous_config and the vault's config.loot_table/key_item), so
- * like the rest of this project's block-entity state it is session-scoped —
- * chambers loaded back from a saved Anvil world come back as inert blocks.
+ * normal_config/ominous_config and the vault's config.loot_table/key_item).
+ * Both the config (SPAWNER_DEFS/VAULT_DEFS) AND the runtime progress
+ * (SpawnerData/VaultData, plus the block's own trial_spawner_state/
+ * vault_state/ominous properties) are persisted (done 2026-07-12, Sonnet):
+ * this project's production config uses a real AnvilLoader (see Bootstrap —
+ * playtest's flat/in-memory config does not), so an already-visited chunk
+ * restores its saved block data directly on restart rather than
+ * regenerating from the seed, meaning the structure-placement NBT hook
+ * above never fires again for it. Losing the config alongside the progress
+ * would leave a correctly-restored SpawnerData/VaultData permanently
+ * inert, since tick() only iterates SPAWNER_DEFS/VAULT_DEFS.entrySet() to
+ * decide what to process at all — see each adapter's own Javadoc below.
  *
  * Spawner flow: waiting_for_players detects a player in line of sight within 14
  * blocks -> active spawns the config's mobs (total 6 +2/extra player,
@@ -109,6 +120,174 @@ public final class TrialChambers {
         MinecraftServer.getSchedulerManager().buildTask(TrialChambers::tick)
                 .repeat(TaskSchedule.tick(1)).schedule();
         events.addListener(PlayerBlockInteractEvent.class, TrialChambers::interact);
+        Persist.register(spawnerPersistence());
+        Persist.register(vaultPersistence());
+    }
+
+    /**
+     * Trial spawner persistence (docs/PERSISTENCE.md). Persists SPAWNER_DEFS too, not just the
+     * runtime SpawnerData: this project's PRODUCTION config uses a real AnvilLoader (Bootstrap
+     * — playtest's flat/in-memory config does not), so an already-visited chunk loads its saved
+     * block data directly on restart rather than regenerating from the seed, meaning
+     * VStructureGen's registerTemplateBlockEntity call never fires again for it. Without this,
+     * a restored SpawnerData would sit correctly in SPAWNERS but tick() would never find it —
+     * it only iterates SPAWNER_DEFS.entrySet() — leaving an already-progressed spawner
+     * permanently inert despite "successfully" restoring. (An earlier version of this adapter
+     * only persisted SpawnerData and passed every playtest check anyway, because the playtest
+     * harness never runs a real AnvilLoader restart — a real gap a green test suite alone
+     * wouldn't have caught.) The block's own trial_spawner_state/ominous properties are
+     * restored explicitly too, since regeneration (for a genuinely fresh chunk) would reset
+     * them to the template default regardless. World-age-relative fields are stored as deltas
+     * from "now" at save time and re-anchored against the fresh world age at load time — the
+     * same technique Breeding.cooldownTicksRemaining/setCooldownTicks already use, since a
+     * fresh Instance's world age always restarts at 0. currentMobs (live entity ids, ephemeral
+     * across a restart) is intentionally NOT persisted — the state machine already tolerates an
+     * empty currentMobs correctly (it just spawns fresh wave mobs up to totalMobsSpawned's
+     * remaining budget), matching this project's established "in-flight state, acceptable
+     * loss" precedent for other ephemeral things (item entities, IN_LOVE windows).
+     */
+    private static StateAdapter spawnerPersistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "trial_spawner";
+            }
+
+            @Override
+            public void collect(Instance in, java.util.function.BiConsumer<Point, JsonObject> out) {
+                long now = in.getWorldAge();
+                SPAWNER_DEFS.forEach((key, def) -> {
+                    Point pos = unpack(key);
+                    JsonObject o = new JsonObject();
+                    o.addProperty("normalConfig", def.normalConfig());
+                    o.addProperty("ominousConfig", def.ominousConfig());
+                    SpawnerData data = SPAWNERS.get(key);
+                    if (data != null) {
+                        Block block = in.getBlock(pos);
+                        o.addProperty("state", block.getProperty("trial_spawner_state") == null
+                                ? "inactive" : block.getProperty("trial_spawner_state"));
+                        o.addProperty("ominous", data.ominous);
+                        o.addProperty("totalMobsSpawned", data.totalMobsSpawned);
+                        o.addProperty("nextMobSpawnsAtDelta", data.nextMobSpawnsAt - now);
+                        o.addProperty("cooldownEndsAtDelta", data.cooldownEndsAt - now);
+                        o.addProperty("lastAllDeadAtDelta", data.lastAllDeadAt - now);
+                        o.addProperty("nextEjectAtDelta", data.nextEjectAt - now);
+                        JsonArray players = new JsonArray();
+                        for (UUID u : data.detectedPlayers) players.add(u.toString());
+                        o.add("detectedPlayers", players);
+                    }
+                    out.accept(pos, o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject d) {
+                long key = pack(pos.blockX(), pos.blockY(), pos.blockZ());
+                SPAWNER_DEFS.put(key, new SpawnerDef(
+                        d.get("normalConfig").getAsString(), d.get("ominousConfig").getAsString()));
+                if (!d.has("totalMobsSpawned")) return; // never ticked yet: def only, no progress
+                long now = in.getWorldAge();
+                SpawnerData data = new SpawnerData();
+                data.ominous = d.get("ominous").getAsBoolean();
+                data.totalMobsSpawned = d.get("totalMobsSpawned").getAsInt();
+                data.nextMobSpawnsAt = now + d.get("nextMobSpawnsAtDelta").getAsLong();
+                data.cooldownEndsAt = now + d.get("cooldownEndsAtDelta").getAsLong();
+                data.lastAllDeadAt = now + d.get("lastAllDeadAtDelta").getAsLong();
+                data.nextEjectAt = now + d.get("nextEjectAtDelta").getAsLong();
+                for (JsonElement el : d.getAsJsonArray("detectedPlayers")) {
+                    data.detectedPlayers.add(UUID.fromString(el.getAsString()));
+                }
+                SPAWNERS.put(key, data);
+                Block block = in.getBlock(pos);
+                if (block.key().value().equals("trial_spawner")) {
+                    in.setBlock(pos, block.withProperty("trial_spawner_state", d.get("state").getAsString())
+                            .withProperty("ominous", String.valueOf(data.ominous)));
+                }
+            }
+
+            @Override
+            public void wipe() {
+                SPAWNER_DEFS.clear();
+                SPAWNERS.clear();
+            }
+        };
+    }
+
+    /**
+     * Vault persistence (docs/PERSISTENCE.md) — same shape and same AnvilLoader-vs-playtest
+     * reasoning as the spawner adapter above: VAULT_DEFS is persisted too, not just VaultData,
+     * since an already-visited chunk restores from a real Anvil save on restart rather than
+     * regenerating and re-registering. rewardedPlayers is the one field that MUST survive a
+     * restart correctly (real vanilla: exactly one unlock per player, ever — losing this would
+     * let a restart un-gate a re-roll). itemsToEject is persisted too (via
+     * Persist.writeItem/readItem, same per-item helpers the chest/hopper adapters use) rather
+     * than dropped as "in-flight, acceptable loss" — unlike a mid-wave mob, an already-unlocked
+     * reward is something the player has genuinely earned, just not received the last item of
+     * yet.
+     */
+    private static StateAdapter vaultPersistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "trial_vault";
+            }
+
+            @Override
+            public void collect(Instance in, java.util.function.BiConsumer<Point, JsonObject> out) {
+                long now = in.getWorldAge();
+                VAULT_DEFS.forEach((key, def) -> {
+                    Point pos = unpack(key);
+                    JsonObject o = new JsonObject();
+                    o.addProperty("lootTable", def.lootTable());
+                    o.addProperty("keyItem", def.keyItem());
+                    o.addProperty("defOminous", def.ominous());
+                    VaultData data = VAULTS.get(key);
+                    if (data != null) {
+                        Block block = in.getBlock(pos);
+                        o.addProperty("state", block.getProperty("vault_state") == null
+                                ? "inactive" : block.getProperty("vault_state"));
+                        o.addProperty("stateResumesAtDelta", data.stateResumesAt - now);
+                        JsonArray players = new JsonArray();
+                        for (UUID u : data.rewardedPlayers) players.add(u.toString());
+                        o.add("rewardedPlayers", players);
+                        JsonArray items = new JsonArray();
+                        for (ItemStack stack : data.itemsToEject) items.add(Persist.writeItem(stack));
+                        o.add("itemsToEject", items);
+                    }
+                    out.accept(pos, o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject d) {
+                long key = pack(pos.blockX(), pos.blockY(), pos.blockZ());
+                VAULT_DEFS.put(key, new VaultDef(
+                        d.get("lootTable").getAsString(), d.get("keyItem").getAsString(),
+                        d.get("defOminous").getAsBoolean()));
+                if (!d.has("stateResumesAtDelta")) return; // never ticked yet: def only, no progress
+                long now = in.getWorldAge();
+                VaultData data = new VaultData();
+                data.stateResumesAt = now + d.get("stateResumesAtDelta").getAsLong();
+                for (JsonElement el : d.getAsJsonArray("rewardedPlayers")) {
+                    data.rewardedPlayers.add(UUID.fromString(el.getAsString()));
+                }
+                for (JsonElement el : d.getAsJsonArray("itemsToEject")) {
+                    ItemStack stack = Persist.readItem(el.getAsJsonObject());
+                    if (stack != null) data.itemsToEject.add(stack);
+                }
+                VAULTS.put(key, data);
+                Block block = in.getBlock(pos);
+                if (block.key().value().equals("vault")) {
+                    in.setBlock(pos, block.withProperty("vault_state", d.get("state").getAsString()));
+                }
+            }
+
+            @Override
+            public void wipe() {
+                VAULT_DEFS.clear();
+                VAULTS.clear();
+            }
+        };
     }
 
     // ------------------------------------------------------------------ trial spawner

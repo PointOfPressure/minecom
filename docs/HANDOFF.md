@@ -160,6 +160,34 @@ call). Likely a residual silverfish from the *prior* sub-test surviving
 above already closed the two most likely causes without fully eliminating
 it. Rare enough (down from ~1/20 combined to ~1/29 for this one specific
 check) that further live instrumentation is left for next time it's caught.
+Ran 40 fresh reruns 2026-07-12 (Sonnet) trying to catch it again (in case
+the trial chambers persistence work below disturbed anything nearby) — 0
+failures, consistent with a still-real but genuinely rare event, not
+caught this pass either.
+
+### Rare (~1/15-1/25?) dispensed-animal-spawn flake — unassigned, unconfirmed lead
+
+Found 2026-07-12 (Sonnet) during a full-suite verification pass unrelated
+to this scenario: `scenarioDispenserBehaviors`'s "dispensed spawn egg
+places a pig in front" occasionally fails to find the pig in
+`world.getEntities()` within the 3s `waitFor` window. Reproduced in
+isolation (1/5 on a small rerun, consistent with a real, if rare, rate).
+
+**Likely lead, not confirmed:** `Mobs.spawn("pig", ...)` routes through
+`VanillaMobs.animal(kind, instance, pos)` — a single shared factory for
+~20 passive mob types (cow/pig/sheep/chicken/rabbit/goat/horse/donkey/
+llama/turtle/panda/polar_bear/armadillo/camel/fox/frog/wolf/parrot/
+zombie_horse/ocelot) — which calls `mob.setInstance(instance, pos)`
+without joining the returned `CompletableFuture<Void>`, the exact same
+shape bug confirmed and fixed for `VanillaMobs.silverfish()` earlier this
+session. Deliberately did NOT add `.join()` here without stronger
+evidence: unlike silverfish (a narrow, rare-ambush-only spawn path),
+`animal()` is a broad, shared, moderately-hot path across 20 common mob
+types — the same caution HANDOFF's zombie-melee-damage entry already
+applied (before that flake turned out to have a totally different, unrelated
+root cause — sunburn, not this pattern — so pattern-matching alone isn't
+enough confirmation). Needs either a dedicated instrumented repro or actual
+before/after statistics before touching a path this widely shared.
 
 ### ~~Rare (~1/30) unarmored zombie melee damage flake~~ — DONE 2026-07-12 (Sonnet)
 

@@ -28,12 +28,14 @@ leftovers.
   via the explicit-size factory instead of Mobs.spawn's plain path which
   would otherwise roll a fresh random size). A restored baby's remaining
   grow-up time isn't modeled (the 20-minute timer is a one-shot scheduled
-  task, not tracked state — gets a fresh timer on restore). Still session-scoped
-  (HANDOFF "Persistence adapter tail"): trial chambers, scheduled ticks,
-  warden anger (deliberate), item entities in flight, breeding's own
-  30-second IN_LOVE window (too short-lived to be worth it), and the
-  registries are overworld-only (position keys would collide across
-  dimensions — pre-existing limitation).
+  task, not tracked state — gets a fresh timer on restore). ~~Trial
+  chambers~~ and ~~fire's own scheduled-tick countdown~~ **done 2026-07-12
+  (Sonnet)** — see their own entries below and in HANDOFF's "Persistence
+  adapter tail". Still session-scoped: warden anger (deliberate), item
+  entities in flight, breeding's own 30-second IN_LOVE window (too
+  short-lived to be worth it), and the registries are overworld-only
+  (position keys would collide across dimensions — pre-existing
+  limitation).
 - ~~No random-tick engine~~ **Core landed 2026-07-12 (Fable)** —
   `blocks/RandomTicks.java`: the ServerLevel.tickChunk dispatch (3 rolls per
   non-empty 16³ section per tick, chunks within 8 of players; vanilla's
@@ -376,6 +378,23 @@ leftovers.
   packets, decorated pots in chambers, dispenser traps in chambers, heavy
   core/mace, breeze projectile deflection (breeze should destroy incoming
   arrows), trial explorer map in vault loot (map item is a dead item here). (M)
+  ~~Persistence~~ **done 2026-07-12 (Sonnet)** — was session-scoped (a
+  restart came back inert); SPAWNER_DEFS/VAULT_DEFS need no persistence of
+  their own (this project never saves raw chunk/block data — every chunk
+  regenerates deterministically from the seed, re-deriving them naturally
+  the same way Containers' structure-loot registry does), but SpawnerData/
+  VaultData plus the block's own trial_spawner_state/vault_state/ominous
+  properties do, since regeneration would otherwise reset those to the
+  template default. World-age-relative fields (nextMobSpawnsAt, etc.) are
+  stored as deltas and re-anchored at restore, the same technique
+  Breeding.cooldownTicksRemaining already uses. currentMobs (live entity
+  ids) is intentionally dropped — the state machine already tolerates an
+  empty one correctly, matching this project's "in-flight state, acceptable
+  loss" precedent elsewhere. rewardedPlayers and itemsToEject ARE fully
+  persisted (real vanilla's one-unlock-per-player guarantee must survive a
+  restart, and an already-unlocked reward is genuinely earned, not
+  in-flight). 2 new scenarioTrialChamber checks (spawner cooldown state and
+  vault unlock-tracking both survive a save/wipe/reload), 3/3 clean reruns.
 
 ## mobs/
 

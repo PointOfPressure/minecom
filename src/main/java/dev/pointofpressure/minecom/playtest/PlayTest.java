@@ -202,7 +202,7 @@ public final class PlayTest {
         scenario("redstone: detector rail powers a lamp while a cart sits on it", PlayTest::scenarioDetectorRail);
         scenario("redstone: daylight detector tracks the sun, inverts into a night sensor", PlayTest::scenarioDaylightDetector);
         scenario("difficulty: peaceful nullifies mobs and hunger, easy/hard scale damage, hard calls zombie reinforcements", PlayTest::scenarioDifficulty);
-        scenario("trial chambers: the spawner runs a full wave trial and ejects rewards, the vault unlocks once per player with a trial key, wind charges burst", PlayTest::scenarioTrialChamber);
+        scenario("trial chambers: the spawner runs a full wave trial and ejects rewards, the vault unlocks once per player with a trial key, wind charges burst, progress survives a save/wipe/reload", PlayTest::scenarioTrialChamber);
         scenario("boat: sneak dismounts the rider, attacking breaks it and drops the item", PlayTest::scenarioBoatBreakAndDismount);
         scenario("chest boat: sneak-click opens its 27-slot inventory instead of riding, breaking spills contents", PlayTest::scenarioChestBoat);
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
@@ -4137,6 +4137,17 @@ public final class PlayTest {
         check("trial spawner: the trial ends in the 30-minute cooldown state", cooled);
         clearEntitiesExceptPlayer();
 
+        // persistence: SPAWNER_DEFS re-derives from chunk regeneration (untouched by wipe),
+        // but SpawnerData's progress and the block's own state property do not — a save/wipe/
+        // reload must NOT reset a mid-cooldown spawner back to waiting_for_players
+        var trialBase = java.nio.file.Path.of("target", "playtest-trial-persist");
+        dev.pointofpressure.minecom.Persist.setBaseDirForTest(trialBase, world);
+        dev.pointofpressure.minecom.Persist.save();
+        dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
+        dev.pointofpressure.minecom.Persist.loadRegions(world);
+        check("trial spawner: cooldown state survives a save/wipe/reload (not reset to waiting_for_players)",
+                "cooldown".equals(prop(sx, Y + 1, sz, "trial_spawner_state")));
+
         // vault: activates nearby, unlocks once per player with a trial key
         int vx = 146;
         world.setBlock(vx, Y + 1, sz, Block.VAULT);
@@ -4159,9 +4170,15 @@ public final class PlayTest {
         waitFor(() -> !"ejecting".equals(prop(vx, Y + 1, sz, "vault_state"))
                 && !"unlocking".equals(prop(vx, Y + 1, sz, "vault_state")), 15000);
         clearEntitiesExceptPlayer();
+
+        // persistence: rewardedPlayers MUST survive a restart — real vanilla's "one unlock per
+        // player, ever" guarantee would otherwise let a restart re-open an already-claimed vault
+        dev.pointofpressure.minecom.Persist.save();
+        dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
+        dev.pointofpressure.minecom.Persist.loadRegions(world);
         interact(new BlockVec(vx, Y + 1, sz));
         tick(2);
-        check("vault: the same player can never unlock the same vault twice",
+        check("vault: the same player still can't unlock twice after a save/wipe/reload",
                 player.getItemInMainHand().amount() == 1
                         && !"unlocking".equals(prop(vx, Y + 1, sz, "vault_state")));
 
