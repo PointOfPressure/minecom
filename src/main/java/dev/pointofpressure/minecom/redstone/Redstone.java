@@ -117,11 +117,17 @@ public final class Redstone {
                 e.getPlayer().setItemInHand(e.getHand(),
                         dev.pointofpressure.minecom.data.Items.damageItem(e.getPlayer(), e.getItemStack(), 1));
             } else {
-                // FlintAndSteelItem.useOn: light the air space on the clicked face, same as the
-                // dispenser path above — feeds FireSpread's own scheduled-tick propagation.
+                // FlintAndSteelItem.useOn: a valid obsidian frame around the clicked face takes
+                // priority (PortalShape.createPortalBlocks) — only falls through to lighting the
+                // bare air space, same as the dispenser path above, feeding FireSpread's own
+                // scheduled-tick propagation, when no portal shape is found there.
                 var dir = e.getBlockFace().toDirection();
                 Point firePos = clicked.add(dir.normalX(), dir.normalY(), dir.normalZ());
-                if (instance.getBlock(firePos).isAir()) {
+                if (dev.pointofpressure.minecom.blocks.Portals.tryLight(instance, firePos, "x")
+                        || dev.pointofpressure.minecom.blocks.Portals.tryLight(instance, firePos, "z")) {
+                    e.getPlayer().setItemInHand(e.getHand(),
+                            dev.pointofpressure.minecom.data.Items.damageItem(e.getPlayer(), e.getItemStack(), 1));
+                } else if (instance.getBlock(firePos).isAir()) {
                     instance.setBlock(firePos, Block.FIRE);
                     dev.pointofpressure.minecom.blocks.FireSpread.track(firePos);
                     e.getPlayer().setItemInHand(e.getHand(),
@@ -964,9 +970,14 @@ public final class Redstone {
     public static final Map<String, Inventory> DISPENSERS = new ConcurrentHashMap<>();
 
     public static Inventory dispenserInventory(Point pos) {
-        return DISPENSERS.computeIfAbsent(Containers.posKey(pos),
+        String key = Containers.posKey(pos);
+        boolean isNew = !DISPENSERS.containsKey(key);
+        Inventory inv = DISPENSERS.computeIfAbsent(key,
                 k -> new Inventory(net.minestom.server.inventory.InventoryType.WINDOW_3X3,
                         net.kyori.adventure.text.Component.text("Dispenser")));
+        // structure-placed loot dispensers (jungle temple trap) roll on first access, same as chests
+        if (isNew) Containers.rollPendingLoot(key, inv);
+        return inv;
     }
 
     private static void dispense(Point pos, Block block) {
@@ -1085,7 +1096,11 @@ public final class Redstone {
         } else if (!dropper && mat == Material.FLINT_AND_STEEL) {
             Block target = instance.getBlock(front);
             String tk = target.key().value();
-            if (target.isAir()) {
+            if (target.isAir() && dev.pointofpressure.minecom.blocks.Portals.tryLight(instance, front, "x")) {
+                // portal shape found and lit — no fire block to place
+            } else if (target.isAir() && dev.pointofpressure.minecom.blocks.Portals.tryLight(instance, front, "z")) {
+                // portal shape found and lit — no fire block to place
+            } else if (target.isAir()) {
                 instance.setBlock(front, Block.FIRE);
                 dev.pointofpressure.minecom.blocks.FireSpread.track(front);
                 neighborsChanged(front);

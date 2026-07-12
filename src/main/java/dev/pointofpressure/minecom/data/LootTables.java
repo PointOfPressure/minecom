@@ -83,6 +83,19 @@ public final class LootTables {
         return evaluate(table.getAsJsonObject(), new Ctx(ItemStack.AIR, null));
     }
 
+    /**
+     * Structure-placed chest tables by id path, e.g. "chests/simple_dungeon" or
+     * "chests/village/village_weaponsmith" (minecraft:loot_table/chests/*.json, bundled
+     * verbatim). Rolled once at first-open via Containers' pos-&gt;table registry
+     * (StructureLoot), not at generation time — matches real vanilla's LootTable NBT
+     * field on the chest block entity, which only resolves on the first player interact.
+     */
+    public static List<ItemStack> chest(String idPath) {
+        JsonElement table = VanillaData.lootChests.get(VanillaData.path(idPath));
+        if (table == null) return List.of();
+        return evaluate(table.getAsJsonObject(), new Ctx(ItemStack.AIR, null));
+    }
+
     private static List<ItemStack> evaluate(JsonObject table, Ctx ctx) {
         List<ItemStack> out = new ArrayList<>(2);
         JsonArray pools = table.getAsJsonArray("pools");

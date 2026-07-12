@@ -650,11 +650,15 @@ public final class VStrongholdGen {
     }
 
     /** real createChest is self-guarding (chunkBB.isInside + not-already-a-chest) so it's safe to
-     *  call unconditionally on every render, matching Library's un-flagged repeat calls. */
-    private static void createChest(Piece p, Sink sink, int[] clip, int x, int y, int z) {
+     *  call unconditionally on every render, matching Library's un-flagged repeat calls. Loot
+     *  rolls on first open (Containers.registerLoot/rollPendingLoot), same as every other
+     *  structure's containers. */
+    private static void createChest(Piece p, Sink sink, int[] clip, int x, int y, int z, String lootTable) {
         if (!insideClip(p, clip, x, y, z)) return;
-        // established project-wide precedent: place the chest block, skip loot-table CONTENTS.
         place(p, sink, clip, Block.CHEST, x, y, z);
+        int wx = worldX(p, x, z), wy = worldY(p, y), wz = worldZ(p, x, z);
+        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                new net.minestom.server.coordinate.Vec(wx, wy, wz), lootTable);
     }
 
     private static void generateSmallDoor(Piece p, Sink sink, int[] clip, DoorType type, int fx, int fy, int fz) {
@@ -828,7 +832,7 @@ public final class VStrongholdGen {
                 place(p, sink, clip, ladder, 9, 1, 3);
                 place(p, sink, clip, ladder, 9, 2, 3);
                 place(p, sink, clip, ladder, 9, 3, 3);
-                createChest(p, sink, clip, 3, 4, 8);
+                createChest(p, sink, clip, 3, 4, 8, "minecraft:chests/stronghold_crossing");
             }
             default -> { /* real vanilla has no case 3/4 body (switch falls through with no default) */ }
         }
@@ -909,7 +913,7 @@ public final class VStrongholdGen {
         place(p, sink, clip, Block.STONE_BRICK_SLAB, 3, 2, 2);
         place(p, sink, clip, Block.STONE_BRICK_SLAB, 3, 2, 4);
         for (int z = 2; z <= 4; z++) place(p, sink, clip, Block.STONE_BRICK_SLAB, 2, 1, z);
-        createChest(p, sink, clip, 3, 2, 3);
+        createChest(p, sink, clip, 3, 2, 3, "minecraft:chests/stronghold_corridor");
     }
 
     private static void ppLibrary(Piece p, Sink sink, int[] clip, VSurface.LegacyRandom random) {
@@ -988,10 +992,10 @@ public final class VStrongholdGen {
             place(p, sink, clip, Block.TORCH, 7, 8, 6);
             place(p, sink, clip, Block.TORCH, 7, 8, 8);
         }
-        createChest(p, sink, clip, 3, 3, 5);
+        createChest(p, sink, clip, 3, 3, 5, "minecraft:chests/stronghold_library");
         if (p.isTall) {
             place(p, sink, clip, Block.CAVE_AIR, 12, 9, 1);
-            createChest(p, sink, clip, 12, 8, 1);
+            createChest(p, sink, clip, 12, 8, 1, "minecraft:chests/stronghold_library");
         }
     }
 

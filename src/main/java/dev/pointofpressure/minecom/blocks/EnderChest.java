@@ -28,10 +28,18 @@ public final class EnderChest {
     /** Ender chest inventories keyed by player UUID string; exposed for persistence. */
     public static final Map<String, Inventory> INVENTORIES = new ConcurrentHashMap<>();
 
+    /** Position of the specific ender chest BLOCK a player last opened — the shared, per-player
+     *  Inventory above has no block identity of its own, but the lid animation is still tied to
+     *  a real world position, so this is tracked separately just for that. */
+    private static final Map<String, Point> LAST_OPENED = new ConcurrentHashMap<>();
+
     public static void register(GlobalEventHandler events) {
         events.addListener(InventoryCloseEvent.class, e -> {
             if (e.getInventory() == INVENTORIES.get(e.getPlayer().getUuid().toString())) {
-                playAt(e.getPlayer().getInstance(), e.getPlayer().getPosition(), SoundEvent.BLOCK_ENDER_CHEST_CLOSE);
+                Point pos = LAST_OPENED.remove(e.getPlayer().getUuid().toString());
+                Point soundPos = pos != null ? pos : e.getPlayer().getPosition();
+                if (pos != null) Containers.sendChestAction(e.getPlayer().getInstance(), pos, 0);
+                playAt(e.getPlayer().getInstance(), soundPos, SoundEvent.BLOCK_ENDER_CHEST_CLOSE);
             }
         });
     }
@@ -40,6 +48,8 @@ public final class EnderChest {
         Inventory inv = INVENTORIES.computeIfAbsent(player.getUuid().toString(),
                 k -> new Inventory(InventoryType.CHEST_3_ROW, Component.text("Ender Chest")));
         player.openInventory(inv);
+        LAST_OPENED.put(player.getUuid().toString(), pos);
+        Containers.sendChestAction(instance, pos, 1);
         playAt(instance, pos, SoundEvent.BLOCK_ENDER_CHEST_OPEN);
     }
 

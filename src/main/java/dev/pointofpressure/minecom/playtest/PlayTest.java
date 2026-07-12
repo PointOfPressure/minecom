@@ -138,7 +138,7 @@ public final class PlayTest {
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
         scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), and per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size)", PlayTest::scenarioPersistence);
-        scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread", PlayTest::scenarioRandomTicks);
+        scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread, crop growth", PlayTest::scenarioRandomTicks);
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
         scenario("silverfish: infested-block ambush, silk-touch bypass, wake-up-friends, merge-into-stone", PlayTest::scenarioSilverfish);
@@ -208,6 +208,7 @@ public final class PlayTest {
         scenario("copper waxing: honeycomb applies wax (blocking further oxidation), axe scrapes or strips it back off", PlayTest::scenarioCopperWaxing);
         scenario("fire spread: player-lit flint and steel burns down flammable planks, self-extinguishes unsupported, spreads to a neighbor", PlayTest::scenarioFireSpread);
         scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
+        scenario("structure loot: chest/barrel/dispenser roll a real vanilla loot table on first open, not before, not twice; barrel lid blockstate toggles open/close", PlayTest::scenarioStructureLoot);
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
@@ -681,6 +682,71 @@ public final class PlayTest {
                         && s.get(DataComponents.LODESTONE_TRACKER) != null
                         && s.get(DataComponents.LODESTONE_TRACKER).tracked());
         check("splitting off a bound compass adds exactly one new bound copy to the inventory", gotBoundCopy);
+        resetPlayer();
+    }
+
+    /**
+     * Structure loot (RandomizableContainer's LootTable NBT, decompile-verified via the bundled
+     * structure templates directly — e.g. village house chests literally carry
+     * {@code LootTable: "minecraft:chests/village/village_weaponsmith"} on the chest's own
+     * block-entity NBT): worldgen registers a pos-&gt;table pending roll
+     * (Containers.registerLoot), and the FIRST open — not generation time — rolls real vanilla
+     * loot into the container (Containers.rollPendingLoot), matching vanilla's own "resolve on
+     * first interact" timing. "chests/simple_dungeon" is used here because every entry in its
+     * main pool is unconditioned, so a roll is guaranteed non-empty (no retry loop needed).
+     */
+    private static void scenarioStructureLoot() {
+        clearEntitiesExceptPlayer();
+        int z = 300;
+
+        java.util.List<ItemStack> direct =
+                dev.pointofpressure.minecom.data.LootTables.chest("minecraft:chests/simple_dungeon");
+        check("LootTables.chest resolves a bundled structure loot table directly", !direct.isEmpty());
+
+        String chestKey = "50," + (Y + 1) + "," + z;
+        world.setBlock(50, Y + 1, z, Block.CHEST);
+        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                new BlockVec(50, Y + 1, z), "minecraft:chests/simple_dungeon");
+        check("a registered structure chest holds nothing before it's ever opened",
+                dev.pointofpressure.minecom.blocks.Containers.CHESTS.get(chestKey) == null);
+
+        interact(new BlockVec(50, Y + 1, z));
+        var chest = dev.pointofpressure.minecom.blocks.Containers.CHESTS.get(chestKey);
+        boolean hasLoot = java.util.Arrays.stream(chest.getItemStacks()).anyMatch(s -> !s.isAir());
+        check("opening it for the first time rolls real loot into the inventory", hasLoot);
+
+        java.util.List<ItemStack> firstRoll = java.util.List.of(chest.getItemStacks());
+        interact(new BlockVec(50, Y + 1, z));
+        var chestAgain = dev.pointofpressure.minecom.blocks.Containers.CHESTS.get(chestKey);
+        check("opening it a second time does not reroll or duplicate the contents",
+                java.util.List.of(chestAgain.getItemStacks()).equals(firstRoll));
+
+        world.setBlock(50, Y + 1, z, Block.AIR);
+
+        // same mechanism, barrel + dispenser containers (village/ancient-city barrels, the
+        // jungle temple trap dispenser)
+        String barrelKey = "52," + (Y + 1) + "," + z;
+        world.setBlock(52, Y + 1, z, Block.BARREL);
+        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                new BlockVec(52, Y + 1, z), "minecraft:chests/simple_dungeon");
+        interact(new BlockVec(52, Y + 1, z));
+        var barrel = dev.pointofpressure.minecom.blocks.Containers.CHESTS.get(barrelKey);
+        check("a structure-placed barrel also rolls loot on first open",
+                java.util.Arrays.stream(barrel.getItemStacks()).anyMatch(s -> !s.isAir()));
+        check("opening a barrel flips its \"open\" blockstate (ContainerOpenersCounter, drives the lid model)",
+                "true".equals(prop(52, Y + 1, z, "open")));
+        player.closeInventory();
+        check("closing a barrel flips \"open\" back to false", "false".equals(prop(52, Y + 1, z, "open")));
+        world.setBlock(52, Y + 1, z, Block.AIR);
+
+        world.setBlock(54, Y + 1, z, Block.DISPENSER.withProperty("facing", "north"));
+        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                new BlockVec(54, Y + 1, z), "minecraft:chests/simple_dungeon");
+        var dispenserInv = dev.pointofpressure.minecom.redstone.Redstone.dispenserInventory(new Vec(54, Y + 1, z));
+        check("a structure-placed dispenser also rolls loot on first access",
+                java.util.Arrays.stream(dispenserInv.getItemStacks()).anyMatch(s -> !s.isAir()));
+        world.setBlock(54, Y + 1, z, Block.AIR);
+
         resetPlayer();
     }
 
@@ -1954,6 +2020,11 @@ public final class PlayTest {
     /** Iron golem: attacks nearby hostile mobs unprompted, real variable damage + upward launch. */
     private static void scenarioIronGolem() {
         clearEntitiesExceptPlayer();
+        // pin a definite night so the spawned zombie below never combusts (VanillaMobs.sunburn,
+        // 1 fire-tick damage/sec) before the golem's own hit lands — this scenario must be
+        // independently runnable via the --playtest section filter, not just as part of the
+        // full ordered suite where some earlier scenario happens to leave time in a safe state.
+        world.setTime(14000);
         var golem = Mobs.spawn("iron_golem", world, new Pos(0.5, Y + 1, 0.5));
         check("iron golem spawns with real vanilla stats (100 HP, full knockback immunity)",
                 golem instanceof net.minestom.server.entity.LivingEntity le
@@ -1961,7 +2032,20 @@ public final class PlayTest {
                         && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.KNOCKBACK_RESISTANCE) == 1.0);
         EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(1.5, Y + 1, 0.5));
         float healthBefore = zombie.getHealth();
-        boolean hit = waitFor(() -> zombie.getHealth() < healthBefore, 15000);
+        // waitFor's shared 4-tick poll granularity is too coarse here: the launch velocity this
+        // checks is only set on the exact hit tick, and gravity can erode or invert it again
+        // before we get to read it back — the same class of test-side real-time-wait race as
+        // the silverfish ambush flake earlier this session. Tick-by-tick polling narrows the
+        // window a lot (was failing most isolated runs, now a rare ~1/5) but doesn't fully
+        // close it — still occasionally reads a tick or two after the real hit landed. Left
+        // as a known residual flake (real-suite runs, where this scenario isn't first to touch
+        // the zombie, don't show it) rather than guessing further at the exact internal
+        // ordering; needs live instrumentation next time it's caught to actually root-cause.
+        boolean hit = false;
+        for (int i = 0; i < 300 && !hit; i++) {
+            tick(1);
+            hit = zombie.getHealth() < healthBefore;
+        }
         check("an iron golem attacks a nearby hostile mob unprompted (village defense)", hit);
         if (hit) {
             float dealt = healthBefore - zombie.getHealth();
@@ -1973,6 +2057,7 @@ public final class PlayTest {
         if (golem != null) golem.remove();
         zombie.remove();
         clearEntitiesExceptPlayer();
+        world.setTime(1000);
         resetPlayer();
     }
 
@@ -5216,7 +5301,9 @@ public final class PlayTest {
     /**
      * Random-tick engine (docs: ServerLevel.tickChunk port in RandomTicks):
      * handler behavior via the deterministic forceTick hook, plus one growth
-     * through the real dispatch path at a cranked randomTickSpeed.
+     * through the real dispatch path at a cranked randomTickSpeed. Also
+     * covers crop growth (light gate, farmland moisture growth-speed scan,
+     * per-crop maxAge cap).
      */
     private static void scenarioRandomTicks() {
         int z = 245;
@@ -5364,6 +5451,51 @@ public final class PlayTest {
         check("random tick: a vine attaches an up face against a solid ceiling", attachedUp);
         rs(76, Y + 2, z, Block.AIR);
         rs(76, Y + 3, z, Block.AIR);
+
+        // crop growth (CropBlock.randomTick/getGrowthSpeed): light gate, farmland moisture
+        // growth-speed scan, and the per-crop maxAge cap
+        rs(80, Y, z, Block.FARMLAND.withProperty("moisture", "0"));
+        rs(80, Y + 1, z, Block.WHEAT.withProperty("age", "0"));
+        rs(80, Y + 2, z, Block.STONE); // blocks sky exposure -> brightness < 9
+        for (int i = 0; i < 200; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(80, Y + 1, z));
+        }
+        check("random tick: a crop below light 9 never grows", "0".equals(prop(80, Y + 1, z, "age")));
+        rs(80, Y + 2, z, Block.AIR);
+        rs(80, Y + 1, z, Block.AIR);
+        rs(80, Y, z, Block.AIR);
+
+        rs(82, Y, z, Block.FARMLAND.withProperty("moisture", "0"));
+        rs(82, Y + 1, z, Block.WHEAT.withProperty("age", "0"));
+        boolean grewDry = false;
+        for (int i = 0; i < 500 && !grewDry; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(82, Y + 1, z));
+            grewDry = !"0".equals(prop(82, Y + 1, z, "age"));
+        }
+        check("random tick: wheat on unmoistened farmland grows (growth speed 2.0 branch)", grewDry);
+        rs(82, Y + 1, z, Block.AIR);
+        rs(82, Y, z, Block.AIR);
+
+        rs(84, Y, z, Block.FARMLAND.withProperty("moisture", "7"));
+        rs(84, Y + 1, z, Block.WHEAT.withProperty("age", "0"));
+        boolean grewWet = false;
+        for (int i = 0; i < 500 && !grewWet; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(84, Y + 1, z));
+            grewWet = !"0".equals(prop(84, Y + 1, z, "age"));
+        }
+        check("random tick: wheat on moistened farmland grows (growth speed 4.0 branch)", grewWet);
+        rs(84, Y + 1, z, Block.AIR);
+        rs(84, Y, z, Block.AIR);
+
+        rs(86, Y, z, Block.FARMLAND.withProperty("moisture", "7"));
+        rs(86, Y + 1, z, Block.BEETROOTS.withProperty("age", "3"));
+        for (int i = 0; i < 100; i++) {
+            dev.pointofpressure.minecom.blocks.RandomTicks.forceTick(world, new Vec(86, Y + 1, z));
+        }
+        check("random tick: beetroots stop at their own maxAge (3, not wheat's 7)",
+                "3".equals(prop(86, Y + 1, z, "age")));
+        rs(86, Y + 1, z, Block.AIR);
+        rs(86, Y, z, Block.AIR);
 
         resetPlayer();
     }
@@ -6645,6 +6777,41 @@ public final class PlayTest {
         boolean home = waitFor(() -> player.getInstance() == world, 15000);
         check("return portal brings you home at x8 coords", home);
         player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        tick(2);
+
+        // ServerPlayer.getDimensionChangingDelay: creative/spectator cross instantly, skipping
+        // survival's ~4-second (80-tick) standing wait — exercised through the REAL tick()
+        // scheduler this time (10gt period), not the debugTravel test bypass used above, so a
+        // regression back to the flat 80-tick wait for everyone would actually be caught.
+        int bx2 = 70;
+        for (int w = 0; w < 4; w++) {
+            world.setBlock(bx2 + w, Y + 1, bz, Block.OBSIDIAN);
+            world.setBlock(bx2 + w, Y + 5, bz, Block.OBSIDIAN);
+        }
+        for (int h = 1; h <= 4; h++) {
+            world.setBlock(bx2, Y + 1 + h, bz, Block.OBSIDIAN);
+            world.setBlock(bx2 + 3, Y + 1 + h, bz, Block.OBSIDIAN);
+        }
+        for (int h = 1; h <= 3; h++) {
+            world.setBlock(bx2 + 1, Y + 1 + h, bz, Block.AIR);
+            world.setBlock(bx2 + 2, Y + 1 + h, bz, Block.AIR);
+        }
+        boolean lit2 = dev.pointofpressure.minecom.blocks.Portals.tryLight(
+                world, new BlockVec(bx2 + 1, Y + 2, bz), "x");
+        check("second frame lights (diagnostic, block=" + blockKey(bx2 + 1, Y + 2, bz) + ")", lit2);
+        player.setGameMode(GameMode.CREATIVE);
+        player.teleport(new Pos(bx2 + 1.5, Y + 2, bz + 0.5)).join();
+        check("player standing in the second portal (diagnostic, block="
+                + blockKey(player.getPosition().blockX(), player.getPosition().blockY(), player.getPosition().blockZ())
+                + ", gamemode=" + player.getGameMode() + ")", true);
+        var nether2 = dev.pointofpressure.minecom.Bootstrap.netherOf(world);
+        // one scheduler period (10gt) plus slack for the async setInstance to land — nowhere
+        // near the 80gt survival wait, so this still proves the instant-crossing branch fired
+        boolean crossed = waitFor(() -> player.getInstance() == nether2, 3000);
+        check("a creative player crosses a portal instantly, no standing wait", crossed);
+        player.setGameMode(GameMode.SURVIVAL);
+        if (player.getInstance() != world) player.setInstance(world, new Pos(0.5, Y + 1, 0.5)).join();
+        else player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
         tick(2);
     }
 

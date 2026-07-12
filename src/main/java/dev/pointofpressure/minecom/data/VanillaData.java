@@ -27,6 +27,7 @@ public final class VanillaData {
     static JsonObject lootEntities;
     static JsonObject lootGameplay;
     static JsonObject lootTrial;
+    static JsonObject lootChests;
     static JsonObject trialSpawnerConfigs;
     private static JsonObject tagsItem;
     private static JsonObject tagsBlock;
@@ -44,6 +45,7 @@ public final class VanillaData {
         lootEntities = read("/vanilla/loot_entities.json");
         lootGameplay = read("/vanilla/loot_gameplay.json");
         lootTrial = read("/vanilla/loot_trial.json");
+        lootChests = read("/vanilla/loot_chests.json");
         trialSpawnerConfigs = read("/vanilla/trial_spawner.json");
         tagsItem = read("/vanilla/tags_item.json");
         tagsBlock = read("/vanilla/tags_block.json");

@@ -32,12 +32,12 @@ import java.util.concurrent.ThreadLocalRandom;
  * cap, leaf-crown cascade, stage-based growth stop), and vine spread
  * (1/4 roll, corner-wrapping horizontal extension, upward/downward face
  * copying, 9x3x9 density cap — growth only, no neighbor-update-driven
- * detach). Light is the project's
+ * detach), and crop growth (CropBlock: light gate, 3x3 farmland-moisture
+ * growth-speed scan, same-type-neighbor halving). Light is the project's
  * behavioural model (VNaturalSpawner precedent): sky-exposed = at/above
- * surface, 15 by day / 4 at night, plus real Minestom block light. Crop
- * growth stays on Farming.java's scheduled approximation for now
- * (AUDIT.md); snow accumulation stays in survival/Snow.java. Precipitation
- * ice freeze and fire spread are follow-ups (AUDIT.md).
+ * surface, 15 by day / 4 at night, plus real Minestom block light. Snow
+ * accumulation stays in survival/Snow.java. Precipitation ice freeze is a
+ * follow-up (AUDIT.md).
  */
 public final class RandomTicks {
     private RandomTicks() {}
@@ -129,6 +129,10 @@ public final class RandomTicks {
         HANDLERS.put("budding_amethyst", RandomTicks::growAmethyst);
         HANDLERS.put("bamboo", RandomTicks::growBamboo);
         HANDLERS.put("vine", RandomTicks::spreadVine);
+        HANDLERS.put("wheat", RandomTicks::growCrop);
+        HANDLERS.put("carrots", RandomTicks::growCrop);
+        HANDLERS.put("potatoes", RandomTicks::growCrop);
+        HANDLERS.put("beetroots", RandomTicks::growCrop);
     }
 
     /**
@@ -444,6 +448,63 @@ public final class RandomTicks {
                  "pitcher_crop" -> true;
             default -> false;
         };
+    }
+
+    /**
+     * CropBlock.randomTick/getGrowthSpeed (decompile-verified,
+     * vanilla-src/net/minecraft/world/level/block/CropBlock.java): light gate (raw brightness
+     * &gt;= 9), then a 3x3 farmland-moisture-weighted growth-speed scan below the crop (center
+     * cell full weight, ring cells /4; unmoistened farmland contributes 1.0, moistened 3.0),
+     * halved if the crop has same-type neighbors on both axes (west/east AND north/south) or if
+     * only a diagonal same-type neighbor exists, then a
+     * {@code nextInt((int)(25.0F/growthSpeed)+1)==0} roll advances age by one. Replaces
+     * Farming.java's old flat 100-tick/20%-roll sweep (AUDIT.md) — applies to any
+     * wheat/carrots/potatoes/beetroots block, not just Farming.CROPS-tracked ones (a fidelity
+     * improvement: real vanilla growth isn't restricted to player-planted crops).
+     */
+    private static void growCrop(Instance in, Point pos, Block block) {
+        if (brightness(in, pos) < 9) return;
+        String age = block.getProperty("age");
+        if (age == null) return;
+        int current = Integer.parseInt(age);
+        int max = Farming.maxAge(block);
+        if (current >= max) return;
+        var rng = ThreadLocalRandom.current();
+        float speed = cropGrowthSpeed(in, pos, block.key().value());
+        if (rng.nextInt((int) (25.0F / speed) + 1) == 0) {
+            in.setBlock(pos, block.withProperty("age", String.valueOf(current + 1)));
+        }
+    }
+
+    private static float cropGrowthSpeed(Instance in, Point pos, String cropKey) {
+        float speed = 1.0F;
+        Point below = pos.add(0, -1, 0);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                float weight = 0.0F;
+                Block belowState = in.getBlock(below.add(dx, 0, dz));
+                if (belowState.key().value().equals("farmland")) {
+                    weight = 1.0F;
+                    String moisture = belowState.getProperty("moisture");
+                    if (moisture != null && !moisture.equals("0")) weight = 3.0F;
+                }
+                if (dx != 0 || dz != 0) weight /= 4.0F;
+                speed += weight;
+            }
+        }
+        boolean sameEW = sameCrop(in, pos.add(-1, 0, 0), cropKey) || sameCrop(in, pos.add(1, 0, 0), cropKey);
+        boolean sameNS = sameCrop(in, pos.add(0, 0, -1), cropKey) || sameCrop(in, pos.add(0, 0, 1), cropKey);
+        if (sameEW && sameNS) {
+            speed /= 2.0F;
+        } else if (sameCrop(in, pos.add(-1, 0, -1), cropKey) || sameCrop(in, pos.add(1, 0, -1), cropKey)
+                || sameCrop(in, pos.add(1, 0, 1), cropKey) || sameCrop(in, pos.add(-1, 0, 1), cropKey)) {
+            speed /= 2.0F;
+        }
+        return speed;
+    }
+
+    private static boolean sameCrop(Instance in, Point pos, String cropKey) {
+        return in.getBlock(pos).key().value().equals(cropKey);
     }
 
     /** BuddingAmethystBlock.randomTick: 1/5 to advance a bud on a random face. */

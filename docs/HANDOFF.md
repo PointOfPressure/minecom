@@ -16,6 +16,71 @@ of what got escalated and why.
 
 ## Open
 
+### ~~Structure loot, container open animation, creative portal crossing~~ — DONE 2026-07-12 (Sonnet)
+
+Found live, not from HANDOFF/AUDIT scanning: the user was actually playing on
+a running server and hit three real gaps in quick succession. Full detail
+in AUDIT.md's Containers.java and Portals.java entries; summary:
+
+1. **Structure chests were all empty.** `VStructureGen`/`VStructureManager`
+   placed every structure's chest/barrel/dispenser BLOCK but never read the
+   NBT `LootTable` field (or, for igloo/shipwreck, the structure_block
+   "metadata" marker vanilla uses instead) — an established, DOCUMENTED
+   simplification, but clearly not one the user wanted live. Built the
+   missing piece: a bundled `loot_chests.json` (56 tables, extracted
+   straight from the real server jar, not hand-transcribed), `LootTables.
+   chest(idPath)`, and `Containers.registerLoot`/`rollPendingLoot` (a
+   persisted pos→table pending-roll registry, resolved on first open —
+   matching real vanilla's own resolution timing, not generation time).
+   Wired at every chest/barrel/dispenser placement site across both
+   structure-placement systems (villages through nether fossils — see
+   AUDIT.md for the exact list and the couple of structures still
+   uncovered: mineshaft cart loot, woodland mansion).
+2. **No chest lid animation.** `player.openInventory()` only manages the
+   inventory window client-side; it never told the client the physical
+   block should animate. Real vanilla drives that separately — a
+   `BlockActionPacket` (chest/trapped_chest/ender_chest) or an "open"
+   blockstate toggle (barrel — a genuinely different mechanism). Neither
+   existed anywhere in this project. Added both, plus the open/close
+   sounds that ride along with them.
+3. **Nether portals ignored game mode.** Every player waited the full
+   survival ~4-second (80gt) standing time, when real vanilla crosses
+   creative/spectator players instantly. Fixing that immediately exposed a
+   second, previously-invisible bug: with no portal cooldown at all, a
+   player landing inside (or right next to) another nearby portal on
+   arrival would instantly cross back — forever. Added a decompile-verified
+   simplified `Entity.portalCooldown` analog (300gt, refreshed while still
+   touching a portal, so it only actually counts down once you step off).
+   That same fix (`Portals.tryLight` now runs on every flint-and-steel
+   click, not just from Portals' own listener) also surfaced a real,
+   pre-existing crash: `tryLight`'s frame-search scan can walk ~24 blocks
+   from the click and was calling `getBlock` unguarded, throwing on an
+   unloaded chunk — caught via a flaky `--playtest "fire spread"` run, not
+   guessed. Fixed at the source (`safeAir`/`obsidian` check `isChunkLoaded`
+   first), so both call sites benefit, and normal play near the edge of
+   explored terrain doesn't risk it either.
+
+Also, while re-verifying the iron golem scenario in isolation during this
+pass: found (not fixed as part of the above, just noticed and cleaned up
+since it kept muddying `--playtest "iron golem"` runs) that
+`scenarioIronGolem` didn't pin its own world time, so a spawned zombie could
+combust in daylight (`VanillaMobs.sunburn`, decompile-verified real
+mechanic) before the golem's own hit ever landed, making the scenario fail
+when run standalone via the section filter (though not in the full ordered
+suite, where an earlier scenario happened to leave time in a safe state).
+Pinned night at the top, restored day at the end, matching every other
+scenario's own time-management convention. The launch-velocity check still
+has a rare (~1/5 in isolation) residual poll-timing flake — tightened from
+worse but not fully closed; needs live instrumentation next time it's
+caught, noted in-source rather than guessed at further.
+
+All new/changed coverage: `scenarioStructureLoot` (chest/barrel/dispenser
+loot rolls once and only once, barrel lid blockstate toggles), extended
+`scenarioPortal` (creative instant-crossing exercised through the real
+tick() scheduler, not the debugTravel test bypass). Full suite: 617-619/619
+passed across multiple runs, the only 2 failures being Fable's
+already-known in-progress bubble-column work (uncommitted, unrelated).
+
 ### ~~Rare (~1/20) silverfish ambush-spawn flake~~ — DONE 2026-07-12 (Sonnet)
 
 Found while fixing the merge-with-stone test bug below.
@@ -156,12 +221,32 @@ magma_block pair is modeled). New `scenarioFireSpread` playtest coverage
 (4 checks: player-lit ignition, direct-neighbor burnout, unsupported
 self-extinguish, wider-volume spread), 5/5 clean across reruns.
 
-Remaining random-tick-adjacent consumer: the deliberate crop-growth
-migration off Farming's scheduled task onto vanilla randomTick pacing + the
-moisture growth-speed formula (M — must update the farming/villager
-playtest scenarios which assume the faster approximation; the harness now
-has the section filter this wanted, see the determinism-pass Done entry).
-Sapling migration rides along with crops.
+~~Crop growth~~ **done 2026-07-12 (Sonnet)** — the same re-assessment
+pattern as fire spread above: the "must update the farming/villager
+playtest scenarios" risk this entry warned about turned out unfounded —
+neither `scenarioFarming` nor `scenarioVillagerFood`'s farmer-harvest check
+depends on growth timing at all, both pre-place mature crops directly and
+drive age via bonemeal, so nothing needed touching there. `RandomTicks.
+growCrop`/`cropGrowthSpeed` ports `CropBlock.randomTick`/`getGrowthSpeed`
+exactly (decompile-verified): light gate (raw brightness >= 9), the 3x3
+farmland-moisture-weighted growth-speed scan below the crop (center full
+weight, ring cells /4; unmoistened farmland=1.0, moistened=3.0), halved for
+same-type neighbors on both axes or a lone diagonal same-type neighbor,
+then the `nextInt((int)(25/growthSpeed)+1)==0` roll — covers wheat/
+carrots/potatoes/beetroots. Replaces `Farming.growthTick`'s old flat
+100-tick/20%-roll sweep (deleted, along with its scheduler registration and
+the now-dead `Farming.instance` field); `Farming.CROPS` itself is
+untouched (still gates bonemeal + persistence), and the new handler is a
+fidelity improvement there too — it now applies to any crop block, not
+just `CROPS`-tracked ones, matching real vanilla. New coverage folded into
+`scenarioRandomTicks` (light gate, both growth-speed branches, the
+per-crop maxAge cap), 5/5 clean reruns.
+
+Sapling growth was flagged to "ride along" but turned out to be a
+genuinely separate mechanic (its own one-shot scheduled delay per sapling,
+not a `growthTick`/`RandomTicks` consumer at all) — real vanilla
+`SaplingBlock` has its own randomTick/stage-based growth, not yet ported.
+Left as its own small (S) follow-up, not bundled into this entry.
 
 ### Persistence adapter tail — Sonnet
 
@@ -312,7 +397,7 @@ meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
      10+ files, not a single-file fix. Scope as its own task before
      starting, don't treat as a quick addition. (M, real gap)
 
-### Piston reorder-collision differential test — Opus
+### Piston reorder-collision differential test — Opus (IN PROGRESS 2026-07-12 ~05:20, overnight Fable queue session)
 
 The 2026-07-11 slime/honey structure-resolver port (see the Done entry below)
 ships `reorderListAtCollision` as a verbatim port, but none of the three new
@@ -596,7 +681,20 @@ almost free once size exists — real vanilla's `remove()` override is
 ~15 lines). Scope the size system as its own task; split-on-death rides
 along with it, not separately.
 
-### Bubble columns (soul sand/magma push mechanic) — Opus
+### ~~Bubble columns (soul sand/magma push mechanic)~~ — DONE 2026-07-12 (Fable, overnight queue session)
+
+`blocks/BubbleColumns.java` implements both halves this entry demanded:
+(1) the propagation/maintenance system — columns re-derived from the
+below-neighbor on the vanilla 5gt CHECK_PERIOD, whole source-water runs
+converted/reverted at once, event-driven + a public notifyChanged hook
+(worldgen self-start not modeled — AUDIT); (2) per-tick entity effects with
+the exact Entity.onInside/AboveBubbleColumn ramps, plus the AbstractBoat 60gt
+timer (Boats.buoyancy now floats on push columns and defers to the sink on
+drag ones). Playtest scenario at z=270 drives grow → item launch → boat pop →
+magma flip → boat sink → revert-to-water. Simplifications in AUDIT.md.
+Original scoping kept below.
+
+### Bubble columns (soul sand/magma push mechanic) — Opus (original scoping)
 
 AUDIT.md's "Fluids.java" note only covers flow/waterlogging; bubble
 columns are a separate gap found while checking Boats.java's "bubble

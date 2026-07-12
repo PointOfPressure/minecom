@@ -388,6 +388,7 @@ public final class VStructureManager {
                         if (preExisting.name().equals("minecraft:lava") && isRPNonFull(block.name())) block = Block.LAVA;
                         if (piece.replaceWithBlackstone) block = applyBlackstoneReplace(block);
                         canvas.set(wx, wy, wz, block);
+                        registerContainerLoot(name, b.nbt, wx, wy, wz);
                     }
                     spreadRuinedPortalNetherrack(piece, canvas, minX, minZ, maxX, maxZ);
                     if (piece.vines || piece.overgrown) addRuinedPortalVinesAndLeaves(piece, canvas, minX, minZ, maxX, maxZ);
@@ -561,6 +562,19 @@ public final class VStructureManager {
     private static Block canvasGet(VStructureGen.Canvas canvas, int x, int y, int z) {
         Block b = canvas.get(x, y, z);
         return b != null ? b : Block.AIR;
+    }
+
+    /** Container-block LootTable NBT (RandomizableContainer), rolled on first open — shared by
+     *  every structure placement path in this package (both this class's hand-placed structure
+     *  types and VStructureGen's jigsaw/template path). */
+    static void registerContainerLoot(String name, net.kyori.adventure.nbt.CompoundBinaryTag nbt,
+                                       int wx, int wy, int wz) {
+        if (nbt == null || !nbt.keySet().contains("LootTable")) return;
+        if (!(name.equals("minecraft:chest") || name.equals("minecraft:trapped_chest")
+                || name.equals("minecraft:barrel") || name.equals("minecraft:dispenser")
+                || name.equals("minecraft:dropper") || name.equals("minecraft:hopper"))) return;
+        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                new net.minestom.server.coordinate.Vec(wx, wy, wz), nbt.getString("LootTable"));
     }
 
     /**
@@ -1704,6 +1718,17 @@ public final class VStructureManager {
                         String name = b.state.key().asString();
                         if (name.equals("minecraft:structure_block") || name.equals("minecraft:structure_void")) continue;
                         canvas.set(wx, wy, wz, VBlockRotate.rotate(b.state, p.rotation()));
+                        registerContainerLoot(name, b.nbt, wx, wy, wz);
+                        // IglooPiece.handleDataMarker("chest", ...): the lab chest has no LootTable
+                        // of its own in the template NBT (see registerContainerLoot's no-op above) —
+                        // real vanilla assigns BuiltInLootTables.IGLOO_CHEST via the data-marker path
+                        // instead, which this project doesn't model generically (structure_block
+                        // metadata markers are skipped entirely elsewhere); hardcode the one chest
+                        // this specific template ever places.
+                        if (name.equals("minecraft:chest")) {
+                            dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                                    new net.minestom.server.coordinate.Vec(wx, wy, wz), "minecraft:chests/igloo_chest");
+                        }
                     }
                 }
             }
@@ -2024,6 +2049,16 @@ public final class VStructureManager {
                         if (f != null) block = block.withProperty("facing", jtFacing(f, p.dir()));
                     }
                     canvas.set(wx, p.minY() + b.y(), wz, block);
+                    String bk = block.key().value();
+                    if (bk.equals("chest")) {
+                        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                                new net.minestom.server.coordinate.Vec(wx, p.minY() + b.y(), wz),
+                                "minecraft:chests/jungle_temple");
+                    } else if (bk.equals("dispenser")) {
+                        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                                new net.minestom.server.coordinate.Vec(wx, p.minY() + b.y(), wz),
+                                "minecraft:chests/jungle_temple_dispenser");
+                    }
                 }
             }
         }
@@ -2372,6 +2407,11 @@ public final class VStructureManager {
                         if (f != null) block = block.withProperty("facing", dpFacing(f, p.dir()));
                     }
                     canvas.set(wx, p.minY() + b.y(), wz, block);
+                    if (block.key().value().equals("chest")) {
+                        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                                new net.minestom.server.coordinate.Vec(wx, p.minY() + b.y(), wz),
+                                "minecraft:chests/desert_pyramid");
+                    }
                 }
             }
         }
@@ -2792,6 +2832,18 @@ public final class VStructureManager {
                     SWPiece piece = shipwreckStarts.containsKey(key) ? shipwreckStarts.get(key) : assembleShipwreck(isBeached, ccx, ccz);
                     shipwreckStarts.put(key, piece);
                     if (piece == null) continue;
+                    // ShipwreckPiece.handleDataMarker: the 3 chest-flavor markers (supply/map/
+                    // treasure) sit one block directly above their target chest in template-
+                    // relative space (rotation only touches x/z, so this holds after rotation
+                    // too) — the chest's own NBT carries no LootTable, unlike most other
+                    // structures' containers (see registerContainerLoot's no-op there).
+                    Map<String, String> shipwreckMarkers = new HashMap<>();
+                    for (VTemplate.BlockInfo mb : piece.template().blocks) {
+                        if (mb.nbt != null && mb.state.key().asString().equals("minecraft:structure_block")
+                                && mb.nbt.keySet().contains("metadata")) {
+                            shipwreckMarkers.put(mb.x + "," + (mb.y - 1) + "," + mb.z, mb.nbt.getString("metadata"));
+                        }
+                    }
                     for (VTemplate.BlockInfo b : piece.template().blocks) {
                         int[] wp = VTemplate.transform(b.x, b.y, b.z, piece.rotation(), SHIPWRECK_PIVOT_X, SHIPWRECK_PIVOT_Z);
                         int wx = wp[0] + piece.baseX(), wy = wp[1] + piece.originY(), wz = wp[2] + piece.baseZ();
@@ -2799,6 +2851,20 @@ public final class VStructureManager {
                         String name = b.state.key().asString();
                         if (name.equals("minecraft:structure_block") || name.equals("minecraft:structure_void") || name.equals("minecraft:air")) continue;
                         canvas.set(wx, wy, wz, VBlockRotate.rotate(b.state, piece.rotation()));
+                        registerContainerLoot(name, b.nbt, wx, wy, wz);
+                        if (name.equals("minecraft:chest")) {
+                            String flavor = shipwreckMarkers.get(b.x + "," + b.y + "," + b.z);
+                            String table = flavor == null ? null : switch (flavor) {
+                                case "supply_chest" -> "minecraft:chests/shipwreck_supply";
+                                case "map_chest" -> "minecraft:chests/shipwreck_map";
+                                case "treasure_chest" -> "minecraft:chests/shipwreck_treasure";
+                                default -> null;
+                            };
+                            if (table != null) {
+                                dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                                        new net.minestom.server.coordinate.Vec(wx, wy, wz), table);
+                            }
+                        }
                     }
                 }
             }
@@ -2912,6 +2978,8 @@ public final class VStructureManager {
             canvas.set(nx, ny, nz, fill);
         }
         canvas.set(cx, cy, cz, Block.CHEST.withProperty("facing", "north"));
+        dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                new net.minestom.server.coordinate.Vec(cx, cy, cz), "minecraft:chests/buried_treasure");
     }
 
     /** Test hook: {x, y, z} of the treasure chest at the given chunk, or null. */
@@ -3028,6 +3096,7 @@ public final class VStructureManager {
                             if (name.equals("minecraft:structure_block") || name.equals("minecraft:structure_void") || name.equals("minecraft:air")) continue;
                             if (!blockRotSurvives(wx, wy, wz, piece.integrity())) continue;
                             canvas.set(wx, wy, wz, VBlockRotate.rotate(b.state, piece.rotation()));
+                            registerContainerLoot(name, b.nbt, wx, wy, wz);
                         }
                     }
                 }

@@ -7,6 +7,7 @@ import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
+import net.minestom.server.entity.GameMode;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.player.PlayerUseItemOnBlockEvent;
@@ -54,7 +55,16 @@ public final class Portals {
         }
     }
 
-    /** Detect an obsidian frame around `inside` in the given plane and fill it. */
+    /**
+     * Detect an obsidian frame around `inside` in the given plane and fill it. Now called
+     * unconditionally on every flint-and-steel click (not just from Portals' own listener —
+     * see Redstone.java's flint-and-steel handler, which tries this first before falling back
+     * to plain fire placement), so a click anywhere near the edge of loaded terrain can walk
+     * this scan into an unloaded chunk; every read below goes through safeBlock/safeObsidian,
+     * which treat unloaded space as air (never obsidian) instead of throwing — real vanilla
+     * wouldn't find a portal frame in ungenerated space either, so this is a safe, correct
+     * approximation, not just a crash guard.
+     */
     public static boolean tryLight(Instance instance, Point inside, String axis) {
         int dx = axis.equals("x") ? 1 : 0;
         int dz = axis.equals("z") ? 1 : 0;
@@ -62,20 +72,20 @@ public final class Portals {
         // walk to the bottom-left interior corner
         Point at = inside;
         int guard = 0;
-        while (instance.getBlock(at.add(0, -1, 0)).isAir() && guard++ < 24) at = at.add(0, -1, 0);
+        while (safeAir(instance, at.add(0, -1, 0)) && guard++ < 24) at = at.add(0, -1, 0);
         guard = 0;
-        while (instance.getBlock(at.add(-dx, 0, -dz)).isAir() && guard++ < 24) at = at.add(-dx, 0, -dz);
+        while (safeAir(instance, at.add(-dx, 0, -dz)) && guard++ < 24) at = at.add(-dx, 0, -dz);
 
         if (!obsidian(instance, at.add(0, -1, 0)) || !obsidian(instance, at.add(-dx, 0, -dz))) return false;
 
         // measure interior width and height
         int width = 0;
-        while (width <= 21 && instance.getBlock(at.add(dx * width, 0, dz * width)).isAir()) width++;
+        while (width <= 21 && safeAir(instance, at.add(dx * width, 0, dz * width))) width++;
         if (width < 2 || width > 21) return false;
         if (!obsidian(instance, at.add(dx * width, 0, dz * width))) return false;
 
         int height = 0;
-        while (height <= 21 && instance.getBlock(at.add(0, height, 0)).isAir()) height++;
+        while (height <= 21 && safeAir(instance, at.add(0, height, 0))) height++;
         if (height < 3 || height > 21) return false;
 
         // validate the full frame + interior
@@ -83,7 +93,7 @@ public final class Portals {
             if (!obsidian(instance, at.add(dx * w, -1, dz * w))) return false;
             if (!obsidian(instance, at.add(dx * w, height, dz * w))) return false;
             for (int h = 0; h < height; h++) {
-                if (!instance.getBlock(at.add(dx * w, h, dz * w)).isAir()) return false;
+                if (!safeAir(instance, at.add(dx * w, h, dz * w))) return false;
             }
         }
         for (int h = 0; h < height; h++) {
@@ -100,24 +110,59 @@ public final class Portals {
         return true;
     }
 
+    private static boolean chunkLoaded(Instance instance, Point pos) {
+        return instance.isChunkLoaded(pos.blockX() >> 4, pos.blockZ() >> 4);
+    }
+
+    private static boolean safeAir(Instance instance, Point pos) {
+        return chunkLoaded(instance, pos) && instance.getBlock(pos).isAir();
+    }
+
     private static boolean obsidian(Instance instance, Point pos) {
-        return instance.getBlock(pos).key().value().equals("obsidian");
+        return chunkLoaded(instance, pos) && instance.getBlock(pos).key().value().equals("obsidian");
     }
 
     // ------------------------------------------------------------------ travel
 
+    /** Entity.getDimensionChangingDelay's default (Entity.java, decompile-verified) — real vanilla
+     *  refreshes this to full every tick an entity is still touching a portal block while on
+     *  cooldown (Entity.setAsInsidePortal), rather than processing it for teleport at all. That
+     *  refresh-while-touching behavior is what actually matters here, not the exact tick count:
+     *  it's what stops a player landing inside (or immediately next to) another nearby portal
+     *  from instantly bouncing back the way they came, forever. */
+    private static final int PORTAL_COOLDOWN_TICKS = 300;
+    private static final Map<UUID, Integer> COOLDOWN = new ConcurrentHashMap<>();
+
     private static void tick() {
         for (Instance instance : new Instance[]{overworld, nether}) {
             for (Player player : instance.getPlayers()) {
+                UUID id = player.getUuid();
                 boolean inPortal = instance.getBlock(player.getPosition())
                         .key().value().equals("nether_portal");
+                int cooldown = COOLDOWN.getOrDefault(id, 0);
+
                 if (!inPortal) {
-                    STANDING.remove(player.getUuid());
+                    STANDING.remove(id);
+                    if (cooldown > 0) COOLDOWN.put(id, Math.max(0, cooldown - 10));
                     continue;
                 }
-                int ticks = STANDING.merge(player.getUuid(), 10, Integer::sum);
+                if (cooldown > 0) {
+                    COOLDOWN.put(id, PORTAL_COOLDOWN_TICKS);
+                    continue;
+                }
+                // ServerPlayer.handleInsidePortal / getDimensionChangingDelay: creative and
+                // spectator players cross instantly, skipping the survival 4-second wait
+                // (real vanilla waits on immersion for a game mode that has nothing at stake).
+                if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) {
+                    STANDING.remove(id);
+                    COOLDOWN.put(id, PORTAL_COOLDOWN_TICKS);
+                    travel(player, instance == overworld);
+                    continue;
+                }
+                int ticks = STANDING.merge(id, 10, Integer::sum);
                 if (ticks >= 80) {
-                    STANDING.remove(player.getUuid());
+                    STANDING.remove(id);
+                    COOLDOWN.put(id, PORTAL_COOLDOWN_TICKS);
                     travel(player, instance == overworld);
                 }
             }

@@ -88,6 +88,9 @@ public final class VStructureGen {
             if (b.nbt != null && (name.equals("minecraft:trial_spawner") || name.equals("minecraft:vault"))) {
                 dev.pointofpressure.minecom.blocks.TrialChambers.registerTemplateBlockEntity(wx, wy, wz, name, b.nbt);
             }
+            // structure-authored container loot (RandomizableContainer's LootTable NBT field,
+            // rolled on first open — see Containers.registerLoot/rollPendingLoot)
+            VStructureManager.registerContainerLoot(name, b.nbt, wx, wy, wz);
         }
     }
 

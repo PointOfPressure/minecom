@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.Items;
-import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.GameMode;
@@ -32,7 +31,6 @@ public final class Farming {
     private Farming() {}
 
     private static final Random RANDOM = new Random();
-    private static Instance instance;
 
     /** Planted crop positions as "x,y,z"; exposed for persistence. */
     public static final Set<String> CROPS = ConcurrentHashMap.newKeySet();
@@ -43,12 +41,8 @@ public final class Farming {
             Material.CARROT, Block.CARROTS,
             Material.POTATO, Block.POTATOES);
 
-    public static void start(Instance overworld) {
-        instance = overworld;
-        MinecraftServer.getSchedulerManager().buildTask(Farming::growthTick)
-                .repeat(TaskSchedule.tick(100))
-                .schedule();
-    }
+    /** Growth now runs on RandomTicks.growCrop; kept for Bootstrap's uniform module lifecycle. */
+    public static void start(Instance overworld) {}
 
     public static void register(GlobalEventHandler events) {
         events.addListener(PlayerUseItemOnBlockEvent.class, Farming::useOnBlock);
@@ -191,28 +185,9 @@ public final class Farming {
         return p.blockX() + "," + p.blockY() + "," + p.blockZ();
     }
 
-    private static int maxAge(Block crop) {
+    /** Package-private (not private): reused by RandomTicks.growCrop. */
+    static int maxAge(Block crop) {
         return crop.key().value().equals("beetroots") ? 3 : 7;
-    }
-
-    private static void growthTick() {
-        if (instance == null) return;
-        for (String key : CROPS) {
-            String[] parts = key.split(",");
-            int x = Integer.parseInt(parts[0]), y = Integer.parseInt(parts[1]), z = Integer.parseInt(parts[2]);
-            if (!instance.isChunkLoaded(x >> 4, z >> 4)) continue;
-            Block block = instance.getBlock(x, y, z);
-            String age = block.getProperty("age");
-            if (age == null) {
-                CROPS.remove(key);
-                continue;
-            }
-            int current = Integer.parseInt(age);
-            int max = maxAge(block);
-            if (current < max && RANDOM.nextDouble() < 0.20) {
-                instance.setBlock(x, y, z, block.withProperty("age", String.valueOf(current + 1)));
-            }
-        }
     }
 
     // ------------------------------------------------------------------ saplings

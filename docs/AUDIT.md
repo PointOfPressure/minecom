@@ -47,11 +47,36 @@ leftovers.
   on air+light>=9 above, 16-block cap with an unconditional stage flip at
   height 15, leaf-crown cascade onto the segment(s) below). Light is
   the project's behavioural model (VNaturalSpawner precedent). Still on old
-  approximations or missing: crop growth stays on Farming's scheduled task
-  (migrating it would need vanilla's much slower random-tick pacing plus the
-  moisture-speed formula — do it deliberately with scenario updates), snow
-  accumulation stays in survival/Snow.java, sapling growth stays scheduled;
-  leaf-decay random timing not implemented.
+  approximations or missing: snow accumulation stays in survival/Snow.java,
+  sapling growth stays on its own one-shot scheduled delay (a separate
+  mechanic from crop growth's old sweep — SaplingBlock has its own
+  randomTick/stage system in real vanilla, not yet ported); leaf-decay
+  random timing not implemented.
+- ~~Crop growth~~ **Done 2026-07-12 (Sonnet)** — `RandomTicks.growCrop`/
+  `cropGrowthSpeed`, decompile-verified against `CropBlock.randomTick`/
+  `getGrowthSpeed`: light gate (raw brightness >= 9), the 3x3
+  farmland-moisture-weighted growth-speed scan below the crop (center cell
+  full weight, ring cells /4; unmoistened farmland contributes 1.0,
+  moistened 3.0), halved for same-type neighbors on both axes (west/east
+  AND north/south) or a lone diagonal same-type neighbor, then a
+  `nextInt((int)(25/growthSpeed)+1)==0` roll. Covers wheat/carrots/potatoes/
+  beetroots (the types `Farming.SEEDS` plants); `Farming.maxAge` widened
+  from private to package-private for reuse (the `skyExposed` precedent).
+  Replaces `Farming.growthTick`'s old flat 100-tick/20%-roll sweep, deleted
+  along with its scheduler registration and the now-unused `Farming.instance`
+  field. `Farming.CROPS` itself is untouched — still gates bonemeal
+  eligibility and drives persistence — and the new handler is a fidelity
+  improvement there too: it now applies to any wheat/carrots/potatoes/
+  beetroots block, not just `CROPS`-tracked ones, matching real vanilla
+  (growth was never actually restricted to player-planted crops). The risk
+  HANDOFF flagged here ("must update the farming/villager playtest
+  scenarios") turned out overstated: neither `scenarioFarming` nor
+  `scenarioVillagerFood`'s farmer-harvest check depends on growth timing —
+  both pre-place mature crops directly and drive age via bonemeal. New
+  coverage folded into `scenarioRandomTicks` (light gate blocks growth
+  entirely, unmoistened-farmland speed-2.0 branch, moistened-farmland
+  speed-4.0 branch, per-crop maxAge cap using beetroots' 3 vs. wheat's 7),
+  5/5 clean reruns.
 - ~~Fire spread~~ **Done 2026-07-12 (Sonnet)** — `blocks/FireSpread.java`,
   deliberately NOT a `RandomTicks.java` consumer: real `FireBlock` doesn't
   use a random tick at all, it self-reschedules a genuine scheduled tick
@@ -197,8 +222,28 @@ leftovers.
   hopper-into-minecart paths (Minecarts variants exist; the connection is
   suspect). (S/M)
 - Fluids.java:26 — flow spreads evenly; vanilla weights toward nearest hole
-  within 4 blocks. Also check: kelp/seagrass waterlogging, bubble columns,
+  within 4 blocks. Also check: kelp/seagrass waterlogging, ~~bubble columns~~
+  (done 2026-07-12, Fable — blocks/BubbleColumns.java, see entry below),
   bottomless lava in nether speed (fast_lava attribute). (M)
+- **Bubble columns (blocks/BubbleColumns.java, 2026-07-12, Fable)** —
+  decompile-verified BubbleColumnBlock + Entity.onInside/AboveBubbleColumn +
+  AbstractBoat: soul-sand push / magma drag columns re-derived from the
+  below-neighbor on 5gt scheduled checks (CHECK_PERIOD), whole contiguous
+  source-water runs converted (or reverted) at once, vanilla entity velocity
+  ramps (inside ±0.03/0.06 toward -0.3/0.7; open surface cell ±0.03/0.1
+  toward -0.9/1.8 — ×20 for Minestom's blocks/sec), fall-distance reset via
+  Survival's in-fluid check, boats through the AbstractBoat 60gt armed timer
+  (drag: skip buoyancy + eject + sink impulse; push: float until launch —
+  the launch adds a 1.2-block teleport hop because Boats' surface easing
+  re-zeroes velocity the next tick). Simplifications: columns are
+  event-driven and session-scoped (worldgen soul sand under oceans doesn't
+  self-start; Redstone-registry pattern), column cells aren't water sources
+  for the flow engine (vanilla getFluidState is), clamps apply once per
+  entity per tick from the highest intersected cell (not per swept block),
+  flowing-water occupancy rejected same as vanilla (source only),
+  whirlpool/upward particles + ambient sounds skipped (client visuals),
+  launch velocities are impulses rather than sustained vanilla airborne
+  arcs.
 - Explosions.java — check block-drop probability (1/power) and whether
   explosions damage via `is_explosion` scaling now that difficulty exists
   (Combat handles players; item-frame/armor-stand absent anyway). (S)
@@ -212,28 +257,95 @@ leftovers.
   cap 40, unit repair with raw material. (S/M)
 - Beds.java:41 — no nether/end bed explosion (vanilla BED_RULE attribute); no
   "monsters nearby" sleep denial; thunderstorm daytime sleeping. (S)
-- Boats.java — no fall-damage negation rules/bubble column sink? chest boats?
-  (S/M)
+- Boats.java — no fall-damage negation rules; ~~bubble column sink?~~ (done
+  2026-07-12 — buoyancy defers to BubbleColumns over drag columns); chest
+  boats? (S/M)
 - Campfires.java — signal smoke (hay bale below → taller smoke) is
   client-visual; soul campfire→piglin fear link missing (piglins don't fear
   anything). (S)
 - Composter.java — verify per-item compost chances match
   data (looks data-driven already).
-- Containers.java — chest inventories are plain 27-slot; **no double chests**,
-  no loot-table filling for structure-placed chests (worldgen chest NBT
-  `LootTable` field is dropped by VStructureGen; dungeons/mineshafts/trial
-  chambers corridors give empty chests). (M — piggyback on the trial-chambers
-  template-NBT hook: register pos→loot_table at placement, roll on first open)
-- No: barrels, shulker boxes, ender chests, trapped chests (comparator+signal),
-  chiseled bookshelves, decorated pots (break/insert), cauldrons (water/lava/
-  powder snow storage, bottle fill), bells (raid pings, ring on hit), candles
-  on cakes, item frames, armor stands, banners, signs (editing), skulk, spore
-  blossoms, big dripleaf tilt, pointed dripstone falling/filling, scaffolding,
-  ladders/vine climb speed (client-side anyway), lodestone+compass,
+- ~~Containers.java: no double chests, no structure loot-table filling~~
+  **corrected/done 2026-07-12 (Sonnet)** — this note was stale: double chests
+  (left/right sharing one 54-slot Inventory, `openMergeable`), barrels,
+  ender chests (per-player, `EnderChest.java`), trapped chests
+  (comparator+signal via `TRAPPED_CHEST_POS`), and shulker boxes were all
+  already implemented, just never reflected here. What was genuinely missing
+  and is now done: structure-placed chest/barrel/dispenser LOOT CONTENTS —
+  `Containers.registerLoot`/`rollPendingLoot` (a pos→loot-table-id pending
+  registry, persisted, rolled on first open — not at generation time,
+  matching real vanilla's LootTable NBT resolution timing) plus a new
+  bundled `loot_chests.json` (56 tables extracted from the real server jar's
+  `data/minecraft/loot_table/chests/`) and `LootTables.chest(idPath)`. Wired
+  at every structure placement site that carries a chest/barrel/dispenser:
+  villages, trial chambers, pillager outposts, ancient city, bastion
+  (all via `VStructureGen.placeTemplate`'s NBT `LootTable` field, the same
+  mechanism real vanilla uses — chest block-entity NBT was decompile-verified
+  directly against a bundled village-house template), ruined portals,
+  igloos, shipwrecks, ocean ruins (all via `VStructureManager`'s own
+  per-structure NBT-template loops), jungle temple (chest + trap dispenser),
+  desert pyramid, buried treasure (all 3 hand-placed, hardcoded to their one
+  correct loot table id, no NBT to read), and stronghold
+  corridor/crossing/library (`VStrongholdGen.createChest`, extended with a
+  loot-table parameter). Two structures use a data-marker indirection
+  instead of the chest's own NBT (structure_block "metadata" sitting one
+  block above/beside the target) rather than a direct LootTable field:
+  igloo's laboratory chest and shipwreck's 3 chest flavors (supply/map/
+  treasure) — handled with the marker read directly rather than a generic
+  data-marker system (not built here). Also fixed the chest/barrel/
+  ender-chest **open animation**: `player.openInventory` only manages the
+  inventory window, it never touches the block's own visual state — real
+  vanilla drives the lid animation via a `BlockActionPacket` (chest/trapped_
+  chest/ender_chest, actionId 1 = viewer count) or an "open" blockstate
+  toggle (barrel, a genuinely different real-vanilla mechanism), neither of
+  which existed anywhere in this project before (`Containers.chestAnimation`/
+  `sendChestAction`/`barrelToggle`). Still not covered: mineshaft chest
+  MINECART entities (a separate, larger no-worldgen-entity-spawning gap,
+  unrelated to loot content), woodland mansion, ocean monument (no chest in
+  real vanilla), nether fortress, swamp hut (no chest in real vanilla).
+- ~~Portals.java: creative crosses at the survival 4-second pace~~ **fixed
+  2026-07-12 (Sonnet)** — found live: creative/spectator players now cross
+  instantly (`ServerPlayer.getDimensionChangingDelay`/`handleInsidePortal`
+  decompile-verified — real vanilla only makes survival wait). Fixing this
+  surfaced a second, genuine bug the instant crossing made trivial to
+  trigger: with no portal cooldown at all, a player landing inside (or
+  right next to) another nearby portal on arrival would instantly cross
+  back, forever — a real vanilla-parity gap for survival too (just far
+  less likely to ever be noticed there, since the ~4-second wait usually
+  gives you time to step off the block first). Added a simplified
+  `Entity.portalCooldown` analog (`Entity.java`/`setAsInsidePortal`
+  decompile-verified): 300 ticks, refreshed to full every tick still
+  touching a portal while on cooldown (so it only actually decrements once
+  you've stepped off), set on every successful crossing regardless of game
+  mode. Not modeled: the full `PortalProcessor`/`TeleportTransition`
+  machinery (per-axis relative-position preservation through the portal,
+  multi-entity/vehicle handling) — this project's simpler position-scaling
+  `travel()` is unchanged, only the wait/cooldown timing around it is new.
+  Also found and fixed a latent, pre-existing crash surfaced by the
+  Containers.java portal-vs-fire fix above (`Portals.tryLight` is now
+  called on every flint-and-steel click, not just from this file's own
+  listener): its frame-detection scan can walk up to ~24 blocks from the
+  click position and was calling `getBlock` unguarded, which throws
+  (`NullPointerException: Unloaded chunk`) if that walk reaches an
+  ungenerated chunk — a real risk during normal play near the edge of
+  explored terrain, not just a test artifact (caught via a genuinely flaky
+  `--playtest "fire spread"` run, root-caused from the stack trace, not
+  guessed). `safeAir`/`obsidian` now check `isChunkLoaded` first and treat
+  unloaded space as air/non-obsidian instead of throwing — correct, not
+  just safe, since real vanilla wouldn't find a portal frame in
+  ungenerated space either.
+- No: chiseled bookshelves, decorated pots (break/insert), cauldrons (water/
+  lava/powder snow storage, bottle fill), bells (raid pings, ring on hit),
+  candles on cakes, item frames, armor stands, banners, signs (editing),
+  skulk, spore blossoms, big dripleaf tilt, pointed dripstone falling/
+  filling, scaffolding, ladders/vine climb speed (client-side anyway),
   respawn-anchor charge particles. (each S-M; cauldron and bells most
-  player-visible) — lightning rod done 2026-07-11 (Fable): tracked-rod
-  registry + 128-block strike redirect + 8gt pulse, weighted pressure plates
-  analog + copper bulbs also landed in the same redstone-parity pass.
+  player-visible) — ~~lodestone+compass~~ done (`Lodestone.java`, binding +
+  splitting a single vs. stacked compass; `scenarioLodestone` playtest
+  coverage). Lightning rod done 2026-07-11 (Fable):
+  tracked-rod registry + 128-block strike redirect + 8gt pulse, weighted
+  pressure plates analog + copper bulbs also landed in the same
+  redstone-parity pass.
 - TrialChambers.java (mine, for the record) — not modeled: ominous item
   spawner drips, per-mob ominous equipment loot tables, spawn-potential custom
   NBT (slime size etc.), vault client display-item cycling/connected-player
