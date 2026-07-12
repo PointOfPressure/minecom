@@ -16,6 +16,39 @@ of what got escalated and why.
 
 ## Open
 
+### Minestom 26.2 upgrade (from pinned 2026.07.01-26.1.2) — Opus/Fable, needs a scoping decision first
+
+Minestom released `2026.07.12-26.2` today (github.com/Minestom/Minestom/
+releases/tag/2026.07.12-26.2). This is a real version bump, not a patch:
+it targets Minecraft 26.2 (data revision rv3), and ships 148 documented
+binary-compatibility breaks, including `Entity#getPassengers()` changing
+from `Set` to an ordered `List` (touches every mob-riding/boat/happy-ghast
+call site that iterates passengers), `PlayerStartSneakingEvent`/
+`PlayerStopSneakingEvent` removed entirely in favor of `PlayerInputEvent`
+(this project's sneak-detection call sites would need auditing —
+`Farming`'s bonemeal-vs-till gate on `isSneaking()` reads the live flag
+directly so may be unaffected, but any EVENT-based sneak listener isn't),
+`JoinGamePacket`/`RespawnPacket` restructuring, and entity metadata changes
+for horses/slimes. Also new: `EntityType.SULFUR_CUBE`/`SulfurCubeMeta`
+(a new vanilla mob type, not yet in this project's roster), a generated
+`RegistryKey` constants system (`BlockKeys`/`MaterialKeys`/
+`EntityTypeKeys` — existing `Block.STONE`-style constants stay unchanged),
+and block-predicate support for enchantment/attribute/container/damage
+data components (could simplify some of `LootTables.java`'s
+`matchTool`/condition handling if picked up).
+
+Not attempted this session — bumping the Minestom version almost certainly
+means bumping the target Minecraft version too, which cascades well beyond
+a dependency bump: this project's vanilla-parity data (bundled recipes/
+loot tables/worldgen structures, `vanilla-src/`'s decompiled reference
+sources, every "decompile-verified" claim in AUDIT.md/HANDOFF.md) is all
+keyed to 26.1.2 specifically. Re-pinning needs a deliberate scoping pass
+(what actually changes data-wise between 26.1.2 and 26.2, whether
+`vanilla-src/` needs re-decompiling wholesale or just the touched classes,
+whether the 148 breaks are additive-only for this project's actual API
+surface or require real rework) before anyone starts changing `pom.xml`.
+Flagging here rather than guessing at scope.
+
 ### ~~Structure loot, container open animation, creative portal crossing~~ — DONE 2026-07-12 (Sonnet)
 
 Found live, not from HANDOFF/AUDIT scanning: the user was actually playing on
@@ -777,7 +810,7 @@ Playtest green (redirect + pulse decay). No copper-oxidation scrub (no
 oxidation system — AUDIT).
 
 
-### Piston slime/honey block chains (structure resolver) — Opus/Fable
+### ~~Piston slime/honey block chains (structure resolver)~~ — DONE 2026-07-11 (Fable)
 
 AUDIT.md flagged "no slime/honey block chain semantics" as unverified;
 confirmed missing 2026-07-11. The existing 12-block push-length limit
@@ -957,7 +990,7 @@ sleeping half of canBreed (no villager sleep system), profession
 requestedItems beyond the tag, the full walk-to-claimed-farmland-POI brain
 choreography.
 
-### Trial Chambers functional mechanics (spawner waves, vault, Breeze) — Opus/Fable
+### ~~Trial Chambers functional mechanics (spawner waves, vault, Breeze)~~ — DONE 2026-07-11 (Fable)
 
 The Trial Chambers structure generates correctly (jigsaw-assembled, real
 NBT templates) but every special block in it — `trial_spawner`, `vault`,
