@@ -3435,6 +3435,13 @@ public final class PlayTest {
         // than guessed at further, since it's a different mechanism than the flake this stripping
         // does correctly guard against.
         EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 1.5));
+        // a real tick between spawn and the attack below, matching how virtually every other
+        // scenario in this suite naturally has SOME gap here — this is the one path that
+        // attacks in the exact same instant a mob spawns. Unconfirmed but plausible per
+        // HANDOFF's "unarmored zombie melee damage flake" entry: VanillaMobs.zombie() (like
+        // silverfish() before its fix) doesn't join Entity.setInstance's returned future, so a
+        // same-instant attack could race its completion. Cheap, harmless either way.
+        tick(1);
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             if (slot.isArmor()) zombie.setEquipment(slot, ItemStack.AIR);
         }

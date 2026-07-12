@@ -74,11 +74,28 @@ armor (already stripped defensively, since a DIFFERENT known bug lets
 attribute reads a flat 2.0 every time (mathematically nowhere near enough to
 explain an 8->1 reduction on its own). Armor-stripping was applied as a
 defensive measure regardless (it guards a real, different failure mode) but
-does not explain this specific case — root cause still unknown. Rare enough
-(~1/30) that chasing it further wasn't worth it in the same pass; needs
-either a dedicated repro harness (loop the melee check many times with a
-per-run damage-source log) or an instrumented `Combat.damaged` dump the next
-time it's caught live.
+does not explain this specific case — root cause still unknown at the time.
+
+**Strong lead, not yet confirmed (2026-07-12, Sonnet, same session as the
+silverfish ambush-spawn fix above):** this scenario spawns the zombie and
+attacks it with *zero* tick delay in between — the single fastest
+spawn-then-hit path in the whole suite — and `VanillaMobs.zombie()` has the
+exact same shape bug just confirmed and fixed for `silverfish()`:
+`mob.setInstance(instance, pos)` called without joining the returned
+`CompletableFuture<Void>`. Tried a test-side `tick(1)` between spawn and
+attack (giving the future a real tick to settle) as a repro/fix check, but
+couldn't get a clean before/after comparison — 30 baseline (unpatched)
+reruns came back clean too, consistent with a genuinely rare ~1/30 event
+needing more like 90+ runs for confident before/after statistics, more than
+was worth spending in this pass. Deliberately did NOT speculatively add
+`.join()` to `VanillaMobs.zombie()` itself the way `silverfish()` got
+fixed — zombie is the most commonly-spawned mob in the game, so that
+change needs actual confirming evidence first, not just a plausible
+analogy. Left the test-side `tick(1)` in place (cheap, harmless, matches
+how virtually every other scenario naturally has some gap between spawn
+and interaction) as a real but unconfirmed mitigation. Next session: if it
+recurs despite that, the `.join()` theory is likely wrong and needs a real
+`Combat.attack`/`damage()` dump on next live catch instead.
 
 ### Random-tick consumers tail — Sonnet/Opus
 
