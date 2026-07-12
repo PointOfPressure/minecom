@@ -17,9 +17,11 @@ leftovers.
   item NBT), furnaces (progress/XP), hoppers, crafters (+locked slots),
   brewing stands, dispensers/droppers, crops, all tracked redstone/sculk
   positions, mob entities (kind/pos/health/equipment + villager
-  profession/food/inventory), chunk inhabited time. Still session-scoped
-  (HANDOFF "Persistence adapter tail"): campfire/composter/jukebox/lectern/
-  pot/bookshelf/bells/note-block/shulker-box state, trial chambers,
+  profession/food/inventory), chunk inhabited time, and — 2026-07-12,
+  Sonnet — campfire/jukebox/lectern/decorated-pot/chiseled-bookshelf/
+  shulker-box state (composter/bells/note-blocks needed no adapter: no
+  separate persistent state beyond Anvil-saved block properties). Still
+  session-scoped (HANDOFF "Persistence adapter tail"): trial chambers,
   scheduled ticks, per-mob extras (sheep color, baby state, breeding
   cooldowns), warden anger (deliberate), item entities in flight, and the
   registries are overworld-only (position keys would collide across

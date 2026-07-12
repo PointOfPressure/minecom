@@ -137,7 +137,7 @@ public final class PlayTest {
         scenario("thrown potions: splash scales with distance, lingering leaves a cloud", PlayTest::scenarioThrownPotions);
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
-        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, and a live sensor", PlayTest::scenarioPersistence);
+        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, and the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker)", PlayTest::scenarioPersistence);
         scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread", PlayTest::scenarioRandomTicks);
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
@@ -4972,6 +4972,37 @@ public final class PlayTest {
         zombie.setHealth(13f);
         dev.pointofpressure.minecom.Difficulty.setInhabitedTicks(world, new Pos(50, Y, z), 123456L);
 
+        // small block entities (HANDOFF "Persistence adapter tail"): campfire, jukebox, lectern,
+        // decorated pot, chiseled bookshelf, shulker box
+        rs(60, Y + 1, z, Block.CAMPFIRE.withProperty("lit", "true"));
+        useItemOnBlock(ItemStack.of(Material.PORKCHOP), new BlockVec(60, Y + 1, z), BlockFace.TOP);
+
+        rs(62, Y + 1, z, Block.JUKEBOX);
+        useItemOnBlock(ItemStack.of(Material.MUSIC_DISC_13), new BlockVec(62, Y + 1, z), BlockFace.TOP);
+
+        rs(64, Y + 1, z, Block.LECTERN);
+        var persistBookPages = java.util.List.of(
+                new net.minestom.server.item.book.FilteredText<>("page one", null),
+                new net.minestom.server.item.book.FilteredText<>("page two", null),
+                new net.minestom.server.item.book.FilteredText<>("page three", null));
+        ItemStack persistBook = ItemStack.of(Material.WRITABLE_BOOK).with(DataComponents.WRITABLE_BOOK_CONTENT,
+                new net.minestom.server.item.component.WritableBookContent(persistBookPages));
+        useItemOnBlock(persistBook, new BlockVec(64, Y + 1, z), BlockFace.TOP);
+
+        rs(66, Y + 1, z, Block.DECORATED_POT);
+        useItemOnBlock(ItemStack.of(Material.DIAMOND, 3), new BlockVec(66, Y + 1, z), BlockFace.TOP);
+
+        rs(68, Y + 1, z, Block.CHISELED_BOOKSHELF.withProperty("facing", "north"));
+        useItemOnBlock(ItemStack.of(Material.BOOK), new BlockVec(68, Y + 1, z), BlockFace.NORTH);
+        int bookshelfSignalBefore = dev.pointofpressure.minecom.blocks.ChiseledBookshelf
+                .comparatorOutput(new Vec(68, Y + 1, z));
+
+        rs(70, Y + 1, z, Block.SHULKER_BOX);
+        interact(new BlockVec(70, Y + 1, z));
+        tick(2);
+        dev.pointofpressure.minecom.blocks.ShulkerBoxes.inventoryAt(new Vec(70, Y + 1, z))
+                .setItemStack(5, ItemStack.of(Material.GOLD_INGOT, 9));
+
         dev.pointofpressure.minecom.Persist.save();
         dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
         clearEntitiesExceptPlayer();
@@ -5002,9 +5033,34 @@ public final class PlayTest {
         check("restored sculk sensor still activates on a vibration",
                 waitFor(() -> "active".equals(prop(54, Y + 1, z, "sculk_sensor_phase")), 3000));
 
+        check("campfire's cooking item survives the round trip",
+                dev.pointofpressure.minecom.blocks.Campfires.itemAt(new Vec(60, Y + 1, z), 0)
+                        .material() == Material.PORKCHOP);
+        check("jukebox disc survives the round trip (comparator output back)",
+                dev.pointofpressure.minecom.blocks.Jukebox.comparatorOutput(
+                        new Vec(62, Y + 1, z), world.getBlock(62, Y + 1, z)) == 1);
+        check("lectern book + page state survives the round trip",
+                dev.pointofpressure.minecom.blocks.Lectern.comparatorOutput(
+                        new Vec(64, Y + 1, z), world.getBlock(64, Y + 1, z)) == 1);
+        check("decorated pot contents survive the round trip",
+                dev.pointofpressure.minecom.blocks.DecoratedPot.comparatorOutput(new Vec(66, Y + 1, z)) > 0);
+        check("chiseled bookshelf slot state survives the round trip",
+                dev.pointofpressure.minecom.blocks.ChiseledBookshelf.comparatorOutput(new Vec(68, Y + 1, z))
+                        == bookshelfSignalBefore);
+        var restoredShulker = dev.pointofpressure.minecom.blocks.ShulkerBoxes.inventoryAt(new Vec(70, Y + 1, z));
+        check("shulker box contents survive the round trip",
+                restoredShulker != null && restoredShulker.getItemStack(5).material() == Material.GOLD_INGOT
+                        && restoredShulker.getItemStack(5).amount() == 9);
+
         rs(50, Y + 1, z, Block.AIR);
         rs(52, Y + 1, z, Block.AIR);
         rs(54, Y + 1, z, Block.AIR);
+        rs(60, Y + 1, z, Block.AIR);
+        rs(62, Y + 1, z, Block.AIR);
+        rs(64, Y + 1, z, Block.AIR);
+        rs(66, Y + 1, z, Block.AIR);
+        rs(68, Y + 1, z, Block.AIR);
+        rs(70, Y + 1, z, Block.AIR);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
@@ -5380,7 +5436,11 @@ public final class PlayTest {
         var merger = Mobs.spawn("silverfish", world, new Pos(65.5, Y + 1, z + 0.5));
         check("an idle silverfish merges into adjacent stone (mob discarded)",
                 waitFor(merger::isRemoved, 15000));
-        boolean converted = false;
+        // 6 candidate directions roll uniformly (VanillaMobs.SilverfishMergeWithStone.DIRECTIONS):
+        // the 4 built walls above, but also straight down onto the flat world's own solid floor
+        // (always a valid stone target here, same as any other position in this test world) —
+        // only straight up has nothing infestable, so 5 of 6 rolls can actually convert a block.
+        boolean converted = "infested_stone".equals(blockKey(65, Y, z));
         for (int dy = 1; dy <= 2 && !converted; dy++) {
             converted = "infested_stone".equals(blockKey(64, Y + dy, z))
                     || "infested_stone".equals(blockKey(66, Y + dy, z))
@@ -5388,6 +5448,7 @@ public final class PlayTest {
                     || "infested_stone".equals(blockKey(65, Y + dy, z + 1));
         }
         check("the merged wall block became its infested variant", converted);
+        rs(65, Y, z, Block.STONE); // restore the floor tile in case the down-roll converted it
         for (int dy = 1; dy <= 2; dy++) {
             rs(64, Y + dy, z, Block.AIR);
             rs(66, Y + dy, z, Block.AIR);

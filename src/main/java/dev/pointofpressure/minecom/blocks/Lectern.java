@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import net.kyori.adventure.sound.Sound;
 import net.kyori.adventure.text.Component;
 import net.minestom.server.component.DataComponents;
@@ -24,6 +27,7 @@ import net.minestom.server.timer.TaskSchedule;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Lectern: real page-count-driven comparator output (LecternBlockEntity.getRedstoneSignal),
@@ -58,9 +62,50 @@ public final class Lectern {
     private static final Map<String, State> LECTERNS = new ConcurrentHashMap<>();
 
     public static void register(GlobalEventHandler events) {
+        Persist.register(persistence());
         events.addListener(PlayerUseItemOnBlockEvent.class, Lectern::useOnBlock);
         events.addListener(PlayerBlockInteractEvent.class, Lectern::interact);
         events.addListener(InventoryButtonClickEvent.class, Lectern::onButton);
+    }
+
+    /** Lectern persistence (docs/PERSISTENCE.md): the placed book + current page. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "lectern";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                LECTERNS.forEach((key, s) -> {
+                    if (s.book.isAir()) return;
+                    JsonObject o = new JsonObject();
+                    o.add("book", Persist.writeItem(s.book));
+                    o.addProperty("page", s.page);
+                    o.addProperty("pageCount", s.pageCount);
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                ItemStack book = Persist.readItem(data.getAsJsonObject("book"));
+                if (book == null) return;
+                State state = new State();
+                state.instance = in;
+                state.pos = pos;
+                state.book = book;
+                state.page = data.get("page").getAsInt();
+                state.pageCount = data.get("pageCount").getAsInt();
+                LECTERNS.put(Persist.posKey(pos), state);
+            }
+
+            @Override
+            public void wipe() {
+                LECTERNS.clear();
+            }
+        };
     }
 
     private static void useOnBlock(PlayerUseItemOnBlockEvent e) {

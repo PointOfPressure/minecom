@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import net.kyori.adventure.text.Component;
 import net.minestom.server.component.DataComponents;
 import net.minestom.server.coordinate.Point;
@@ -17,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * ShulkerBoxBlock/ShulkerBoxBlockEntity (decompile-verified): the one container in real vanilla
@@ -43,6 +47,7 @@ public final class ShulkerBoxes {
     }
 
     public static void register(GlobalEventHandler events) {
+        Persist.register(persistence());
         events.addListener(PlayerBlockPlaceEvent.class, e -> {
             if (!e.getBlock().key().value().endsWith("shulker_box")) return;
             ItemStack used = e.getPlayer().getItemInHand(e.getHand());
@@ -86,5 +91,36 @@ public final class ShulkerBoxes {
         }
         ItemStack out = anyItems ? ItemStack.of(mat).with(DataComponents.CONTAINER, contents) : ItemStack.of(mat);
         BlockRules.dropAt(instance, pos, out);
+    }
+
+    /** Shulker box persistence (docs/PERSISTENCE.md): the 27-slot inventory, same shape as chests. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "shulker_box";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                INVENTORIES.forEach((key, inv) -> {
+                    JsonObject o = new JsonObject();
+                    o.add("items", Persist.writeItems(inv));
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Component.text("Shulker Box"));
+                Persist.readItems(data.getAsJsonArray("items"), inv);
+                INVENTORIES.put(Persist.posKey(pos), inv);
+            }
+
+            @Override
+            public void wipe() {
+                INVENTORIES.clear();
+            }
+        };
     }
 }

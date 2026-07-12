@@ -16,6 +16,16 @@ of what got escalated and why.
 
 ## Open
 
+### Rare (~1/20) silverfish ambush-spawn flake — unassigned
+
+Found 2026-07-12 (Sonnet) while fixing the merge-with-stone test bug below.
+`scenarioSilverfish`'s "mining infested stone without silk touch springs a
+silverfish ambush" check failed once in ~20 runs; not investigated further
+(genuinely rare, and unrelated to anything touched in this session — no
+instrumentation run yet). Next time it's caught live, instrument the ambush
+spawn path (`InfestedBlocks`, wherever the break-without-silk-touch spawn
+roll lives) the same way the trident/zombie flake below was chased.
+
 ### Rare (~1/30) unarmored zombie melee damage flake — unassigned
 
 Found 2026-07-12 (Sonnet) while fixing the flake pass below: the trident
@@ -61,13 +71,40 @@ The persistence core landed 2026-07-12 (Fable): `StateAdapter` SPI +
 `RegionStore` region shards + 9 adapters + mob snapshots + inhabited time
 (docs/PERSISTENCE.md has the full status). What remains is mechanical
 now the SPI exists — one small adapter each, copying the existing
-patterns (Containers/Furnaces are the reference implementations):
-campfire, composter, jukebox, lectern, decorated pot, chiseled bookshelf,
-bells, note blocks, shulker boxes, plus per-mob extras (sheep color/
-sheared, breeding cooldowns, baby state) in RegionStore.collectMobs/
-restoreMob. Trial chambers and position-anchored scheduled ticks are the
-two non-trivial stragglers — scope them before starting. Every adapter
-addition extends scenarioPersistence with one save/wipe/reload check.
+patterns (Containers/Furnaces are the reference implementations).
+
+~~Small block entities~~ **done 2026-07-12 (Sonnet)**: campfire (4 cooking
+slots + progress/time), jukebox (disc + playback progress), lectern (book +
+page), decorated pot (single item stack), chiseled bookshelf (6 slots +
+last-touched slot), shulker box (27-slot inventory, same shape as chests) —
+all copying Hoppers/Furnaces' exact `StateAdapter` shape. Composter, bells,
+and note blocks turned out to need NO adapter at all: composter's fill
+level and note blocks' pitch already live in block state (Anvil-persisted),
+and bells have no real persistent state beyond a test-only ring counter —
+confirmed by reading each file before assuming a gap existed. Along the
+way, found and fixed a real (not test-only) bug the new adapters' longer
+setup sequence exposed: `Redstone.activated`/`blockPowered` called
+`instance.getBlock` on unchecked neighbor positions, NPE-crashing a
+scheduled tick when a redstone-adjacent block sits one block from an
+unloaded chunk boundary — every OTHER position-scanning loop in
+`Redstone.java` already guards with `instance.isChunkLoaded(...)` first
+(7+ existing call sites), these two just didn't; fixed by adding the same
+guard. Reproduced 100% (not flaky) before the fix, 100% clean across 3
+reruns after. scenarioPersistence extended with 6 new save/wipe/reload
+checks (test-logs/playtest_persist_fixed_*.log). Also found (unrelated,
+while re-running the full suite) a genuine test-coverage bug in
+`scenarioSilverfish`'s merge-with-stone check, same class as the
+villager-bed-count bug from the earlier determinism pass: the merge rolls
+uniformly among 6 directions, and the flat test world's own floor is a
+valid (always-solid) target directly below the silverfish, but the
+verification loop only ever scanned the 4 explicitly-built side walls —
+confirmed via direct instrumentation (mergePos landed on the untested floor
+tile in the failing runs), not a race. Fixed by adding the floor position
+to the check; 8/8 clean afterward. Still open: per-mob extras
+(sheep color/sheared, breeding cooldowns, baby state) in
+RegionStore.collectMobs/restoreMob. Trial chambers and position-anchored
+scheduled ticks are the two non-trivial stragglers — scope them before
+starting.
 
 ### Redstone parity — remaining summit after the 2026-07-11 pass — mixed
 ### (summit COMPLETE 2026-07-12: items 1-3 done; 4 is a design decision, 5 is cleanup)

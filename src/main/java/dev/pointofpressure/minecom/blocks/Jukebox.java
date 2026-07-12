@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
@@ -18,6 +21,7 @@ import net.minestom.server.timer.TaskSchedule;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Jukebox: real per-disc song table (JukeboxSongs.bootstrap, 21 discs) driving playback length
@@ -70,11 +74,49 @@ public final class Jukebox {
     private static final Map<String, State> JUKEBOXES = new ConcurrentHashMap<>();
 
     public static void register(GlobalEventHandler events) {
+        Persist.register(persistence());
         MinecraftServer.getSchedulerManager().buildTask(Jukebox::tickAll)
                 .repeat(TaskSchedule.tick(1))
                 .schedule();
         events.addListener(PlayerUseItemOnBlockEvent.class, Jukebox::useOnBlock);
         events.addListener(PlayerBlockInteractEvent.class, Jukebox::interact);
+    }
+
+    /** Jukebox persistence (docs/PERSISTENCE.md): the inserted disc + playback progress. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "jukebox";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                JUKEBOXES.forEach((key, s) -> {
+                    JsonObject o = new JsonObject();
+                    o.addProperty("disc", s.disc.key().asString());
+                    o.addProperty("ticks", s.ticksSinceStarted);
+                    o.addProperty("playing", s.playing);
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                Material disc = Material.fromKey(data.get("disc").getAsString());
+                if (disc == null) return;
+                State state = new State();
+                state.disc = disc;
+                state.ticksSinceStarted = data.get("ticks").getAsLong();
+                state.playing = data.get("playing").getAsBoolean();
+                JUKEBOXES.put(Persist.posKey(pos), state);
+            }
+
+            @Override
+            public void wipe() {
+                JUKEBOXES.clear();
+            }
+        };
     }
 
     private static void useOnBlock(PlayerUseItemOnBlockEvent e) {

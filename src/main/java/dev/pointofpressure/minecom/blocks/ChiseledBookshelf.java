@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.event.GlobalEventHandler;
@@ -16,6 +19,7 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * ChiseledBookShelfBlock: 6 slots (2 rows x 3 columns), each tracked by its own
@@ -40,8 +44,42 @@ public final class ChiseledBookshelf {
     private static final Map<String, State> SHELVES = new ConcurrentHashMap<>();
 
     public static void register(GlobalEventHandler events) {
+        Persist.register(persistence());
         events.addListener(PlayerUseItemOnBlockEvent.class, ChiseledBookshelf::insert);
         events.addListener(PlayerBlockInteractEvent.class, ChiseledBookshelf::remove);
+    }
+
+    /** Chiseled bookshelf persistence (docs/PERSISTENCE.md): the 6 slots + last-touched slot. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "chiseled_bookshelf";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                SHELVES.forEach((key, s) -> {
+                    JsonObject o = new JsonObject();
+                    o.add("items", Persist.writeItems(s.items));
+                    o.addProperty("last", s.lastInteractedSlot);
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                State state = new State();
+                Persist.readItems(data.getAsJsonArray("items"), state.items);
+                state.lastInteractedSlot = data.get("last").getAsInt();
+                SHELVES.put(Persist.posKey(pos), state);
+            }
+
+            @Override
+            public void wipe() {
+                SHELVES.clear();
+            }
+        };
     }
 
     private static boolean isBookshelfItem(Material m) {

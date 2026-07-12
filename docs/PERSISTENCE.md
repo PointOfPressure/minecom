@@ -163,9 +163,13 @@ DONE in the first pass:
 - Tests: SelfTest item/pos round-trips; PlayTest scenarioPersistence
   (save → wipe → reload → data AND behavior assertions).
 
+DONE 2026-07-12 (Sonnet), small block entities: campfire, jukebox, lectern,
+decorated pot, chiseled bookshelf, shulker-box contents — 6 new adapters,
+same `StateAdapter` shape as the reference implementations. Composter,
+bells, and note blocks needed no adapter (fill level/pitch already live in
+Anvil-persisted block state; bells have no real persistent state).
+
 REMAINING (Sonnet-sized now the SPI exists — see HANDOFF):
-- Small block entities: campfire, composter, jukebox, lectern, decorated
-  pot, chiseled bookshelf, bells, note blocks, shulker-box contents.
 - Trial chambers (defs + runtime state) — larger, has its own session-scoped
   caveat in AUDIT.
 - Position-anchored scheduled ticks (shrieker reset et al).

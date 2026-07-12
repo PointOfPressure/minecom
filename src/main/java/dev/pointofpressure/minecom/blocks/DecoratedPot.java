@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.event.GlobalEventHandler;
@@ -13,6 +16,7 @@ import net.minestom.server.sound.SoundEvent;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * DecoratedPotBlock: a single-stack item store, filled only by right-clicking with a matching
@@ -33,8 +37,40 @@ public final class DecoratedPot {
     private static final Map<String, ItemStack> POT_ITEMS = new ConcurrentHashMap<>();
 
     public static void register(GlobalEventHandler events) {
+        Persist.register(persistence());
         events.addListener(PlayerUseItemOnBlockEvent.class, DecoratedPot::insert);
         events.addListener(PlayerBlockInteractEvent.class, DecoratedPot::failInsert);
+    }
+
+    /** Decorated pot persistence (docs/PERSISTENCE.md): the single held item stack. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "decorated_pot";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                POT_ITEMS.forEach((key, item) -> {
+                    if (item == null || item.isAir()) return;
+                    JsonObject o = new JsonObject();
+                    o.add("item", Persist.writeItem(item));
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                ItemStack item = Persist.readItem(data.getAsJsonObject("item"));
+                if (item != null) POT_ITEMS.put(Persist.posKey(pos), item);
+            }
+
+            @Override
+            public void wipe() {
+                POT_ITEMS.clear();
+            }
+        };
     }
 
     private static void insert(PlayerUseItemOnBlockEvent e) {

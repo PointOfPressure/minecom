@@ -337,6 +337,7 @@ public final class Redstone {
     static boolean activated(Point pos) {
         for (Vec d : ALL) {
             Point np = pos.add(d);
+            if (!instance.isChunkLoaded(np.blockX() >> 4, np.blockZ() >> 4)) continue;
             Block n = instance.getBlock(np);
             if (emitted(n, np, d.mul(-1)) > 0) return true;
             if (isSolid(n) && blockPowered(np)) return true;
@@ -348,6 +349,7 @@ public final class Redstone {
     private static boolean blockPowered(Point pos) {
         for (Vec d : ALL) {
             Point np = pos.add(d);
+            if (!instance.isChunkLoaded(np.blockX() >> 4, np.blockZ() >> 4)) continue;
             Block n = instance.getBlock(np);
             if (emitted(n, np, d.mul(-1)) > 0) return true;
         }

@@ -1,5 +1,8 @@
 package dev.pointofpressure.minecom.blocks;
 
+import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.Recipes;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
@@ -14,6 +17,7 @@ import net.minestom.server.timer.TaskSchedule;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Campfire cooking: real 4-slot per-slot progress (CampfireBlockEntity.cookTick/cooldownTick)
@@ -36,10 +40,58 @@ public final class Campfires {
     private static final Map<String, State> CAMPFIRES = new ConcurrentHashMap<>();
 
     public static void register(GlobalEventHandler events) {
+        Persist.register(persistence());
         MinecraftServer.getSchedulerManager().buildTask(Campfires::tickAll)
                 .repeat(TaskSchedule.tick(1))
                 .schedule();
         events.addListener(PlayerUseItemOnBlockEvent.class, Campfires::useOnBlock);
+    }
+
+    /** Campfire persistence (docs/PERSISTENCE.md): the 4 cooking slots + their progress/time. */
+    private static StateAdapter persistence() {
+        return new StateAdapter() {
+            @Override
+            public String kind() {
+                return "campfire";
+            }
+
+            @Override
+            public void collect(Instance in, BiConsumer<Point, JsonObject> out) {
+                CAMPFIRES.forEach((key, s) -> {
+                    JsonObject o = new JsonObject();
+                    o.add("items", Persist.writeItems(s.items));
+                    com.google.gson.JsonArray progress = new com.google.gson.JsonArray();
+                    com.google.gson.JsonArray time = new com.google.gson.JsonArray();
+                    for (int slot = 0; slot < 4; slot++) {
+                        progress.add(s.cookingProgress[slot]);
+                        time.add(s.cookingTime[slot]);
+                    }
+                    o.add("progress", progress);
+                    o.add("time", time);
+                    out.accept(Persist.parsePos(key), o);
+                });
+            }
+
+            @Override
+            public void restore(Instance in, Point pos, JsonObject data) {
+                State state = new State();
+                Persist.readItems(data.getAsJsonArray("items"), state.items);
+                com.google.gson.JsonArray progress = data.getAsJsonArray("progress");
+                com.google.gson.JsonArray time = data.getAsJsonArray("time");
+                for (int slot = 0; slot < 4; slot++) {
+                    state.cookingProgress[slot] = progress.get(slot).getAsInt();
+                    state.cookingTime[slot] = time.get(slot).getAsInt();
+                }
+                state.instance = in;
+                state.pos = pos;
+                CAMPFIRES.put(Persist.posKey(pos), state);
+            }
+
+            @Override
+            public void wipe() {
+                CAMPFIRES.clear();
+            }
+        };
     }
 
     private static void useOnBlock(PlayerUseItemOnBlockEvent e) {
@@ -102,5 +154,11 @@ public final class Campfires {
         ItemEntity drop = new ItemEntity(item);
         drop.setInstance(instance, new Pos(pos.x() + 0.5, pos.y() + 0.5, pos.z() + 0.5));
         drop.setPickupDelay(java.time.Duration.ofMillis(200));
+    }
+
+    /** The item cooking in a given slot (0-3), or air if empty/no campfire tracked here. Test-only. */
+    public static ItemStack itemAt(Point pos, int slot) {
+        State s = CAMPFIRES.get(Containers.posKey(pos));
+        return s == null || s.items[slot] == null ? ItemStack.AIR : s.items[slot];
     }
 }
