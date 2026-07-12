@@ -3589,24 +3589,23 @@ public final class PlayTest {
     /** Tridents: free melee stats from item components, plus the throw/riptide/loyalty/impaling mechanics. */
     private static void scenarioTrident() {
         clearEntitiesExceptPlayer();
+        // pin a definite night: this scenario never set its own time, so a spawned zombie
+        // could combust in daylight (VanillaMobs.sunburn, 1 fire-tick damage/sec) before the
+        // real melee hit below ever lands — the exact same root cause confirmed and fixed for
+        // scenarioIronGolem's identical "took 1.0" symptom earlier this session, found by
+        // recognizing the matching damage value rather than re-guessing at setInstance timing.
+        world.setTime(14000);
         player.teleport(new Pos(0.5, Y + 1, 0.5, 0, 0)).join();
         world.setBlock(new BlockVec(0, Y, 0), Block.STONE);
 
         // melee: base 8 attack damage comes for free from the trident's real attribute
         // component. Strip any armor the zombie's spawn-equipment roll may have given it
-        // (VanillaMobs.maybeEquipArmor) as a defensive measure — but instrumented reproduction
-        // (~1/30 runs) of this exact "took 1.0" flake showed an unarmored, non-baby, non-leader
-        // zombie (armor attribute a flat 2.0, matching every run) still taking only 1 damage,
-        // so equipped armor isn't the actual cause here; logged in HANDOFF as still-open rather
-        // than guessed at further, since it's a different mechanism than the flake this stripping
-        // does correctly guard against.
+        // (VanillaMobs.maybeEquipArmor) as a defensive measure.
         EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 1.5));
         // a real tick between spawn and the attack below, matching how virtually every other
         // scenario in this suite naturally has SOME gap here — this is the one path that
-        // attacks in the exact same instant a mob spawns. Unconfirmed but plausible per
-        // HANDOFF's "unarmored zombie melee damage flake" entry: VanillaMobs.zombie() (like
-        // silverfish() before its fix) doesn't join Entity.setInstance's returned future, so a
-        // same-instant attack could race its completion. Cheap, harmless either way.
+        // attacks in the exact same instant a mob spawns. Cheap, harmless either way, kept as
+        // a defensive measure alongside the real fix above.
         tick(1);
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             if (slot.isArmor()) zombie.setEquipment(slot, ItemStack.AIR);
@@ -3734,6 +3733,7 @@ public final class PlayTest {
         clearEntitiesExceptPlayer();
         resetPlayer();
         world.setBlock(new BlockVec(0, Y, 0), Block.AIR);
+        world.setTime(1000);
     }
 
     /** Channeling: a thundering sky + a Channeling trident strikes lightning on hit; clear weather doesn't. */

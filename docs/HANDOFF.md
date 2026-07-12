@@ -161,7 +161,7 @@ above already closed the two most likely causes without fully eliminating
 it. Rare enough (down from ~1/20 combined to ~1/29 for this one specific
 check) that further live instrumentation is left for next time it's caught.
 
-### Rare (~1/30) unarmored zombie melee damage flake — unassigned
+### ~~Rare (~1/30) unarmored zombie melee damage flake~~ — DONE 2026-07-12 (Sonnet)
 
 Found 2026-07-12 (Sonnet) while fixing the flake pass below: the trident
 scenario's "melee hit deals ~8 damage" check occasionally measures 1.0
@@ -174,26 +174,48 @@ explain an 8->1 reduction on its own). Armor-stripping was applied as a
 defensive measure regardless (it guards a real, different failure mode) but
 does not explain this specific case — root cause still unknown at the time.
 
-**Strong lead, not yet confirmed (2026-07-12, Sonnet, same session as the
-silverfish ambush-spawn fix above):** this scenario spawns the zombie and
-attacks it with *zero* tick delay in between — the single fastest
-spawn-then-hit path in the whole suite — and `VanillaMobs.zombie()` has the
-exact same shape bug just confirmed and fixed for `silverfish()`:
+A `.join()`/`setInstance`-race lead was tried and left unconfirmed (30
+baseline reruns came back clean, not enough signal either way — see below,
+kept for the record).
+
+**Actually root-caused and fixed 2026-07-12 (Sonnet), later the same
+session:** recognized the *exact* symptom — "took 1.0" — from fixing
+`scenarioIronGolem`'s identical-looking flake earlier this session:
+`VanillaMobs.sunburn` deals exactly 1 fire-tick damage/second to an undead
+mob standing in daylight, and `scenarioTrident` never pinned its own world
+time (unlike most other scenarios). The zombie combusts in whatever
+ambient daytime state the suite happens to be in when this scenario runs,
+and the FIRE damage — not the trident hit — is what the check measured.
+Same fix as the golem scenario: pin `world.setTime(14000)` (night) at the
+top, restore day at the end. 30/30 clean reruns on the melee-damage check
+specifically (down from a real ~1/30 failure rate) — high confidence this
+was the actual cause, not a coincidental improvement. The earlier
+`.join()`/tick(1) mitigation (below) was left in place too — harmless,
+and still a real bug in `VanillaMobs.zombie()` even if not THIS flake's
+cause.
+
+**Unconfirmed lead, kept for the record (2026-07-12, Sonnet, same session
+as the silverfish ambush-spawn fix above):** this scenario spawns the
+zombie and attacks it with *zero* tick delay in between — the single
+fastest spawn-then-hit path in the whole suite — and `VanillaMobs.zombie()`
+has the exact same shape bug just confirmed and fixed for `silverfish()`:
 `mob.setInstance(instance, pos)` called without joining the returned
 `CompletableFuture<Void>`. Tried a test-side `tick(1)` between spawn and
 attack (giving the future a real tick to settle) as a repro/fix check, but
 couldn't get a clean before/after comparison — 30 baseline (unpatched)
-reruns came back clean too, consistent with a genuinely rare ~1/30 event
-needing more like 90+ runs for confident before/after statistics, more than
-was worth spending in this pass. Deliberately did NOT speculatively add
+reruns came back clean too. Deliberately did NOT speculatively add
 `.join()` to `VanillaMobs.zombie()` itself the way `silverfish()` got
 fixed — zombie is the most commonly-spawned mob in the game, so that
-change needs actual confirming evidence first, not just a plausible
-analogy. Left the test-side `tick(1)` in place (cheap, harmless, matches
-how virtually every other scenario naturally has some gap between spawn
-and interaction) as a real but unconfirmed mitigation. Next session: if it
-recurs despite that, the `.join()` theory is likely wrong and needs a real
-`Combat.attack`/`damage()` dump on next live catch instead.
+change still needs its own confirming evidence, not just a plausible
+analogy; this lead is independent of the sunburn fix above and may still
+be a real (much rarer, or already-mitigated-by-the-tick(1)) issue.
+
+Also found, NOT fixed (2026-07-12, Sonnet): during the 30-rerun
+verification pass, run 22 hit a completely different, unrelated failure
+in the SAME scenario — "loyalty-enchanted throw connects with the target"
+and the trident-return check both failed together (a genuine ~1/30-ish
+rate, one occurrence in 30 runs). Not investigated further — logged here
+rather than guessed at, needs live instrumentation on next catch.
 
 ### ~~Random-tick consumers tail~~ — ALL DONE 2026-07-12 (Sonnet)
 
