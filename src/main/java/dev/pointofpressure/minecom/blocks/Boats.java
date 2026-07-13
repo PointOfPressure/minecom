@@ -100,7 +100,10 @@ public final class Boats {
             if (!BOAT_TYPES.contains(type)) return;
             Pos at = event.getTarget().getPosition();
             Instance instance = event.getTarget().getInstance();
-            for (Entity passenger : event.getTarget().getPassengers()) event.getTarget().removePassenger(passenger);
+            // copy: removePassenger mutates the live passenger view mid-iteration
+            for (Entity passenger : java.util.List.copyOf(event.getTarget().getPassengers())) {
+                event.getTarget().removePassenger(passenger);
+            }
             if (CHEST_BOAT_TYPES.contains(type) && instance != null) {
                 var inv = CHEST_BOAT_INV.remove(event.getTarget().getUuid());
                 if (inv != null) Containers.spill(instance, at, inv);
@@ -146,6 +149,11 @@ public final class Boats {
         return null;
     }
 
+    /** Whether the entity type is any boat/chest-boat/raft. For BubbleColumns. */
+    public static boolean isBoat(net.minestom.server.entity.EntityType type) {
+        return BOAT_TYPES.contains(type);
+    }
+
     private static void tickAll() {
         for (Instance instance : MinecraftServer.getInstanceManager().getInstances()) {
             for (Entity e : instance.getEntities()) {
@@ -154,17 +162,30 @@ public final class Boats {
         }
     }
 
+    /** Water or a bubble-column cell — vanilla's getFluidState treats both as water. */
+    private static boolean waterLike(Block b) {
+        return b.compare(Block.WATER) || b.key().value().equals("bubble_column");
+    }
+
     /** Float the boat at the water surface; coast with water friction. */
     private static void buoyancy(Instance instance, Entity boat) {
         Pos p = boat.getPosition();
         int bx = p.blockX(), bz = p.blockZ();
-        boolean inWater = instance.getBlock(bx, (int) Math.floor(p.y()), bz).compare(Block.WATER)
-                || instance.getBlock(bx, (int) Math.floor(p.y() + 0.3), bz).compare(Block.WATER);
+        Block feet = instance.getBlock(bx, (int) Math.floor(p.y()), bz);
+        boolean inWater = waterLike(feet)
+                || waterLike(instance.getBlock(bx, (int) Math.floor(p.y() + 0.3), bz));
         if (!inWater) return;   // over land/air: Minestom gravity carries it down to water
+        // a drag-down bubble column pulls the hull under instead of floating it
+        // (AbstractBoat's sink path — gravity + BubbleColumns' 60gt timer take over);
+        // push-up columns float the boat normally so it keeps top-cell contact
+        // until BubbleColumns' launch fires
+        if (feet.key().value().equals("bubble_column") && "true".equals(feet.getProperty("drag"))) {
+            return;
+        }
 
         // top of the water column the boat sits in
         int sy = (int) Math.floor(p.y());
-        while (instance.getBlock(bx, sy + 1, bz).compare(Block.WATER)) sy++;
+        while (waterLike(instance.getBlock(bx, sy + 1, bz))) sy++;
         double surface = sy + 0.9;
         double ny = p.y() + (surface - p.y()) * 0.4;   // ease toward the surface
 

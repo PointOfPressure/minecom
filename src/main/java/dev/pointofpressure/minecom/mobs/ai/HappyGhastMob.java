@@ -57,6 +57,9 @@ public final class HappyGhastMob {
     private Vec velocity = Vec.ZERO; // vanilla-style per-tick delta, friction-integrated
     private int stillTimeout;
     private long age;
+    // mount order, oldest first — 26.1.2's getPassengers() is an unordered Set,
+    // but vanilla's getControllingPassenger is passengers.get(0) (mount order)
+    private final java.util.List<Player> mountOrder = new java.util.ArrayList<>();
 
     public static HappyGhastMob of(Entity entity) {
         return GHASTS.get(entity.getEntityId());
@@ -110,6 +113,7 @@ public final class HappyGhastMob {
         if (harnessed && !player.isSneaking() && mob.getPassengers().size() < MAX_PASSENGERS
                 && player.getVehicle() == null) {
             if (mob.getPassengers().isEmpty()) sound(SoundEvent.ENTITY_HAPPY_GHAST_HARNESS_GOGGLES_DOWN);
+            mountOrder.add(player);
             mob.addPassenger(player);
         }
     }
@@ -141,13 +145,12 @@ public final class HappyGhastMob {
         }
     }
 
-    /** getControllingPassenger: first passenger, harness on, not held still. */
+    /** getControllingPassenger: first passenger (by mount order), harness on, not held still. */
     private Player controllingPassenger() {
         if (mob.getEquipment(EquipmentSlot.BODY).isAir() || stillTimeout > 0) return null;
-        for (Entity passenger : mob.getPassengers()) {
-            if (passenger instanceof Player player) return player;
-        }
-        return null;
+        // prune anyone who dismounted/disconnected outside tickDismounts
+        mountOrder.removeIf(p -> p.getVehicle() != mob);
+        return mountOrder.isEmpty() ? null : mountOrder.get(0);
     }
 
     /** getRiddenInput + tickRidden + travelFlying, folded into velocity space. */

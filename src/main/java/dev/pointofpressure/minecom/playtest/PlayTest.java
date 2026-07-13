@@ -146,6 +146,8 @@ public final class PlayTest {
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
         scenario("silverfish: infested-block ambush, silk-touch bypass, wake-up-friends, merge-into-stone", PlayTest::scenarioSilverfish);
         scenario("slime sizes: setSize attributes, split-on-death chain, tiny-slime pacifism, magma armor", PlayTest::scenarioSlimeSizes);
+        scenario("bubble columns: soul sand grows push-up, item + boat launch, magma flips to drag, revert to water", PlayTest::scenarioBubbleColumns);
+        scenario("piston: reorder-at-collision rig (late honey line walks into an earlier-claimed cell)", PlayTest::scenarioPistonReorderCollision);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -6033,6 +6035,143 @@ public final class PlayTest {
         clearEntitiesExceptPlayer();
         player.setHealth(20f);
         resetPlayer();
+    }
+
+    /**
+     * Bubble columns (decompiled BubbleColumnBlock + Entity bubble hooks + the
+     * AbstractBoat 60gt timer): soul sand under a contained source-water shaft
+     * grows a push-up column that launches items over the surface and pops a
+     * floating boat after its armed timer; swapping the driver for magma flips
+     * every cell to drag-down and sinks the boat; removing the driver reverts
+     * the whole run to plain water.
+     */
+    private static void scenarioBubbleColumns() {
+        int z = 270;
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+        // 3x3 contained pool, 3 deep, column up the center — the boat hull is
+        // 1.375 wide, so a 1x1 shaft parks it on the glass rim (onGround) and it
+        // never touches a column cell; it needs open water around the column
+        for (int x = 48; x <= 52; x++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                boolean wall = x == 48 || x == 52 || dz == -2 || dz == 2;
+                if (wall) {
+                    for (int dy = 2; dy <= 4; dy++) rs(x, Y + dy, z + dz, Block.GLASS);
+                } else {
+                    rs(x, Y + 1, z + dz, Block.GLASS); // pool floor
+                }
+            }
+        }
+        rs(50, Y + 1, z, Block.SOUL_SAND);
+        for (int x = 49; x <= 51; x++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dy = 2; dy <= 4; dy++) rs(x, Y + dy, z + dz, Block.WATER);
+            }
+        }
+        dev.pointofpressure.minecom.blocks.BubbleColumns.notifyChanged(new Vec(50, Y + 1, z));
+        check("soul sand under source water grows a push-up column to the surface",
+                waitFor(() -> "bubble_column".equals(blockKey(50, Y + 2, z))
+                        && "false".equals(prop(50, Y + 2, z, "drag"))
+                        && "bubble_column".equals(blockKey(50, Y + 4, z)), 3000));
+
+        var probe = new ItemEntity(ItemStack.of(Material.STICK));
+        probe.setInstance(world, new Pos(50.5, Y + 2.2, z + 0.5)).join();
+        check("the column pushes an item up and launches it over the surface",
+                waitFor(() -> probe.getPosition().y() > Y + 5.2, 4000));
+        probe.remove();
+
+        var boat = dev.pointofpressure.minecom.blocks.Boats.spawn(
+                world, EntityType.OAK_BOAT, new Pos(50.5, Y + 5.2, z + 0.5));
+        tick(20); // settle onto the column surface
+        check("a floating boat pops off the column after the 60gt armed timer",
+                waitFor(() -> boat.getPosition().y() > Y + 5.7, 6000));
+
+        rs(50, Y + 1, z, Block.MAGMA_BLOCK);
+        dev.pointofpressure.minecom.blocks.BubbleColumns.notifyChanged(new Vec(50, Y + 1, z));
+        check("swapping the driver to magma flips the whole column to drag-down",
+                waitFor(() -> "bubble_column".equals(blockKey(50, Y + 4, z))
+                        && "true".equals(prop(50, Y + 4, z, "drag")), 3000));
+        check("the drag column pulls the boat under instead of floating it",
+                waitFor(() -> boat.getPosition().y() < Y + 3.5, 6000));
+        boat.remove();
+
+        // glass, not air: keeps the pool sealed so nothing flows toward the
+        // neighboring rigs while the revert is observed
+        rs(50, Y + 1, z, Block.GLASS);
+        dev.pointofpressure.minecom.blocks.BubbleColumns.notifyChanged(new Vec(50, Y + 1, z));
+        check("removing the driver reverts the column to plain water",
+                waitFor(() -> "water".equals(blockKey(50, Y + 2, z))
+                        && "water".equals(blockKey(50, Y + 4, z)), 3000));
+
+        for (int x = 48; x <= 52; x++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = 1; dy <= 4; dy++) rs(x, Y + dy, z + dz, Block.AIR);
+            }
+        }
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Exercises PistonStructureResolver.reorderListAtCollision (the one path no
+     * prior rig reached — see the HANDOFF entry). Rig derived from the ported
+     * algorithm: pushing east, the main slime line (A) claims the slime row C
+     * via A1's branch; C2 branches to stone M whose forward walk claims honey
+     * D3; D3's honey branch reaches honey row E whose back-walk claims E1..E3;
+     * E1's branch finally adds honey D1 — whose forward walk then hits M,
+     * already claimed by an earlier line, firing the reorder (D1 must move
+     * before M). D1 is honey and C1 slime so the D row can't be entered early
+     * (honey never sticks to slime); exactly 12 blocks, at the push limit.
+     * Asserts the exact final layout — a lost/duplicated/mis-ordered block
+     * (the failure modes of a wrong reorder) breaks the assertions.
+     */
+    private static void scenarioPistonReorderCollision() {
+        int z = 275, y0 = Y + 4;
+        rs(50, y0, z, Block.PISTON.withProperty("facing", "east"));
+        for (int x = 51; x <= 53; x++) {
+            rs(x, y0, z, Block.SLIME_BLOCK);      // A1 A2 A3
+            rs(x, y0, z + 1, Block.SLIME_BLOCK);  // C1 C2 C3
+            rs(x, y0, z + 3, Block.HONEY_BLOCK);  // E1 E2 E3
+        }
+        rs(51, y0, z + 2, Block.HONEY_BLOCK);     // D1 — the colliding line
+        rs(52, y0, z + 2, Block.STONE);           // M  — the collision cell
+        rs(53, y0, z + 2, Block.HONEY_BLOCK);     // D3
+        tick(2);
+        rs(50, y0 - 1, z, Block.REDSTONE_BLOCK);
+        boolean moved = waitFor(() -> "true".equals(prop(50, y0, z, "extended"))
+                && world.getBlock(52, y0, z + 2).key().value().equals("honey_block")   // D1 survived the reorder
+                && world.getBlock(53, y0, z + 2).key().value().equals("stone")          // M shifted intact
+                && world.getBlock(54, y0, z + 2).key().value().equals("honey_block"),   // D3
+                3000);
+        check("collision rig: the late honey line and the earlier-claimed cells all moved", moved);
+        boolean layout = true;
+        for (int x = 52; x <= 54; x++) {
+            layout &= world.getBlock(x, y0, z).key().value().equals("slime_block");
+            layout &= world.getBlock(x, y0, z + 1).key().value().equals("slime_block");
+            layout &= world.getBlock(x, y0, z + 3).key().value().equals("honey_block");
+        }
+        layout &= world.getBlock(51, y0, z + 1).isAir()
+                && world.getBlock(51, y0, z + 2).isAir()
+                && world.getBlock(51, y0, z + 3).isAir();
+        check("collision rig: every one of the 12 blocks shifted exactly +1 east, none lost or duplicated", layout);
+
+        // retraction: whatever the pull drags, block conservation must hold
+        rs(50, y0 - 1, z, Block.AIR);
+        waitFor(() -> "false".equals(prop(50, y0, z, "extended")), 3000);
+        int slime = 0, honey = 0, stone = 0;
+        for (int x = 50; x <= 55; x++) {
+            for (int dz = 0; dz <= 3; dz++) {
+                String key = world.getBlock(x, y0, z + dz).key().value();
+                if (key.equals("slime_block")) slime++;
+                if (key.equals("honey_block")) honey++;
+                if (key.equals("stone")) stone++;
+            }
+        }
+        check("collision rig: retraction conserves the structure (6 slime, 5 honey, 1 stone)",
+                slime == 6 && honey == 5 && stone == 1);
+        for (int x = 50; x <= 55; x++) {
+            for (int dz = 0; dz <= 3; dz++) rs(x, y0, z + dz, Block.AIR);
+        }
+        rs(50, y0 - 1, z, Block.AIR);
     }
 
     private static void scenarioButton() {

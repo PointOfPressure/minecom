@@ -107,7 +107,9 @@ differently than assumed, all verified by grep + `javap` against the pinned jar:
   untouched. It also silently *fixes* a latent bug: `HappyGhastMob.
   controllingPassenger()` (line ~145) is documented as "first passenger" but
   iterates a `Set` — "first" is currently nondeterministic; an ordered `List`
-  makes it actually correct.
+  makes it actually correct. *(Fixed ahead of the bump 2026-07-13, Fable:
+  `HappyGhastMob` now tracks mount order in its own list, so the 26.2 change
+  becomes a no-op here rather than a behavior change.)*
 - **`PlayerStartSneakingEvent`: the `isSneaking()` guess was right.** The 7
   live-flag reads (`Vibrations`, `HappyGhastMob`, `Containers`, `Boats`,
   PlayTest) are **not** in the ABI report and need zero changes. Only the 3
@@ -190,6 +192,7 @@ uncommitted `Boats.java`): `Boats.java:103` iterates the live passenger view
 while calling `removePassenger` inside the loop — its two siblings
 (`BubbleColumns.java:216`, `HappyGhastMob.java:215`) both correctly defend with
 `List.copyOf`. Pre-existing CME risk, worth folding into whoever touches it.
+*(Fixed 2026-07-13, Fable, alongside landing the bubble-columns work.)*
 
 ### ~~Structure loot, container open animation, creative portal crossing~~ — DONE 2026-07-12 (Sonnet)
 

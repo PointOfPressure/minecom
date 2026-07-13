@@ -5,6 +5,7 @@ import dev.pointofpressure.minecom.blocks.BlockRules;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.blocks.CopperWaxing;
 import dev.pointofpressure.minecom.blocks.Farming;
+import dev.pointofpressure.minecom.blocks.BubbleColumns;
 import dev.pointofpressure.minecom.blocks.FireSpread;
 import dev.pointofpressure.minecom.blocks.Fluids;
 import dev.pointofpressure.minecom.blocks.InfestedBlocks;
@@ -143,6 +144,7 @@ public final class Bootstrap {
         Containers.register(events);
         Fluids.register(events);
         Fluids.start(overworld);
+        BubbleColumns.register(events, overworld);
         Farming.register(events);
         Farming.start(overworld);
         dev.pointofpressure.minecom.blocks.RandomTicks.register(overworld);

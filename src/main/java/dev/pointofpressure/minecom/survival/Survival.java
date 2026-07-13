@@ -213,7 +213,9 @@ public final class Survival {
 
         Block feet = p.getInstance().getBlock(to);
         boolean inFluid = feet.isLiquid() || feet.compare(Block.LADDER) || feet.compare(Block.VINE)
-                || feet.compare(Block.COBWEB);
+                || feet.compare(Block.COBWEB)
+                // bubble columns count as water (Entity.onInsideBubbleColumn resets fall distance)
+                || feet.key().value().equals("bubble_column");
         if (inFluid || p.isFlying()) {
             s.highestY = Double.NEGATIVE_INFINITY;
             return;
