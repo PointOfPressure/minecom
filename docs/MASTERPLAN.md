@@ -420,6 +420,16 @@ partnership, build-in-public). What the new intel sharpens:
    dedicated bench hardware from the owner; a rented box for headline launch
    charts remains an option to re-raise at launch time (no spend approved
    yet).
+   **UPDATE 2026-07-13 (later same day)**: the owner has a Threadripper
+   tower available. That replaces the rented-box idea for headline numbers
+   AND is the natural testbed for the P2 region multi-core arc (high core
+   count is exactly what region ownership needs to show scaling). Publish
+   headline charts from the Threadripper with full specs disclosed; keep
+   the laptop as the low-end/regression datapoint — a two-point hardware
+   spread (potato + many-core) is *stronger* than one rented mid-tier box.
+   Note the bias honestly in the methodology: a Threadripper flatters a
+   multi-core design, which is why the harness stays one-command
+   reproducible on anyone's hardware.
 2. **§2 hardening scope — APPROVED as written.** Items 1-7 ARE the definition
    of STRATEGY §6 step 2. Unification sequencing unblocked once they land.
    (CI, item 5, is approved as part of this.)
