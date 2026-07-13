@@ -1,14 +1,14 @@
 # Parity scorecard
 
-*Generated 2026-07-13 17:45 by `python3 scripts/parity_scorecard.py` — do not hand-edit. Sources: `playtest_tick_counted_waits.log`, `selftest_flake_slo_footer.log`, `regiondiff_full_99.28pct_committed_harness_seed20260708.log`.*
+*Generated 2026-07-13 21:02 by `python3 scripts/parity_scorecard.py` — do not hand-edit. Sources: `playtest_262_bump_3.log`, `selftest_262_final.log`, `regiondiff_seed20260708_r18_20260713-201246.log`.*
 
 ## Headline
 
-- **PlayTest (headless full server, fake player): 677 passed, 0 failed** across 120 scenario groups
+- **PlayTest (headless full server, fake player): 678 passed, 0 failed** across 120 scenario groups
 - **SelfTest (server-less data engine): 210 passed, 0 failed**
-- **Worldgen region diff: 99.2805% bit-exact** vs a real vanilla 26.1.2 server — 1296 chunks / 127,401,984 blocks, seed 20260708 (`scripts/worldgen_region_diff.py`, full-state comparison incl. block properties)
+- **Worldgen region diff: 99.3554% bit-exact** vs a real vanilla 26.2 server — 1296 chunks / 127,401,984 blocks, seed 20260708 (`scripts/worldgen_region_diff.py`, full-state comparison incl. block properties)
 - **Differential fixtures: 40 piston extend/retract cases** captured from a real vanilla server, replayed cell-by-cell every run (`scripts/piston_vanilla_capture.py`)
-- Documented simplifications/gaps (docs/AUDIT.md): 76 across 8 areas
+- Documented simplifications/gaps (docs/AUDIT.md): 78 across 9 areas
 
 ## PlayTest coverage by scenario group
 
@@ -22,9 +22,9 @@
 | vanilla-ai | 15 | 0 |
 | cauldron | 13 | 0 |
 | end | 13 | 0 |
+| enchant | 12 | 0 |
 | minecart | 12 | 0 |
 | trial chambers | 12 | 0 |
-| enchant | 11 | 0 |
 | trident | 11 | 0 |
 | chiseled bookshelf | 11 | 0 |
 | warden | 9 | 0 |
@@ -139,16 +139,16 @@
 
 | blocks | class |
 |---:|---|
-| 162,974 | `minecraft:deepslate<-minecraft:sculk` |
-| 103,339 | `minecraft:spruce_leaves<-minecraft:spruce_leaves (props)` |
-| 71,464 | `minecraft:air<-minecraft:sculk_vein` |
-| 46,345 | `minecraft:oak_leaves<-minecraft:air` |
-| 41,201 | `minecraft:air<-minecraft:oak_leaves` |
-| 39,733 | `minecraft:spruce_leaves<-minecraft:air` |
-| 32,657 | `minecraft:stone<-minecraft:coal_ore` |
-| 32,366 | `minecraft:coal_ore<-minecraft:stone` |
-| 22,933 | `minecraft:air<-minecraft:spruce_leaves` |
-| 20,827 | `minecraft:oak_leaves<-minecraft:oak_leaves (props)` |
+| 159,138 | `minecraft:deepslate<-minecraft:sculk` |
+| 71,846 | `minecraft:air<-minecraft:sculk_vein` |
+| 46,594 | `minecraft:oak_leaves<-minecraft:air` |
+| 43,239 | `minecraft:air<-minecraft:oak_leaves` |
+| 40,074 | `minecraft:spruce_leaves<-minecraft:spruce_leaves (props)` |
+| 40,003 | `minecraft:spruce_leaves<-minecraft:air` |
+| 29,977 | `minecraft:coal_ore<-minecraft:stone` |
+| 29,538 | `minecraft:stone<-minecraft:coal_ore` |
+| 23,393 | `minecraft:air<-minecraft:spruce_leaves` |
+| 19,074 | `minecraft:air<-minecraft:leaf_litter` |
 
 ## Documented simplifications by area (docs/AUDIT.md)
 
@@ -160,6 +160,7 @@
 | survival/ + data/ | 10 |
 | top-level / infra | 5 |
 | worldgen (documented deferrals only — core is verified elsewhere) | 8 |
+| 26.2 bump — deliberate simplifications (2026-07-13, Fable) | 2 |
 | stale comments to clean up when touched | 2 |
 | Top 10 by player impact | 0 |
 

@@ -248,8 +248,28 @@ What actually happened, delta vs. the scoping's predictions:
   (own libraries root, never merged into `~/libraries`), `MC_VERSION`
   constant added; region-diff work dirs are now per-version
   (`<seed>_r<r>_<cx>x<cz>_26.2`), the 26.1.2 vanilla cache dirs kept.
-- Suites: SelfTest 210/210 (roster check now 52/52). PlayTest + the 26.2
-  re-baseline recorded below/SCORECARD when green.
+- **Suites green on the final tree: SelfTest 210/210, PlayTest 678/678**
+  (three PlayTest failures root-caused along the way: the mending scenario
+  was double-firing PickupExperienceEvent on top of 26.2's new auto-pickup;
+  the creeper explosion check exposed a REAL product ordering bug —
+  remove-before-explode, vanilla explodes first — now matched to the
+  decompile with an explicit self-exclusion; trident riptide + snow golem
+  failed only under the vanilla-gen load overlap and pass unloaded —
+  physics-measurement checks are the one class tick-counted waits can't
+  fully immunize, noted for the next flake audit).
+- **26.2 region-diff re-baseline (CANONICAL): 99.355432%** — seed 20260708,
+  r18, 1,296 chunks / 127,401,984 blocks, full-state, vanilla side a real
+  26.2 dedicated server (log: test-logs/regiondiff_seed20260708_r18_
+  20260713-201246.log; work dir ~/minecom-region-diff/20260708_r18_0x0_26.2,
+  26.1.2 cache kept in the unsuffixed dir). UP from 26.1.2's 99.2805%
+  despite 26.2's worldgen changes: the updateLeaves port cut the leaves
+  (props) classes ~72k blocks (spruce 103,339->40,074, oak 20,827->11,974);
+  the remaining top classes are composition-identical to the old baseline
+  (sculk gated off by design, tree/ore placement divergence pre-existing).
+  No new 26.2-specific divergence classes appeared in the sampled region
+  (no sulfur_caves surfaced in this area). Remaining leaves (props) blocks
+  are plausibly secondary to tree-placement mismatches (different BFS
+  neighborhoods), not a distance-algorithm bug — verify before chasing.
 
 ### ~~MASTERPLAN §2 verification hardening (items 1-4, 6)~~ — DONE 2026-07-13 (Fable)
 
