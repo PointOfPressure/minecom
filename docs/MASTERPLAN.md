@@ -410,7 +410,7 @@ partnership, build-in-public). What the new intel sharpens:
 11. Nether bit-exactness (Tier 4) woven through 9-10 as the parity flagship
 12. Version tracking cadence forever after (§6)
 
-## 11. OWNER questions — ANSWERED 2026-07-13 (items 1-4 + 6), 5/7 still open
+## 11. OWNER questions — ALL ANSWERED 2026-07-13
 
 1. **Benchmark hardware — ANSWERED**: "I'm not hosting the server on my
    laptop for people to play, it's for other people to use." Read: minecom is
@@ -437,8 +437,20 @@ partnership, build-in-public). What the new intel sharpens:
    bump, then sulfur-cube + passenger reconciliation as followups.
 4. **Priority fork — PARITY FIRST.** Tier 1-2 parity before the P1 perf pass,
    as the plan recommends.
-5. **Launch ambition** — still open: target date/window for the open-source
-   launch?
+5. **Launch ambition — ANSWERED: no date, quality-gated.** "Ship when
+   perfect on our end, then hit the Minestom community with it and seek
+   reviews." Launch trigger is a quality bar, not a calendar: the parity
+   tiers + hardening + benchmark harness all land BEFORE reveal, and launch
+   day leads with review requests, not marketing. This means the parity
+   long-tail is pre-launch work, and the launch checklist (AGPL/CLA,
+   repo-public, STRATEGY steps) should be prepared but not scheduled.
 6. **CI** — approved via #2.
-7. **Community conduct** — still open: comfortable with staying present in
-   the Minestom Discord + 1-2 upstream contributions pre-launch?
+7. **Community conduct — ANSWERED: visible, already active.** Owner is
+   presently active in the Minestom Discord. Community perception right now
+   is that this is "another AI-coded slop project" — strategically useful:
+   expectations are floor-level, so the reveal (49.5k lines, 887-check
+   suite, bit-exact worldgen, one-command reproducible benchmarks) lands
+   with maximum contrast. Consequence: launch credibility must come
+   entirely from the verification numbers and reproducibility, since no
+   reputation precedes it — which the plan already builds. The 1-2
+   pre-launch upstream contributions remain recommended and are now viable.
