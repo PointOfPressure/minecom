@@ -38,3 +38,9 @@
    <outdir>`, and cache the resulting `.java` under the matching
    `vanilla-src/net/...` path so the next session finds it. Check
    `vanilla-src/` first — don't re-decompile what's already cached.
+8. **Bundled vanilla data (`src/main/resources/vanilla/`) is regenerated,
+   never hand-edited.** `scripts/extract_vanilla_data.py --validate`
+   rebuilds all 1,476 jar-derived files from the server jar and proves the
+   result (per-file provenance in its docstring). If a data file looks
+   wrong, fix the extractor and regenerate; a version bump re-runs it
+   against the new jar.
