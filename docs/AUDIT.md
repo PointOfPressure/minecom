@@ -262,7 +262,22 @@ leftovers.
   that matches vanilla (tryRespond requires an actual warning).
 - ~~Pistons.java — no slime/honey chains~~ **Done 2026-07-11 (Fable)** — full
   structure resolver port; see docs/HANDOFF.md Done entry. Block-entity move
-  denial is inherent (isPushable rejects block entities).
+  denial is inherent (isPushable rejects block entities). The
+  reorder-at-collision path gained real coverage 2026-07-13 (Fable): a
+  hand-traced collision rig with an execution-witness check
+  (Redstone.pistonReorderFires — layouts alone can't prove the path ran,
+  because apply() snapshots states before moving, making final layouts
+  provably invariant to toPush order in BOTH implementations; vanilla's
+  moveBlocks snapshots too, so the list order only governs its
+  moving-piston block-entity/update ordering, which the instant-apply
+  simplification doesn't model), plus a 40-case differential fixture
+  captured from a real vanilla 26.1.2 dedicated server
+  (scripts/piston_vanilla_capture.py →
+  resources/vanilla/piston_reorder_cases.json, replayed cell-by-cell by
+  scenarioPistonDifferential). What the differential falsifies: collision
+  handling's effect on resolve outcomes (membership closure, re-branch
+  bounds, push-limit failures, blocked-vs-moved) and any other
+  extend/retract divergence in the resolver port.
 - Hoppers.java — check minecart-with-hopper pull-from-above and
   hopper-into-minecart paths (Minecarts variants exist; the connection is
   suspect). (S/M)

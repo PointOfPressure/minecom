@@ -148,6 +148,7 @@ public final class PlayTest {
         scenario("slime sizes: setSize attributes, split-on-death chain, tiny-slime pacifism, magma armor", PlayTest::scenarioSlimeSizes);
         scenario("bubble columns: soul sand grows push-up, item + boat launch, magma flips to drag, revert to water", PlayTest::scenarioBubbleColumns);
         scenario("piston: reorder-at-collision rig (late honey line walks into an earlier-claimed cell)", PlayTest::scenarioPistonReorderCollision);
+        scenario("piston: differential vs real vanilla 26.1.2 (slime/honey fixture incl. reorder-collision family)", PlayTest::scenarioPistonDifferential);
         scenario("redstone: button pulse", PlayTest::scenarioButton);
         scenario("redstone: iron door", PlayTest::scenarioIronDoor);
         scenario("redstone: comparator reads chest", PlayTest::scenarioComparator);
@@ -6136,6 +6137,7 @@ public final class PlayTest {
         rs(52, y0, z + 2, Block.STONE);           // M  — the collision cell
         rs(53, y0, z + 2, Block.HONEY_BLOCK);     // D3
         tick(2);
+        int reorderBefore = dev.pointofpressure.minecom.redstone.Redstone.pistonReorderFires();
         rs(50, y0 - 1, z, Block.REDSTONE_BLOCK);
         boolean moved = waitFor(() -> "true".equals(prop(50, y0, z, "extended"))
                 && world.getBlock(52, y0, z + 2).key().value().equals("honey_block")   // D1 survived the reorder
@@ -6143,6 +6145,10 @@ public final class PlayTest {
                 && world.getBlock(54, y0, z + 2).key().value().equals("honey_block"),   // D3
                 3000);
         check("collision rig: the late honey line and the earlier-claimed cells all moved", moved);
+        // layouts alone can't prove the collision path ran (apply() is
+        // order-invariant), so witness the reorder actually firing
+        check("collision rig: reorderListAtCollision actually fired (execution witness)",
+                dev.pointofpressure.minecom.redstone.Redstone.pistonReorderFires() > reorderBefore);
         boolean layout = true;
         for (int x = 52; x <= 54; x++) {
             layout &= world.getBlock(x, y0, z).key().value().equals("slime_block");
@@ -6172,6 +6178,147 @@ public final class PlayTest {
             for (int dz = 0; dz <= 3; dz++) rs(x, y0, z + dz, Block.AIR);
         }
         rs(50, y0 - 1, z, Block.AIR);
+    }
+
+    /**
+     * Differential test against REAL vanilla 26.1.2: every case in
+     * vanilla/piston_reorder_cases.json (captured by scripts/
+     * piston_vanilla_capture.py from a genuine dedicated server — reorder-rig
+     * mutations, structured/random slime-honey fills, over-limit and blocked
+     * pushes) is rebuilt here, triggered through the real Pistons engine, and
+     * the full post-extend and post-retract layouts are compared cell by cell.
+     * Note the honest limit (see Pistons.REORDER_FIRES): final layouts are
+     * order-invariant in both implementations, so what this falsifies is the
+     * collision path's effect on resolve outcomes (membership, re-branch
+     * bounds, push-limit failures, blocked-vs-moved), not the list order
+     * itself — plus every other divergence in the resolver port. The witness
+     * check at the end proves the reorder path actually executed.
+     */
+    private static void scenarioPistonDifferential() {
+        int ox = 50, oy = Y + 6, oz = 340;
+        com.google.gson.JsonObject root;
+        try (var in = PlayTest.class.getResourceAsStream("/vanilla/piston_reorder_cases.json")) {
+            root = com.google.gson.JsonParser.parseReader(
+                    new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+        } catch (Exception e) {
+            check("piston differential: bundled vanilla fixture loads", false);
+            return;
+        }
+        var box = root.getAsJsonObject("box");
+        int bx0 = box.get("x0").getAsInt(), bx1 = box.get("x1").getAsInt();
+        int by0 = box.get("y0").getAsInt(), by1 = box.get("y1").getAsInt();
+        int bz0 = box.get("z0").getAsInt(), bz1 = box.get("z1").getAsInt();
+        // the harness only pre-loads spawn chunks; getBlock throws on unloaded ones
+        for (int cx = (ox + bx0) >> 4; cx <= (ox + bx1) >> 4; cx++) {
+            for (int cz = (oz + bz0) >> 4; cz <= (oz + bz1) >> 4; cz++) {
+                world.loadChunk(cx, cz).join();
+            }
+        }
+        int reorderStart = dev.pointofpressure.minecom.redstone.Redstone.pistonReorderFires();
+
+        for (var caseEl : root.getAsJsonArray("cases")) {
+            var c = caseEl.getAsJsonObject();
+            String name = c.get("id").getAsInt() + " (" + c.get("name").getAsString() + ")";
+            // clear the capture box
+            for (int dx = bx0; dx <= bx1; dx++) {
+                for (int dy = by0; dy <= by1; dy++) {
+                    for (int dz = bz0; dz <= bz1; dz++) {
+                        if (!world.getBlock(ox + dx, oy + dy, oz + dz).isAir()) {
+                            rs(ox + dx, oy + dy, oz + dz, Block.AIR);
+                        }
+                    }
+                }
+            }
+            rs(ox, oy, oz, Block.STICKY_PISTON.withProperty("facing", "east"));
+            for (var blockEl : c.getAsJsonArray("blocks")) {
+                var b = blockEl.getAsJsonArray();
+                rs(ox + b.get(0).getAsInt(), oy + b.get(1).getAsInt(), oz + b.get(2).getAsInt(),
+                        Block.fromKey(b.get(3).getAsString()));
+            }
+            tick(2);
+            String expectExtended = pistonPropIn(c.getAsJsonArray("extended"));
+            rs(ox, oy - 1, oz, Block.REDSTONE_BLOCK);
+            waitFor(() -> expectExtended.equals(prop(ox, oy, oz, "extended")), 2500);
+            tick(2);
+            String extendDiff = diffLayout(c.getAsJsonArray("extended"), ox, oy, oz,
+                    bx0, bx1, by0, by1, bz0, bz1);
+            rs(ox, oy - 1, oz, Block.AIR);
+            waitFor(() -> "false".equals(prop(ox, oy, oz, "extended")), 2500);
+            tick(2);
+            String retractDiff = diffLayout(c.getAsJsonArray("retracted"), ox, oy, oz,
+                    bx0, bx1, by0, by1, bz0, bz1);
+            if (extendDiff != null) System.out.println("DIFF case " + name + " extended: " + extendDiff);
+            if (retractDiff != null) System.out.println("DIFF case " + name + " retracted: " + retractDiff);
+            check("piston differential case " + name + ": extend + retract layouts match vanilla",
+                    extendDiff == null && retractDiff == null);
+        }
+
+        int fires = dev.pointofpressure.minecom.redstone.Redstone.pistonReorderFires() - reorderStart;
+        System.out.println("piston differential: reorderListAtCollision fired " + fires
+                + " times across the fixture");
+        check("piston differential: the reorder-at-collision path was exercised (fired "
+                + fires + "x)", fires > 0);
+        // final cleanup
+        for (int dx = bx0; dx <= bx1; dx++) {
+            for (int dy = by0; dy <= by1; dy++) {
+                for (int dz = bz0; dz <= bz1; dz++) {
+                    if (!world.getBlock(ox + dx, oy + dy, oz + dz).isAir()) {
+                        rs(ox + dx, oy + dy, oz + dz, Block.AIR);
+                    }
+                }
+            }
+        }
+    }
+
+    /** The fixture piston cell's recorded "extended" property ("false" when vanilla stayed blocked). */
+    private static String pistonPropIn(com.google.gson.JsonArray cells) {
+        for (var cellEl : cells) {
+            var cell = cellEl.getAsJsonArray();
+            if (cell.get(0).getAsInt() == 0 && cell.get(1).getAsInt() == 0
+                    && cell.get(2).getAsInt() == 0 && cell.size() > 4) {
+                return cell.get(4).getAsJsonObject().get("extended").getAsString();
+            }
+        }
+        return "false";
+    }
+
+    /** Compare the world's capture box against fixture cells; null when identical. */
+    private static String diffLayout(com.google.gson.JsonArray cells, int ox, int oy, int oz,
+                                     int bx0, int bx1, int by0, int by1, int bz0, int bz1) {
+        java.util.Map<Long, String> expected = new java.util.HashMap<>();
+        java.util.Map<Long, String> expectedProps = new java.util.HashMap<>();
+        for (var cellEl : cells) {
+            var cell = cellEl.getAsJsonArray();
+            long key = ((long) (cell.get(0).getAsInt() + 64) << 16)
+                    | ((long) (cell.get(1).getAsInt() + 64) << 8) | (cell.get(2).getAsInt() + 64);
+            expected.put(key, cell.get(3).getAsString());
+            if (cell.size() > 4) {
+                expectedProps.put(key, cell.get(4).getAsJsonObject().get("extended").getAsString());
+            }
+        }
+        StringBuilder diff = new StringBuilder();
+        int diffs = 0;
+        for (int dx = bx0; dx <= bx1; dx++) {
+            for (int dy = by0; dy <= by1; dy++) {
+                for (int dz = bz0; dz <= bz1; dz++) {
+                    long key = ((long) (dx + 64) << 16) | ((long) (dy + 64) << 8) | (dz + 64);
+                    Block actual = world.getBlock(ox + dx, oy + dy, oz + dz);
+                    String want = expected.getOrDefault(key, "air");
+                    String got = actual.isAir() ? "air" : actual.key().value();
+                    boolean propOk = !expectedProps.containsKey(key)
+                            || expectedProps.get(key).equals(actual.getProperty("extended"));
+                    if (!want.equals(got) || !propOk) {
+                        if (++diffs <= 6) {
+                            diff.append(String.format("[%d,%d,%d] want %s%s got %s%s; ", dx, dy, dz,
+                                    want, expectedProps.containsKey(key) ? "(ext=" + expectedProps.get(key) + ")" : "",
+                                    got, expectedProps.containsKey(key) ? "(ext=" + actual.getProperty("extended") + ")" : ""));
+                        }
+                    }
+                }
+            }
+        }
+        return diffs == 0 ? null : diffs + " cells: " + diff;
     }
 
     private static void scenarioButton() {

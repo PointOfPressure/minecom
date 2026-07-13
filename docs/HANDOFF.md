@@ -27,8 +27,10 @@ now bounded at <1/500 and its two named leads are both disproven).
   data re-extraction (see below). ~~Dispensed-animal flake~~ done.
   Silk-touch flake: still open but demoted — no longer worth chasing
   blind, see its entry for the exact conditions to catch it under.
-- **Fable:** Piston reorder-collision differential test — already in
-  progress, deepest context on their own algorithm port.
+- **Fable:** ~~Piston reorder-collision differential test~~ DONE 2026-07-13
+  (40-case fixture from real vanilla, all bit-matching; reorder path fires
+  10× under an execution witness — see the entry below, including why
+  layouts alone could never have verified this).
 - **Fable, but blocked:** Unification-pass mechanical cleanups — a
   project-owner sequencing decision (STRATEGY.md §6), and the highest-risk
   item here on the merits too (splitting a 5.3k-line test file without
@@ -795,6 +797,49 @@ meal, flint&steel, buckets, shulkers). What "fully complete" still needs:
      iterations wasn't always enough for a rarer-than-expected roll — only
      one candidate position per tick ever has a flammable neighbor in that
      test's layout); bumped to 2000, 8/8 clean after.
+
+### ~~Piston reorder-collision differential test~~ — DONE 2026-07-13 (Fable)
+
+**Landed, with one honest finding that reframes what "verifying the reorder"
+can even mean.** Three pieces:
+
+1. **The collision rig reaches the path — proven, not assumed.** The
+   uncommitted `scenarioPistonReorderCollision` rig was hand-traced through the
+   ported resolver (A/C slime rows + split honey D line + honey E row; E1's
+   branch adds D1, whose forward walk hits M at index 6 →
+   `reorderListAtCollision(1, 6)`), and now carries an execution-witness check
+   via a new `Pistons.REORDER_FIRES` counter (`Redstone.pistonReorderFires()`).
+2. **The finding: final layouts are provably invariant to `toPush` order in
+   BOTH implementations.** `Pistons.apply()` snapshots every pushed state
+   before moving, and vanilla's `moveBlocks` does the same (states collected
+   up front, destination-dedup via map) — so a wrong reorder can NEVER show up
+   as a lost/duplicated block in a static layout, only as wrong
+   moving-piston block-entity/update ORDERING (observer/BUD timing), which the
+   documented instant-apply simplification doesn't model at all. That is why
+   the witness counter exists: without it, no layout assertion can even prove
+   the path executed. What IS layout-observable (and was genuinely unverified):
+   the collision path's effect on resolve outcomes — membership closure, the
+   `j <= collisionIndex + blocksAdded` re-branch bound, push-limit failures,
+   blocked-vs-moved decisions.
+3. **The differential test (option b, as recommended).** New committed harness
+   `scripts/piston_vanilla_capture.py` boots the REAL vanilla 26.1.2 dedicated
+   server (the `~/versions` + `~/libraries` bundler unpack; note 26.x moved
+   overworld storage to `world/dimensions/minecraft/overworld/region`), builds
+   40 cases on a forceloaded grid — 12 hand-designed reorder-rig mutations
+   (mirrored, material-swapped, vertical, mid-block variants, over-limit,
+   obsidian-blocked), 16 structured row/bridge randoms, 12 uniform randoms —
+   triggers them, and snapshots post-extend AND post-retract layouts out of the
+   region files (minimal zero-dep NBT/Anvil parser included) into
+   `src/main/resources/vanilla/piston_reorder_cases.json` (62 KB, committed,
+   regenerable with one command — the lesson from the worldgen harness never
+   being committed). `scenarioPistonDifferential` replays every case through
+   the real Pistons engine and compares every cell of every capture box.
+   **Result: 40/40 cases bit-match vanilla on both extend and retract, with
+   `reorderListAtCollision` firing 10× across the fixture** (witnessed by a
+   final coverage check, so the fixture can't silently regress to
+   never-reaching the path). 36 cases extended, 4 correctly stayed blocked.
+
+Original entry follows for the trail:
 
 ### Piston reorder-collision differential test — Fable (IN PROGRESS 2026-07-12 ~05:20, overnight Fable queue session)
 

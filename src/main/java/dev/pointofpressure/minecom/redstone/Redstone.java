@@ -1459,6 +1459,12 @@ public final class Redstone {
 
     // ------------------------------------------------------------------ util
 
+    /** Total reorder-at-collision fires in the piston resolver — for tests, which
+     *  otherwise can't tell from final layouts whether a rig reached that path. */
+    public static int pistonReorderFires() {
+        return Pistons.REORDER_FIRES.get();
+    }
+
     /** Direction equality safe against -0.0 from Vec.mul(-1). */
     static boolean sameDir(Vec a, Vec b) {
         return (int) a.x() == (int) b.x() && (int) a.y() == (int) b.y() && (int) a.z() == (int) b.z();

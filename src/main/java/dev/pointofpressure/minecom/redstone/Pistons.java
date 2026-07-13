@@ -36,6 +36,13 @@ final class Pistons {
     private Pistons() {}
 
     private static final int MAX_PUSH_DEPTH = 12;
+
+    // execution witness for the reorder-at-collision path (read via
+    // Redstone.pistonReorderFires): final layouts are provably order-invariant
+    // (apply() snapshots before moving), so tests can't tell from blocks alone
+    // whether a rig actually reached this path
+    static final java.util.concurrent.atomic.AtomicInteger REORDER_FIRES =
+            new java.util.concurrent.atomic.AtomicInteger();
     // project-wide overworld build limits (same constants as worldgen/vanilla/VJigsaw)
     private static final int MIN_Y = -64, MAX_Y = 319;
 
@@ -326,6 +333,7 @@ final class Pistons {
         }
 
         private void reorderListAtCollision(int blocksAdded, int collisionIndex) {
+            REORDER_FIRES.incrementAndGet();
             List<Point> head = new ArrayList<>(toPush.subList(0, collisionIndex));
             List<Point> lastLineAdded = new ArrayList<>(toPush.subList(toPush.size() - blocksAdded, toPush.size()));
             List<Point> collisionToLine = new ArrayList<>(toPush.subList(collisionIndex, toPush.size() - blocksAdded));
