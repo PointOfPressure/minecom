@@ -22,24 +22,20 @@ RNG seed is not replayed anywhere), so Java never mirrors Python RNG.
 
 Run from the repo root:  python3 scripts/piston_vanilla_capture.py
 Work dir: ~/minecom-vanilla-capture (disposable; NOT inside the repo).
-The worldgen region-diff harness was never committed and had to be treated as
-lost tooling - this script exists in-tree so the piston fixture never suffers
-the same fate. Reproducing the fixture is one command.
+The worldgen region-diff harness was once lost tooling - this script exists
+in-tree so the piston fixture never suffers the same fate, and its
+server-driving + Anvil-reading plumbing now lives in scripts/vanilla_oracle.py
+(shared with worldgen_region_diff.py). Reproducing the fixture is one command.
 """
 
 import json
 import random
-import shutil
-import struct
-import subprocess
 import sys
-import threading
 import time
-import zlib
 from pathlib import Path
 
-JAR = Path.home() / "versions/26.1.2/server-26.1.2.jar"
-LIBS = Path.home() / "libraries"  # ~/versions + ~/libraries are a Mojang bundler unpack
+from vanilla_oracle import JAR, RegionReader, Server, prepare_workdir
+
 WORK = Path.home() / "minecom-vanilla-capture"
 OUT = Path(__file__).resolve().parent.parent / "src/main/resources/vanilla/piston_reorder_cases.json"
 SEED = 20260713
@@ -148,176 +144,6 @@ def build_cases():
     return cases
 
 
-# ---------------------------------------------------------------- server driving
-
-class Server:
-    """Dedicated-server driver. A pump thread drains stdout continuously —
-    command feedback for hundreds of setblocks would otherwise fill the pipe
-    buffer and deadlock the server mid-batch."""
-
-    def __init__(self):
-        self.proc = None
-        self.lines = []
-        self.scanned = 0
-        self.cond = threading.Condition()
-
-    def start(self):
-        classpath = ":".join([str(j) for j in sorted(LIBS.rglob("*.jar"))] + [str(JAR)])
-        self.proc = subprocess.Popen(
-            ["java", "-Xmx1024M", "-cp", classpath, "net.minecraft.server.Main", "--nogui"],
-            cwd=WORK, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1)
-        threading.Thread(target=self._pump, daemon=True).start()
-        self.wait_for("Done (", timeout=300)
-
-    def _pump(self):
-        for line in self.proc.stdout:
-            with self.cond:
-                self.lines.append(line)
-                self.cond.notify_all()
-        with self.cond:
-            self.cond.notify_all()  # EOF
-
-    def wait_for(self, needle, timeout):
-        deadline = time.time() + timeout
-        with self.cond:
-            while True:
-                while self.scanned < len(self.lines):
-                    line = self.lines[self.scanned]
-                    self.scanned += 1
-                    if needle in line:
-                        return line
-                if self.proc.poll() is not None:
-                    raise RuntimeError("server exited:\n" + "".join(self.lines[-40:]))
-                remaining = deadline - time.time()
-                if remaining <= 0:
-                    raise RuntimeError(f"timeout waiting for {needle!r}")
-                self.cond.wait(min(remaining, 1.0))
-
-    def cmd(self, line):
-        self.proc.stdin.write(line + "\n")
-        self.proc.stdin.flush()
-
-    def barrier(self, tag):
-        self.cmd(f"say SYNC-{tag}")
-        self.wait_for(f"SYNC-{tag}", timeout=120)
-
-    def stop(self):
-        self.cmd("save-all flush")
-        self.barrier("presave")
-        self.cmd("stop")
-        self.proc.wait(timeout=120)
-
-
-# ---------------------------------------------------------------- anvil reading
-
-def nbt_parse(data, pos):
-    tag = data[pos]
-    pos += 1
-    if tag == 0:
-        return None, None, pos
-    nlen = struct.unpack_from(">H", data, pos)[0]
-    name = data[pos + 2:pos + 2 + nlen].decode()
-    payload, pos = nbt_payload(data, pos + 2 + nlen, tag)
-    return name, payload, pos
-
-
-def nbt_payload(data, pos, tag):
-    if tag == 1:
-        return data[pos], pos + 1
-    if tag == 2:
-        return struct.unpack_from(">h", data, pos)[0], pos + 2
-    if tag == 3:
-        return struct.unpack_from(">i", data, pos)[0], pos + 4
-    if tag == 4:
-        return struct.unpack_from(">q", data, pos)[0], pos + 8
-    if tag == 5:
-        return struct.unpack_from(">f", data, pos)[0], pos + 4
-    if tag == 6:
-        return struct.unpack_from(">d", data, pos)[0], pos + 8
-    if tag == 7:
-        n = struct.unpack_from(">i", data, pos)[0]
-        return None, pos + 4 + n
-    if tag == 8:
-        n = struct.unpack_from(">H", data, pos)[0]
-        return data[pos + 2:pos + 2 + n].decode(), pos + 2 + n
-    if tag == 9:
-        etype = data[pos]
-        n = struct.unpack_from(">i", data, pos + 1)[0]
-        pos += 5
-        items = []
-        for _ in range(n):
-            v, pos = nbt_payload(data, pos, etype)
-            items.append(v)
-        return items, pos
-    if tag == 10:
-        d = {}
-        while True:
-            name, v, pos = nbt_parse(data, pos)
-            if name is None:
-                return d, pos
-            d[name] = v
-    if tag == 11:
-        n = struct.unpack_from(">i", data, pos)[0]
-        return None, pos + 4 + n * 4
-    if tag == 12:
-        n = struct.unpack_from(">i", data, pos)[0]
-        vals = struct.unpack_from(f">{n}q", data, pos + 4)
-        return list(vals), pos + 4 + n * 8
-    raise ValueError(f"tag {tag}")
-
-
-class RegionReader:
-    """Reads block states from an Anvil region directory (1.18+ format)."""
-
-    def __init__(self, region_dir):
-        self.region_dir = Path(region_dir)
-        self.chunks = {}
-
-    def chunk(self, cx, cz):
-        key = (cx, cz)
-        if key not in self.chunks:
-            self.chunks[key] = self._load(cx, cz)
-        return self.chunks[key]
-
-    def _load(self, cx, cz):
-        rf = self.region_dir / f"r.{cx >> 5}.{cz >> 5}.mca"
-        data = rf.read_bytes()
-        idx = 4 * ((cx & 31) + (cz & 31) * 32)
-        loc = struct.unpack_from(">I", data, idx)[0]
-        offset, sectors = (loc >> 8) * 4096, loc & 0xFF
-        if offset == 0:
-            return {}
-        length, comp = struct.unpack_from(">IB", data, offset)
-        raw = data[offset + 5:offset + 4 + length]
-        nbt = zlib.decompress(raw) if comp == 2 else raw
-        _, root, _ = nbt_parse(nbt, 0)
-        sections = {}
-        for sec in root.get("sections", []):
-            bs = sec.get("block_states")
-            if bs is None:
-                continue
-            palette = [(e["Name"].removeprefix("minecraft:"),
-                        e.get("Properties", {})) for e in bs["palette"]]
-            sections[sec["Y"]] = (palette, bs.get("data"))
-        return sections
-
-    def block(self, x, y, z):
-        sections = self.chunk(x >> 4, z >> 4)
-        sec = sections.get(y >> 4)
-        if sec is None:
-            return ("air", {})
-        palette, data = sec
-        if data is None or len(palette) == 1:
-            return palette[0]
-        bits = max(4, (len(palette) - 1).bit_length())
-        per_long = 64 // bits
-        index = (y & 15) * 256 + (z & 15) * 16 + (x & 15)
-        word = data[index // per_long] & 0xFFFFFFFFFFFFFFFF
-        pid = (word >> (bits * (index % per_long))) & ((1 << bits) - 1)
-        return palette[pid]
-
-
 def snapshot(reader, case):
     ox, oy, oz = case["origin"]
     cells = []
@@ -339,11 +165,7 @@ def snapshot(reader, case):
 def main():
     if not JAR.exists():
         sys.exit(f"missing {JAR}")
-    if WORK.exists():
-        shutil.rmtree(WORK)
-    WORK.mkdir()
-    (WORK / "eula.txt").write_text("eula=true\n")
-    (WORK / "server.properties").write_text(
+    prepare_workdir(WORK,
         "level-type=minecraft\\:flat\n"
         "online-mode=false\ndifficulty=peaceful\ngenerate-structures=false\n"
         "server-port=25597\nview-distance=4\nsimulation-distance=4\n"
@@ -359,7 +181,7 @@ def main():
     print(f"{len(cases)} cases; forceload chunk box "
           f"({min_cx},{min_cz})..({max_cx},{max_cz})")
 
-    srv = Server()
+    srv = Server(WORK)
     srv.start()
     for rule in ("doMobSpawning", "doWeatherCycle", "doDaylightCycle",
                  "doFireTick", "doTraderSpawning"):
@@ -388,7 +210,7 @@ def main():
         case["extended"] = snapshot(reader, case)
     print("extended snapshots captured")
 
-    srv = Server()
+    srv = Server(WORK)
     srv.start()
     for case in cases:
         ox, oy, oz = case["origin"]
