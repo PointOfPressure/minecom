@@ -1351,6 +1351,9 @@ public final class SelfTest {
         }
 
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
+        if (failed > 0) {
+            REPORT.append("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
+        }
         return REPORT.toString();
     }
 

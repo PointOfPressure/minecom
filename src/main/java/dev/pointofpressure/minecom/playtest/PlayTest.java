@@ -67,6 +67,8 @@ public final class PlayTest {
         // hand — MINECOM_TEST_PORT still overrides for anyone who wants a fixed one.
         int port = Integer.parseInt(System.getenv().getOrDefault("MINECOM_TEST_PORT", "0"));
         server.start("127.0.0.1", port);
+        MinecraftServer.getSchedulerManager().buildTask(TICKS::incrementAndGet)
+                .repeat(net.minestom.server.timer.TaskSchedule.tick(1)).schedule();
 
         for (int cx = -4; cx < 4; cx++) {
             for (int cz = -4; cz < 4; cz++) {
@@ -259,11 +261,20 @@ public final class PlayTest {
         scenario("nether: portal ignites + travels + returns", PlayTest::scenarioPortal);
 
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
+        if (failed > 0) {
+            REPORT.append("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
+        }
         System.out.println(REPORT);
         return failed == 0 ? 0 : 1;
     }
 
     // ------------------------------------------------------------------ plumbing
+
+    /** Scenario tag of the check currently being reported — machine-readable
+     * provenance for every PASS/FAIL line (the parity scorecard groups by it).
+     * The tag is the scenario name up to its first ':' — "redstone: wire decay"
+     * and "redstone: repeater delay" both report as [redstone]. */
+    private static String currentScenario = "boot";
 
     private static void scenario(String name, Runnable body) {
         // CLI section filter (--playtest <section>) takes precedence over the env var, which
@@ -271,6 +282,8 @@ public final class PlayTest {
         String only = sectionFilter != null ? sectionFilter : System.getenv("MINECOM_TEST_ONLY");
         if (only != null && !name.contains(only)) return;
         System.out.println("[playtest] " + name);
+        int colon = name.indexOf(':');
+        currentScenario = colon > 0 ? name.substring(0, colon) : name;
         try {
             resetPlayer();
             body.run();
@@ -298,19 +311,34 @@ public final class PlayTest {
         tick(2);
     }
 
-    /** The server ticks itself at 20 TPS; waiting n ticks = sleeping n*50ms. */
+    /** Server ticks actually run, counted by a 1-tick scheduler task (see run()).
+     * All waits are measured against this, not wall time: under load the server's
+     * TPS drops, and a wall-clock deadline silently shrinks the number of game
+     * ticks a behavior gets to happen in — the root cause of load-sensitive
+     * flakes (CONVENTIONS §10 flake SLO, MASTERPLAN §2.4). */
+    private static final java.util.concurrent.atomic.AtomicLong TICKS = new java.util.concurrent.atomic.AtomicLong();
+
+    /** Wait until the server has actually run n more ticks (50ms each at healthy
+     * TPS; longer under load, and the wait stretches with it). The wall-clock cap
+     * (20x nominal + 30s) only guards against a stalled tick loop. */
     private static void tick(int n) {
-        try {
-            Thread.sleep(n * 50L);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        long target = TICKS.get() + n;
+        long cap = System.currentTimeMillis() + n * 1000L + 30_000;
+        while (TICKS.get() < target && System.currentTimeMillis() < cap) {
+            try {
+                Thread.sleep(5);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
     }
 
-    /** Poll a condition up to timeoutMs; returns whether it became true. */
+    /** Poll a condition for up to timeoutMs of GAME time (timeoutMs/50 actual
+     * server ticks); returns whether it became true. */
     private static boolean waitFor(java.util.function.BooleanSupplier condition, long timeoutMs) {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < deadline) {
+        long deadline = TICKS.get() + timeoutMs / 50;
+        while (TICKS.get() < deadline) {
             if (condition.getAsBoolean()) return true;
             tick(4);
         }
@@ -319,7 +347,8 @@ public final class PlayTest {
 
     private static void check(String name, boolean ok) {
         if (ok) passed++; else failed++;
-        REPORT.append(ok ? "PASS " : "FAIL ").append(name).append('\n');
+        REPORT.append(ok ? "PASS " : "FAIL ")
+                .append('[').append(currentScenario).append("] ").append(name).append('\n');
     }
 
     /** Minecart: a powered rail accelerates the cart along an east-west track. */
@@ -4119,8 +4148,8 @@ public final class PlayTest {
         boolean sawZombie = waitFor(() -> world.getEntities().stream()
                 .anyMatch(e -> e.getEntityType() == EntityType.ZOMBIE && !e.isRemoved()), 5000);
         check("trial spawner: the wave mobs (melee/zombie config) start spawning", sawZombie);
-        long fightUntil = System.currentTimeMillis() + 25000;
-        while (System.currentTimeMillis() < fightUntil
+        long fightUntil = TICKS.get() + 500;  // 25s of game time, load-immune
+        while (TICKS.get() < fightUntil
                 && !"ejecting_reward".equals(prop(sx, Y + 1, sz, "trial_spawner_state"))
                 && !"cooldown".equals(prop(sx, Y + 1, sz, "trial_spawner_state"))) {
             world.getEntities().stream()
@@ -7170,10 +7199,10 @@ public final class PlayTest {
         EntityCreature creeper = Mobs.spawn("creeper", world, new Pos(46.5, Y + 1, -45.5));
         tick(2);
         brainOf(creeper).setTarget(player);
-        long start = System.currentTimeMillis();
+        long startTick = TICKS.get();
         boolean exploded = waitFor(creeper::isRemoved, 8000);
-        long ms = System.currentTimeMillis() - start;
-        check("creeper swells and explodes (took " + ms + "ms, expect >=1400)", exploded && ms >= 1200);
+        long dt = TICKS.get() - startTick;
+        check("creeper swells and explodes (took " + dt + " ticks, expect ~30, >=24)", exploded && dt >= 24);
         check("creeper explosion hurt the player", player.getHealth() < 20);
         clearEntitiesExceptPlayer();
         resetPlayer();
