@@ -205,6 +205,52 @@ proposes where it belongs.
 
 ## Open
 
+### ~~Minestom 26.2 version bump~~ — DONE 2026-07-13 (Fable, owner-approved)
+
+Landed as scoped (see the scoping entry below for the full delta analysis).
+What actually happened, delta vs. the scoping's predictions:
+
+- **pom 2026.07.01-26.1.2 → 2026.07.12-26.2; the 5 predicted call sites were
+  exactly right** (Bootstrap sneak listener → `PlayerInputEvent.
+  hasPressedShiftKey()`; PlayTest's two dispatch sites → `Player.refreshInput`
+  via new pressShiftKey/releaseShiftKey helpers — refreshInput also syncs the
+  sneak flag and fires the event with old-state semantics, mirroring the real
+  packet path; `SlimeMeta` relocation; VEndGen `fakeUnit` returns `BlockVec`).
+  One addition the scoping missed: the SlimeMeta `instanceof` migrated to
+  `metadata.cube.AbstractCubeMeta`, because in 26.1.2 `MagmaCubeMeta extends
+  SlimeMeta` (one instanceof covered both) but in 26.2 they are siblings.
+- **Bundled data regenerated from the 26.2 jar**: 1,486 files,
+  `--validate` 1,486/1,486 PASS. The extractor's DEFAULT_JAR now points at
+  `~/mc-26.2/`; CLAUDE.md rules 7+8 updated (decompile source + file count).
+- **The real migration cost was loaders vs. 26.2's serializer, which omits
+  optional-with-default codec fields.** Every fix decompile-verified against
+  the 26.2 jar: `interval_select` density function (NEW in 26.2, replaces the
+  weird_scaled_sampler subtrees in spaghetti caves/entrances — VDensity case
+  ported from `DensityFunctions$IntervalSelect`), scalar `biome_is` in
+  surface rules, SpringConfiguration defaults (4/1/true), Geode*Settings
+  defaults (~14 fields), PlaceOnGroundDecorator defaults (128/2/1), loot
+  entity-predicate flattening (`type_specific` → `minecraft:type_specific/
+  cube_mob` dispatch keys, `minecraft:vehicle`). Feature-type renames:
+  `dripstone_cluster` → `speleothem_cluster` (not handled before, still not).
+- **Roster reconciliation (suites demanded it)**: `cave_spider` is natural-
+  spawning in 26.2 (sulfur_caves) — added to BUILDABLE, builder already
+  existed. `sulfur_cube` landed as a deliberate passive STUB via `slimeLike`
+  (no archetypes/swallowing/bucketing/shearing/breeding/fuse/split) — see
+  AUDIT "26.2 bump" section; full parity is the sulfur Tier follow-up.
+- **Leaves distance=7 divergence FIXED** (the AUDIT worldgen item): ported
+  `TreeFeature.updateLeaves` into VTree — bucketed BFS from logs
+  (#prevents_nearby_leaf_decay = distance 0), decorator writes now recorded
+  like vanilla's decorationSetter and pre-marked visited, vanilla HashSet pop
+  order reproduced (Pos.hashCode == BlockPos.hashCode + incremental-insert
+  table shape). `updateShapeAtEdge` is not modeled (canvas has no shape
+  updates).
+- **Oracle scripts re-pointed**: `vanilla_oracle.JAR/LIBS` → `~/mc-26.2/`
+  (own libraries root, never merged into `~/libraries`), `MC_VERSION`
+  constant added; region-diff work dirs are now per-version
+  (`<seed>_r<r>_<cx>x<cz>_26.2`), the 26.1.2 vanilla cache dirs kept.
+- Suites: SelfTest 210/210 (roster check now 52/52). PlayTest + the 26.2
+  re-baseline recorded below/SCORECARD when green.
+
 ### ~~MASTERPLAN §2 verification hardening (items 1-4, 6)~~ — DONE 2026-07-13 (Fable)
 
 Owner-approved batch, all landed and pushed:

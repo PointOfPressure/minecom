@@ -697,6 +697,31 @@ leftovers.
   treat worldgen leaves as trunkless. (S — compute distances in the leaf pass,
   or port vanilla's scheduled distance updates.)
 
+## 26.2 bump — deliberate simplifications (2026-07-13, Fable)
+
+- **Sulfur cube is a roster stub, not a parity port.** `VanillaMobs.sulfurCube`
+  (via `slimeLike`) gives the correct passive shell — no targeting goals, no
+  touch damage, adult spawn size 2, cube-mob attribute rules, slime hop
+  movement — but none of vanilla's data-driven behavior: the
+  `SulfurCubeArchetype` system (bouncy/explosive/hot/sticky... modifiers),
+  item swallowing (`SULFUR_CUBE_FOOD` tempt + BODY-slot pickup), bucketing,
+  shearing, breeding/baby state, fuse priming, or split-into-exactly-2 on
+  death (`maybeSplitSlime` stays slime/magma-only). Decompiles cached at
+  `vanilla-src/net/minecraft/world/entity/monster/cubemob/` +
+  `SulfurCubeArchetype*.java`. Part of the sulfur-caves Tier-parity
+  follow-up. (L)
+- **Sulfur-caves biome decoration no-ops.** The 26.2 data regen brought in
+  the biome, its features and 10 spring structure templates; its surface
+  rules and `sulfur_cave_gradient` noise are in the loaded data, but the
+  decoration features (sulfur spike/spring/pool) use the new
+  `sequence`/`weighted_random_selector` configured-feature types, which
+  VFeature silently skips (its unknown-type default). Biome SELECTION is
+  fine: sulfur_caves is in biome_parameters_overworld.json (the datagen
+  table VBiome reads — it's absent from the raw multi_noise_overworld.json
+  preset file, like all datagen-only rows), so minecom places the biome
+  where vanilla does; only its decoration diverges, and the 26.2 region-diff
+  baseline captures exactly that. Same follow-up as above. (L)
+
 ## stale comments to clean up when touched
 
 - VanillaMobs.java witch javadoc (~:708 region) still says "no difficulty
