@@ -410,23 +410,25 @@ partnership, build-in-public). What the new intel sharpens:
 11. Nether bit-exactness (Tier 4) woven through 9-10 as the parity flagship
 12. Version tracking cadence forever after (§6)
 
-## 11. OWNER questions (the stop-and-ask list)
+## 11. OWNER questions — ANSWERED 2026-07-13 (items 1-4 + 6), 5/7 still open
 
-1. **Benchmark hardware**: OK to spend ~£5-15/round on a rented 8-16-core box
-   when we publish numbers (potato-laptop numbers fine until then)? Any
-   access to a desktop-class machine instead?
-2. **§2 hardening scope**: sign off items 1-7 as *the* definition of STRATEGY
-   §6 step 2 (or trim)? This unblocks the unification pass sequencing.
-3. **26.2**: approve the sequenced bump (extraction script first)? It commits
-   minecom to the 26.2 data surface and adds the sulfur-cube TODO.
-4. **Priority fork — parity-first or performance-first**: this plan says
-   finish Tier 1-2 parity *before* the P1 perf pass (parity is the moat that
-   makes perf claims meaningful). Flipping it gets public numbers sooner but
-   with a weaker "full vanilla" claim. Which do you want?
-5. **Launch ambition**: is there a target date/window for the open-source
-   launch (affects how much of Tier 3/4 waits until post-launch)?
-6. **CI**: fine to enable GitHub Actions on the private repo (uses your free
-   runner minutes)?
-7. **Community conduct**: the plan assumes you keep being present in the
-   Minestom Discord under your own name and we contribute 1-2 upstream fixes
-   pre-launch. Comfortable with that pace?
+1. **Benchmark hardware — ANSWERED**: "I'm not hosting the server on my
+   laptop for people to play, it's for other people to use." Read: minecom is
+   software for *other people's* hardware, so the benchmark deliverable is
+   the **reproducible harness** (anyone runs it on their own box, one
+   command), with the laptop producing relative/regression numbers only. No
+   dedicated bench hardware from the owner; a rented box for headline launch
+   charts remains an option to re-raise at launch time (no spend approved
+   yet).
+2. **§2 hardening scope — APPROVED as written.** Items 1-7 ARE the definition
+   of STRATEGY §6 step 2. Unification sequencing unblocked once they land.
+   (CI, item 5, is approved as part of this.)
+3. **26.2 — GO, sequenced.** Extraction script against 26.1.2 first, then the
+   bump, then sulfur-cube + passenger reconciliation as followups.
+4. **Priority fork — PARITY FIRST.** Tier 1-2 parity before the P1 perf pass,
+   as the plan recommends.
+5. **Launch ambition** — still open: target date/window for the open-source
+   launch?
+6. **CI** — approved via #2.
+7. **Community conduct** — still open: comfortable with staying present in
+   the Minestom Discord + 1-2 upstream contributions pre-launch?
