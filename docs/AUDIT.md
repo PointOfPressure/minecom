@@ -688,6 +688,14 @@ leftovers.
   predicate approximated (TODO markers in place, harmless until a modeled
   structure needs them).
 - EndGateways/VChorus/VEndSpikes — bounded End features by design (documented).
+- Tree features write leaves with `distance=7` instead of computing the real
+  log-distance (1-6 near trunks) the way vanilla does at generation. Invisible
+  to the old name-level region diff; the committed harness
+  (scripts/worldgen_region_diff.py, 2026-07-13) compares full block states and
+  reports it as the `x_leaves<-x_leaves (props)` mismatch class. Gameplay
+  impact latent (no leaf-decay system yet), but any future decay port would
+  treat worldgen leaves as trunkless. (S — compute distances in the leaf pass,
+  or port vanilla's scheduled distance updates.)
 
 ## stale comments to clean up when touched
 

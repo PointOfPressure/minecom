@@ -37,19 +37,35 @@ templates), a 35 MB single-jar output, 102 commits since 2026-07-09.
   real gameplay through the event pipeline; section filter via
   `--playtest <substring>`; port via MINECOM_TEST_PORT, default ephemeral).
 - **--selftest: 210/210 green** (server-less data-engine battery).
-- **Worldgen region-diff: 99.384% bit-exact** vs a real vanilla server over
-  1,296 chunks / 127.4M blocks (top remaining mismatch classes: sculk
-  patches, tree-foliage placement, ore-vs-stone swaps, snow, short_grass —
-  each identified and tracked). CAVEAT: the diff harness itself was never
-  committed — only its logs survive (test-logs/regiondiff_*). Rebuilding it
-  is a MASTERPLAN item; the piston fixture harness
-  (scripts/piston_vanilla_capture.py) now models the committed-harness
-  pattern to follow, including the NBT/Anvil reader it needs.
+- **Worldgen region-diff: 99.2805% bit-exact** (full block state incl.
+  properties) vs a real vanilla server over 1,296 chunks / 127.4M blocks —
+  seed 20260708, chunks (-18,-18)..(17,17). One command, committed
+  2026-07-13: `python3 scripts/worldgen_region_diff.py` (vanilla side is
+  cached in ~/minecom-region-diff after the first run, so a re-run after a
+  worldgen change is ~20 min on this laptop: minecom regen via the jar's
+  `--genregions` mode + a ~30 s compare; `--radius 3` for a 2-minute
+  spot-check, `--reuse-minecom` for compare-only, needs
+  `mvn -q -DskipTests package` first). The old ad-hoc harness's 99.384%
+  compared block NAMES only; the committed harness fills Minestom's
+  omitted default properties from vanilla's own blocks.json and compares
+  full states — the 0.104% delta is exactly the property-level divergence
+  it exposed (leaves `distance` written as 7 instead of computed, see
+  AUDIT worldgen section). Name-level mismatch classes reproduce the old
+  log almost 1:1 (sculk patches, tree-foliage placement, ore-vs-stone
+  swaps, snow, short_grass — each identified and tracked).
 - **Differential fixtures**: 40-case piston extend/retract layouts captured
   from a REAL vanilla dedicated server, replayed cell-by-cell every run.
+  The server-driving + Anvil-reading plumbing is factored into
+  `scripts/vanilla_oracle.py` (2026-07-13) — the next differential harness
+  (hoppers, fluids, fire, random-tick distributions, pathfinding) starts at
+  `from vanilla_oracle import Server, RegionReader, prepare_workdir`.
 - Flake discipline: every known flake in this file is either root-caused and
   fixed, or armed with failure-only diagnostics (DIAG silk) so the next
-  firing explains itself. No known-red checks anywhere.
+  firing explains itself. No known-red checks anywhere. The rule is now
+  written down as the flake SLO (CONVENTIONS §10, 2026-07-13) and both
+  harnesses print it in their footer when a run has any FAIL. PlayTest waits
+  are tick-counted (not wall-clock) as of the same date — the suite's
+  deadlines stretch with server load instead of flaking (MASTERPLAN §2.4).
 
 ### Done — by subsystem (compressed; AUDIT.md has per-item simplifications)
 
@@ -156,20 +172,21 @@ templates), a 35 MB single-jar output, 102 commits since 2026-07-09.
 - **Unification pass blocked** on the above (CONVENTIONS §11 is the work
   order: two AI systems, naming/lifecycle drift, god-class splits —
   PlayTest.java is now 7,348 lines).
-- **Minestom 26.2 bump**: scoped (5 call sites) but gated on the 1,476-file
-  data re-extraction (no script exists — must be written against 26.1.2
-  first), sulfur-cube gap, passenger-positioning reconciliation. Owner
-  go/no-go.
-- **Region-diff harness not committed** (see Verification state above).
+- **Minestom 26.2 bump**: scoped (5 call sites); the extraction script now
+  exists and validates 1,476/1,476 against the bundled tree
+  (scripts/extract_vanilla_data.py, 2026-07-13) — remaining gates:
+  sulfur-cube gap, passenger-positioning reconciliation, re-running the
+  extractor against the 26.2 jar. Owner go/no-go.
 - **Update-order semantics** (vanilla depth-first vs our batching) waits on
   the multi-core redstone design — deliberate, do not do twice.
 - **Security sweep** (STRATEGY §5 exploit catalog) not started; no
   SECURITY.md.
 - **README rewrite in a human voice** + launch-conduct plan (STRATEGY §4)
   not done; LICENSE is still the placeholder, CLA infrastructure not set up.
-- **No CI** — the suites run by hand on this laptop only. No benchmark
-  harness exists either (the performance story currently has zero numbers
-  behind it beyond worldgen throughput incidentals).
+- **CI landed 2026-07-13** (build + selftest per push, full playtest
+  nightly — MASTERPLAN §2.5); no benchmark harness yet (the performance
+  story currently has zero numbers behind it beyond worldgen throughput
+  incidentals).
 - Gamerule system absent (mobGriefing/keepInventory/etc. hardcoded);
   multi-dimension persistence keys; entities/*.mca export; item entities
   in flight.
@@ -187,6 +204,35 @@ proposes where it belongs.
 ---
 
 ## Open
+
+### ~~MASTERPLAN §2 verification hardening (items 1-4, 6)~~ — DONE 2026-07-13 (Fable)
+
+Owner-approved batch, all landed and pushed:
+
+1. **Region-diff harness committed** (§2.1) — `scripts/worldgen_region_diff.py`
+   + the jar's `--genregions` mode. One command, canonical baseline
+   **99.2805% full-state** (see Verification state above for the 99.384%
+   name-only reconciliation — the delta is real property divergence the old
+   harness could not see, chiefly leaves `distance`, now in AUDIT).
+2. **Fixture factory** (§2.2) — `scripts/vanilla_oracle.py`, shared by the
+   piston capture + region diff; proven by regenerating the piston fixture
+   byte-identical. Found a latent unsigned-byte NBT bug (section Y -4..-1)
+   in the previously-embedded reader. Next differential fixtures (hoppers,
+   fluids, fire, random-tick distributions, pathfinding) are imports now.
+3. **Flake SLO** (§2.3) — CONVENTIONS §10 + failure-only footer in both
+   harness reports (CI's `" 0 failed"` grep unaffected).
+4. **Determinism pass** (§2.4) — systemic fix instead of per-site rewrites:
+   `tick()`/`waitFor()` now count actual server ticks (scheduler-driven
+   counter), so all ~247 wait sites became load-immune at once; the two raw
+   wall-clock sites (trial-spawner fight window, creeper swell timing)
+   converted to tick counting. Wall-clock remains only as a 20x stall guard.
+5. **Parity scorecard generator** (§2.6) — `scripts/parity_scorecard.py`
+   writes docs/SCORECARD.md from the newest full-green suite logs (PlayTest
+   report lines now carry a `[scenario-tag]` for grouping), the biggest
+   region-diff log, AUDIT section counts, and fixture counts.
+
+Not attempted (per owner instruction): pom 26.2 bump, unification pass,
+scenarioDispenserBehaviors, DIAG silk. §2.5 (CI) had already landed.
 
 **At-a-glance triage (2026-07-13, Opus)** — the Opus queue is worked:
 the 26.2 upgrade is now SCOPED (below — the answer is "the API migration
@@ -339,6 +385,36 @@ extracted from the real 26.1.2 server jar. A Minecraft-version bump means
     renames (if any) must be re-checked against the paths in the docstring.
 - **`~/versions/` has only `26.1.2/`.** A 26.2 server jar exists (Mojang's
   manifest lists 26.2, released 2026-06-16) but is not downloaded.
+  - **DATA SCOPING DONE 2026-07-13 (Fable, read-only — pom untouched).** The
+    26.2 server bundler is downloaded and unpacked at `~/mc-26.2/`
+    (own `libraries/` root, deliberately NOT merged into `~/libraries` — the
+    oracle scripts classpath-glob that dir). The extractor runs clean against
+    it: `scripts/extract_vanilla_data.py --jar
+    ~/mc-26.2/versions/26.2/server-26.2.jar` builds 1,486 files (no
+    registry-dir renames). Semantic diff vs the bundled 26.1.2 tree
+    (test-logs/extract_262_vs_bundled_2612.log + scratch analysis):
+    - **New content = the sulfur family**: `minecraft:sulfur_caves` biome,
+      10 `structure/spring/sulfur_spring_*.nbt` templates, 5 new
+      configured/4 placed features (sulfur spike/spring/pool),
+      `sulfur_cave_gradient` noise, ~70 new sulfur/cinnabar recipes (+ the
+      sulfur cube mob on the Minestom side).
+    - **Worldgen changes to EXISTING output** — the 99.28% baseline will not
+      transfer: `sloped_cheese` + cave `entrances`/`spaghetti_2d` density
+      functions, overworld `surface_rule` + `noise_router`, ~55 configured
+      features (trees among them), kelp/flower placed features. Expect a
+      re-baseline run of `scripts/worldgen_region_diff.py` (vanilla side
+      regenerates from the 26.2 jar) immediately after the bump.
+    - **Serialization noise, not behavior**: 415 of 598 "changed" recipes
+      only dropped the `category` field; loot tables dropped default
+      `bonus_rolls: 0.0` (1,071 of 1,099 loot_blocks diffs are this shape) —
+      the loaders must tolerate both, which they already do (fields are
+      read with defaults).
+    - 121 structure NBTs differ beyond DataVersion (trial-chambers decor
+      beds, igloo top, high_rampart processor list); all other 1,064
+      templates are byte-identical modulo DataVersion.
+    - Gate per owner instruction: do NOT commit the bump until the
+      extraction re-run against the 26.2 jar is confirmed passing and the
+      owner signs off.
 
 **`vanilla-src/` does NOT need a wholesale re-decompile.** It is a *cache*,
 not a build input — 1,116 `.java` files, never compiled, never committed, used

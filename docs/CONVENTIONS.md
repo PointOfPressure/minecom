@@ -130,6 +130,16 @@ name** (`Anvils.register(events);`), not a fully-qualified call.
   the shared `passed`/`failed`/`REPORT` counters. New checks follow it.
 - Every behavior change ships with checks in the appropriate harness.
 - Test logs go to `test-logs/` in the repo (durable), never `/tmp`.
+- **Flake SLO — a clean run is the only passing run (MASTERPLAN §2.3).**
+  Any FAIL in a full suite run is a bug — in the code or in the test — and
+  gets root-caused and fixed, never re-run-until-green. Re-running to make a
+  FAIL disappear destroys the only evidence the suite exists to produce; if
+  a FAIL does not reproduce on the next run, that is a *determinism* bug and
+  it gets failure-only diagnostics armed (the DIAG idiom, e.g. "DIAG silk"
+  in scenarioSilverfish) so the next firing explains itself. Both harnesses
+  print this rule in their report footer. Scenarios must stay deterministic
+  under load: drive ticks or gate on observable state — a bare
+  `waitFor`/sleep on wall-clock time is a flake waiting for a slow machine.
 
 ## 11. Known seams — unification-pass targets (do NOT imitate)
 

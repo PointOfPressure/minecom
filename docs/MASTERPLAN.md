@@ -91,12 +91,12 @@ program (you cannot refactor a tick pipeline or thread the world on top of a
 suite you only half-trust). Proposed scope — each item is independently
 landable:
 
-1. **Commit the region-diff harness.** The 99.38% number's tooling was never
+1. **[DONE 2026-07-13 — scripts/worldgen_region_diff.py, 99.2805% full-state baseline; see HANDOFF]** **Commit the region-diff harness.** The 99.38% number's tooling was never
    committed; only logs survive. Rebuild it exactly like the piston harness
    (scripts/, real server, committed NBT/Anvil reader — that reader already
    exists in scripts/piston_vanilla_capture.py), so the north-star number is
    one command to reproduce. *(S/M — the pattern is proven now.)*
-2. **Generalize vanilla-as-oracle differential fixtures.** The piston fixture
+2. **[FACTORY DONE 2026-07-13 — scripts/vanilla_oracle.py; per-subsystem fixtures still open]** **Generalize vanilla-as-oracle differential fixtures.** The piston fixture
    proved the method: drive the real server, capture ground truth, replay
    in-process, compare cell-by-cell. Extend to: hopper item-flow timing,
    comparator/container signals, fluids spread shapes (fixes §1.6 verifiably),
@@ -104,11 +104,11 @@ landable:
    comparison), and mob pathfinding traces (same start/goal, compare paths).
    Each is a committed script + committed fixture + a replay scenario.
    *(M per subsystem; this is the suite's growth engine from now on.)*
-3. **Flake SLO.** A full suite run is *clean* — any FAIL is a bug (in code or
+3. **[DONE 2026-07-13 — CONVENTIONS §10 + harness footers]** **Flake SLO.** A full suite run is *clean* — any FAIL is a bug (in code or
    in test) and gets root-caused, never re-run-until-green. Already de facto
    true; write it into CONVENTIONS §10 and add a suite-level retry-forbidden
    note to the harness output. *(S)*
-4. **Determinism pass on remaining real-time waits.** The villager pass fixed
+4. **[DONE 2026-07-13 — tick-counted waits, all sites at once; see HANDOFF]** **Determinism pass on remaining real-time waits.** The villager pass fixed
    the worst; grep the suite for remaining bare `waitFor` on AI behavior and
    convert to driven ticks or state gates. Kills the load-sensitivity that
    makes this laptop's runs 25+ minutes of anxiety. *(M)*
@@ -117,7 +117,7 @@ landable:
    product — they should run somewhere that isn't one laptop. Full playtest
    needs ~2 GB heap + ~25 min: fits free runners. *(S to stand up; OWNER:
    free-runner minutes are fine while private repo usage is low.)*
-6. **Parity scorecard generator.** Machine-generate, from the suites
+6. **[DONE 2026-07-13 — scripts/parity_scorecard.py -> docs/SCORECARD.md]** **Parity scorecard generator.** Machine-generate, from the suites
    themselves, the per-subsystem coverage/divergence sheet (checks passed,
    documented simplifications from AUDIT, fixture counts). This is STRATEGY
    §5's "unique weapon" turned into an artifact — later it becomes the Lite
