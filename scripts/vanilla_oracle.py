@@ -209,6 +209,13 @@ class RegionReader:
         self.region_dir = Path(region_dir)
         self._roots = {}
         self._sections = {}
+        self._files = {}
+
+    def forget(self, cx, cz):
+        """Drop a chunk's parsed NBT (bulk sweeps call this after consuming a
+        chunk so a 1000+-chunk pass doesn't hold every root in memory)."""
+        self._roots.pop((cx, cz), None)
+        self._sections.pop((cx, cz), None)
 
     def root(self, cx, cz):
         """Raw chunk NBT root, or None if the chunk was never written."""
@@ -217,11 +224,17 @@ class RegionReader:
             self._roots[key] = self._load_root(cx, cz)
         return self._roots[key]
 
+    def _file(self, rx, rz):
+        key = (rx, rz)
+        if key not in self._files:
+            rf = self.region_dir / f"r.{rx}.{rz}.mca"
+            self._files[key] = rf.read_bytes() if rf.exists() else None
+        return self._files[key]
+
     def _load_root(self, cx, cz):
-        rf = self.region_dir / f"r.{cx >> 5}.{cz >> 5}.mca"
-        if not rf.exists():
+        data = self._file(cx >> 5, cz >> 5)
+        if data is None:
             return None
-        data = rf.read_bytes()
         idx = 4 * ((cx & 31) + (cz & 31) * 32)
         if idx + 4 > len(data):
             return None

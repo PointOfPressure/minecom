@@ -33,6 +33,9 @@ public final class Main {
         if (args.length > 0 && args[0].equals("--playtest")) {
             System.exit(PlayTest.run(args.length > 1 ? args[1] : null));
         }
+        if (args.length > 0 && args[0].equals("--genregions")) {
+            System.exit(GenRegions.run(args));
+        }
 
         MinecraftServer server = MinecraftServer.init();
         MinecraftServer.setBrandName("Minecom");
