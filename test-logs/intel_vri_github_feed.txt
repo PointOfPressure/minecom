@@ -1,0 +1,251 @@
+[03/05/2020 15:28] [VanillaReimplementation:master] 1 new commit || 5c8ea6f Using transitive dependencies and fixed falling... - jglrxavpok
+[03/05/2020 21:18] [VanillaReimplementation:master] 1 new commit || 4886b73 Concrete powders - jglrxavpok
+[04/05/2020 00:07] [VanillaReimplementation:master] 1 new commit || 5b4becc Nether portal creation is now possible - jglrxavpok
+[04/05/2020 20:26] [VanillaReimplementation:master] 1 new commit || 8c454a0 More straightforward way of keeping track of ne... - jglrxavpok
+[05/05/2020 18:12] [VanillaReimplementation:master] 1 new commit || 4a8ca50 Fire damages entities - jglrxavpok
+[07/05/2020 20:30] [VanillaReimplementation:master] 1 new commit || 95581c5 Nether teleportation v1 - jglrxavpok
+[08/05/2020 17:58] [VanillaReimplementation:master] 1 new commit || 6219918 Portal linking, (rough) chunk loading when trav... - jglrxavpok
+[08/05/2020 21:16] [VanillaReimplementation:master] 1 new commit || 340a0d0 Movement checks to avoid reteleports after trav... - jglrxavpok
+[09/05/2020 15:04] [VanillaReimplementation:master] 1 new commit || ca1c0e1 Cleaner code and relative nether portal telepor... - jglrxavpok
+[14/05/2020 16:01] [VanillaReimplementation:master] 1 new commit || 1b08d36 Start of TNT and vanilla explosions - jglrxavpok
+[18/05/2020 20:35] [VanillaReimplementation:master] 1 new commit || 9d70b41 (WIP) Use loot tables to drop items on explosions - jglrxavpok
+[18/05/2020 20:35] [VanillaReimplementation:master] 1 new commit || 455119c TNT should drop everything - jglrxavpok
+[19/05/2020 18:09] [VanillaReimplementation:master] 1 new commit || 11b7cf1 Full loot table initialisation - jglrxavpok
+[19/05/2020 23:00] [VanillaReimplementation:master] 1 new commit || ee169a8 Use custom block callbacks during explosions - jglrxavpok
+[20/05/2020 23:55] [VanillaReimplementation:master] 2 new commits || 7234d67 Entity propulsion via explosions (not players yet) - jglrxavpok b866bf2 No block damage in liquids, now using RayCast f... - jglrxavpok
+[21/05/2020 20:19] [VanillaReimplementation:master] 1 new commit || 15fca80 Alternatives and inverted conditions + drop blo... - jglrxavpok
+[27/05/2020 17:43] [VanillaReimplementation:master] 1 new commit || 8c10246 Updated to latest Minestom version - jglrxavpok
+[30/06/2020 14:03] [VanillaReimplementation:master] 1 new commit || 73db73c Updated to latest core version - jglrxavpok
+[30/06/2020 18:11] [VanillaReimplementation:master] 1 new commit || 47b598a Start of Anvil support, based on code from our ... - jglrxavpok
+[30/06/2020 19:48] [VanillaReimplementation:master] 1 new commit || 650f4b5 Updated core version and allow some commands to... - jglrxavpok
+[30/06/2020 20:15] [VanillaReimplementation:master] 1 new commit || f5402e8 Increase chunk loading throughput by caching MC... - jglrxavpok
+[01/07/2020 00:38] [VanillaReimplementation:master] 1 new commit || d319455 Start of TileEntity loading - jglrxavpok
+[01/07/2020 19:44] [VanillaReimplementation:master] 1 new commit || 3fae5da Double chest support - jglrxavpok
+[01/07/2020 20:26] [VanillaReimplementation:master] 1 new commit || ccdbfa2 Chests now use facingProperty instead of direct... - jglrxavpok
+[01/07/2020 22:58] [VanillaReimplementation:master] 1 new commit || a79a599 Prepare for saving - jglrxavpok
+[01/07/2020 22:58] [VanillaReimplementation:anvil-saving] 1 new commit || 8e7128b Saving code produces constant NPEs - jglrxavpok
+[02/07/2020 22:05] [VanillaReimplementation:master] 2 new commits || 73e5958 gradle wrapper jar for jitpack build - SupahAmbition e746fb9 Merge pull request #2 from SupahAmbition/gradlefix - jglrxavpok
+[06/07/2020 14:46] [VanillaReimplementation:master] 2 new commits || 355dd25 Saving code produces constant NPEs - jglrxavpok 92bc845 Started porting code to Hephaistos for NBT/Anvil - jglrxavpok
+[06/07/2020 23:33] [VanillaReimplementation:master] 1 new commit || 4f20a6d Updated to latest core + MojangAuth - jglrxavpok
+[06/07/2020 23:33] [VanillaReimplementation:master] 1 new commit || 836ff9c No more complaints when world file does not exi... - jglrxavpok
+[07/07/2020 12:34] [VanillaReimplementation:master] 1 new commit || dae5d0b Anvil saving - jglrxavpok
+[07/07/2020 13:13] [VanillaReimplementation:master] 1 new commit || 7e55059 Parallel saving with Anvil format - jglrxavpok
+[13/07/2020 13:27] [VanillaReimplementation:master] 1 new commit || 321e44d Updated to latest core - jglrxavpok
+[13/07/2020 17:34] [VanillaReimplementation:master] 2 new commits || 80dc42f Load & save jukeboxs from/to Anvil - jglrxavpok 5bbb12d Server properties + end portal start - jglrxavpok
+[14/07/2020 13:34] [VanillaReimplementation:master] 1 new commit || a04b6c5 Working end portals + latest core version - jglrxavpok
+[16/07/2020 20:54] [VanillaReimplementation:master] 1 new commit || 10b3e68 Support for flaming explosions, and items are d... - jglrxavpok
+[18/07/2020 17:28] [VanillaReimplementation:master] 1 new commit || f0eb67f Beginnings of beds (how do I make players sleep... - jglrxavpok
+[18/07/2020 23:30] [VanillaReimplementation:vanilla-gen] 1 new commit || 3fcea13 Very early support for json based worldgen - jglrxavpok
+[19/07/2020 17:35] [VanillaReimplementation:master] 1 new commit || f80f6b7 Beds can be placed underwater - jglrxavpok
+[19/07/2020 20:27] [VanillaReimplementation:vanilla-gen] 1 new commit || f9e232c Multinoise biome selection - jglrxavpok
+[19/08/2020 18:57] [VanillaReimplementation:master] 1 new commit || 4f8bf51 1.16.2 support - jglrxavpok
+[01/09/2020 19:52] [VanillaReimplementation:master] 1 new commit || a088d51 Updated to latest Minestom version + load vanil... - jglrxavpok
+[10/09/2020 20:39] [VanillaReimplementation:master] 1 new commit || 24a4df3 Update minestom version (1.16.3) - TheMode
+[23/09/2020 00:57] [VanillaReimplementation:master] 1 new commit || 564e3bc Update to the latest Minestom version - TheMode
+[23/09/2020 20:04] [VanillaReimplementation:master] 1 new commit || 9f79d01 Tell jitpack to use JDK 11, add sources and jav... - jglrxavpok
+[24/09/2020 20:29] [VanillaReimplementation:master] 1 new commit || 6c4e2ee Autogenerate biomeIDs for Vanilla biomes - jglrxavpok
+[24/09/2020 21:08] [VanillaReimplementation:vanilla-biome-colors] 1 new commit || ff19356 Load additional info for vanilla biomes (some p... - jglrxavpok
+[06/10/2020 06:57] [VanillaReimplementation:master] 1 new commit || a33a52e Update to the latest Minestom version - TheMode
+[11/10/2020 16:08] [VanillaReimplementation:master] 1 new commit || b42be75 Update to the latest Minestom version - TheMode
+[16/10/2020 11:42] [VanillaReimplementation:vanilla-biome-colors] 1 new commit || 1f9cc14 Load "item" particle from json + Update Minesto... - jglrxavpok
+[16/10/2020 11:42] [VanillaReimplementation:master] 3 new commits || ff19356 Load additional info for vanilla biomes (some p... - jglrxavpok 1f9cc14 Load "item" particle from json + Update Minesto... - jglrxavpok 6c538ad Merge vanilla biome colors - jglrxavpok
+[18/10/2020 13:16] [VanillaReimplementation:master] 1 new commit || 0ce98d7 Bump Minestom version - jglrxavpok
+[18/10/2020 13:32] [VanillaReimplementation:master] 1 new commit || 4cc4c55 Now a Gradle multi-project. No need to change m... - jglrxavpok
+[18/10/2020 15:22] [VanillaReimplementation:entities] 1 new commit || b991ab0 Start of entity loading - jglrxavpok
+[18/10/2020 15:22] [VanillaReimplementation:master] 1 new commit || a1fdbfa Correct gitsubmodules file - jglrxavpok
+[18/10/2020 15:22] [VanillaReimplementation:entities] 2 new commits || a1fdbfa Correct gitsubmodules file - jglrxavpok 22460bc Merge branch 'master' into entities - jglrxavpok
+[04/11/2020 22:10] [VanillaReimplementation:master] 1 new commit || 5c0e5db Update to the latest Minestom version - TheMode
+[05/11/2020 21:47] [VanillaReimplementation:master] 1 new commit || 6a3228b Update to the latest Minestom version - TheMode
+[05/11/2020 22:10] [VanillaReimplementation:master] 1 new commit || 205a358 Fixed gradle build - TheMode
+[12/11/2020 20:33] [VanillaReimplementation:master] 1 new commit || 0da48cc Updated Minestom version to latest - TheMode
+[12/11/2020 21:44] [VanillaReimplementation:master] 1 new commit || 318fa33 Update minestom version - TheMode
+[15/11/2020 23:26] [VanillaReimplementation:master] 1 new commit || bcc8324 Updated minestom version - TheMode
+[15/11/2020 23:26] [VanillaReimplementation:master] 1 new commit || 636343b Fix build - TheMode
+[21/11/2020 20:38] [VanillaReimplementation:entities] 1 new commit || 54460b7 Went back to Maven dependency, anvil chunk load... - jglrxavpok
+[21/11/2020 22:28] [VanillaReimplementation:master] 1 new commit || 942573e Updated minestom version - TheMode
+[21/11/2020 22:46] [VanillaReimplementation:master] 1 new commit || 8be7cb8 Updated minestom to fix mojang auth - TheMode
+[02/12/2020 04:27] [VanillaReimplementation:master] 1 new commit || 6c08240 Code cleanup - KrystilizeNevaDies
+[10/12/2020 06:01] [VanillaReimplementation:entity-spawning] 1 new commit || b89dd9d Hostile Entities - KrystilizeNevaDies
+[29/12/2020 15:22] [VanillaReimplementation:master] 1 new commit || 6e71d1c Updated to latest Minestom version - jglrxavpok
+[29/12/2020 15:22] [VanillaReimplementation:master] 1 new commit || 3e1a2cb Updated to latest Minestom version, again - jglrxavpok
+[03/03/2021 14:27] [VanillaReimplementation:master] 2 new commits || 3ae4afd changed http -> https, repo.spongepowered.org - algj f8a6cf0 Merge pull request #11 from algj/patch-1 - TheMode
+[23/05/2021 15:22] [VanillaReimplementation:master] 1 new commit || 7759b35 Message to show that the project is not ready f... - jglrxavpok
+[20/08/2021 22:09] [VanillaReimplementation:1.17.1-update] 2 new commits || 2e1faa9 Start 1.17.1 update - KrystilizeNevaDies a1b2c21 Update build.gradle - KrystilizeNevaDies
+[22/08/2021 13:49] [VanillaReimplementation:1.17.1-update] 1 new commit || 5b50e6e Make server joinable - KrystilizeNevaDies
+[23/08/2021 11:07] [VanillaReimplementation:1.17.1-update] 1 new commit || a6ec738 Fix gravity blocks + implement block update system - KrystilizeNevaDies
+[23/08/2021 13:21] [VanillaReimplementation:1.17.1-update] 1 new commit || 3b10da9 Patch up bed handler as well as able to - KrystilizeNevaDies
+[23/08/2021 13:21] [VanillaReimplementation:1.17.1-update] 1 new commit || 2114ac8 Add bed block handler note - KrystilizeNevaDies
+[24/08/2021 00:00] [VanillaReimplementation:1.17.1-update] 1 new commit || 6fef3f1 Add remove method to BlockUpdateManager - KrystilizeNevaDies
+[24/08/2021 00:00] [VanillaReimplementation:1.17.1-update] 1 new commit || 3d292ee Reimplement chests. (Needs onPlace updates) - KrystilizeNevaDies
+[24/08/2021 00:32] [VanillaReimplementation:1.17.1-update] 1 new commit || 6e1073b Reimplement jukeboxes - KrystilizeNevaDies
+[24/08/2021 02:31] [VanillaReimplementation:1.17.1-update] 1 new commit || 5364bdd Correctly implement tnt - KrystilizeNevaDies
+[24/08/2021 03:33] [VanillaReimplementation:1.17.1-update] 1 new commit || aff3841 Register vanilla commands + temporarily simplif... - KrystilizeNevaDies
+[25/08/2021 11:28] [VanillaReimplementation:1.17.1-update] 1 new commit || 8b5b7e9 Fix concrete powder block handler + update to j... - KrystilizeNevaDies
+[26/08/2021 03:15] [VanillaReimplementation:1.17.1-update] 1 new commit || 5fd3ae6 Use reflection to set block constants - KrystilizeNevaDies
+[30/08/2021 14:14] [VanillaReimplementation:1.17.1-update] 1 new commit || f8cecab Add ticket system + remove enum generators - KrystilizeNevaDies
+[30/08/2021 16:19] [VanillaReimplementation:1.17.1-update] 1 new commit || 7e12675 Implement primordial sleeping mechanic - KrystilizeNevaDies
+[30/08/2021 17:42] [VanillaReimplementation:1.17.1-update] 1 new commit || ff62bb4 Mostly reimplement nether portals - KrystilizeNevaDies
+[30/08/2021 18:01] [VanillaReimplementation:1.17.1-update] 1 new commit || a99f11d Cleanup codebase - KrystilizeNevaDies
+[31/08/2021 10:34] [VanillaReimplementation:1.17.1-update] 1 new commit || 18d23b2 Initial redstone prototype - KrystilizeNevaDies
+[11/06/2022 23:13] [VanillaReimplementation:1.17.1-update] 1 new commit || 7f448db Update to latest minestom - KrystilizeNevaDies
+[12/06/2022 12:56] [VanillaReimplementation:1.17.1-update] 1 new commit || 2b3c968 Fix generator impl - KrystilizeNevaDies
+[12/06/2022 13:07] [VanillaReimplementation:master] 21 new commits || 2e1faa9 Start 1.17.1 update - KrystilizeNevaDies a1b2c21 Update build.gradle - KrystilizeNevaDies 5b50e6e Make server joinable - KrystilizeNevaDies a6ec738 Fix gravity blocks + implement block update system - KrystilizeNevaDies 3b10da9 Patch up bed handler as well as able to - KrystilizeNevaDies
+[12/06/2022 13:07] [VanillaReimplementation:master] 1 new commit || 99f54db update java version for jitpack - KrystilizeNevaDies
+[13/06/2022 19:34] [VanillaReimplementation:master] 4 new commits || 6f4b254 Start splitting up project - KrystilizeNevaDies 5e7e711 Rename VanillaServer to Server - KrystilizeNevaDies 420f3c5 Create ServiceLoader system using gradle task - KrystilizeNevaDies 9bdfd2b Make server joinable again - KrystilizeNevaDies
+[13/06/2022 19:44] [VanillaReimplementation:master] 2 new commits || d9c6f1a centralize common code in gradle build files - KrystilizeNevaDies e249063 Add maven publish - KrystilizeNevaDies
+[13/06/2022 19:44] [VanillaReimplementation:master] 1 new commit || 93eef8f Specify java version and javadoc - KrystilizeNevaDies
+[13/06/2022 19:44] [VanillaReimplementation:master] 1 new commit || f5638ba potentially fix jitpack build - KrystilizeNevaDies
+[13/06/2022 19:44] [VanillaReimplementation:master] 1 new commit || 4901cc8 Another potential jitpack fix - KrystilizeNevaDies
+[13/06/2022 20:22] [VanillaReimplementation:master] 1 new commit || 3499713 potentially fix jitpack build - KrystilizeNevaDies
+[14/06/2022 02:04] [VanillaReimplementation:master] 1 new commit || f55deb2 Rename and create new modules - KrystilizeNevaDies
+[14/06/2022 10:49] [VanillaReimplementation:master] 1 new commit || 4e0de9f Move server to root project and code cleanup - KrystilizeNevaDies
+[16/06/2022 20:25] [VanillaReimplementation:master] 1 new commit || 5353db3 Split project up more and tweak block handler r... - KrystilizeNevaDies
+[19/06/2022 01:27] [VanillaReimplementation:master] 1 new commit || 9683bd8 Remove test dir for root project - KrystilizeNevaDies
+[19/06/2022 01:35] [VanillaReimplementation:master] 1 new commit || 0de5e7e Add duplicate strategy so jitpack doesn't complain - KrystilizeNevaDies
+[19/06/2022 02:38] [VanillaReimplementation:master] 1 new commit || 319cf6b Move root server and add publishing metadata - KrystilizeNevaDies
+[19/06/2022 02:50] [VanillaReimplementation:master] 1 new commit || 96f0989 Fix entity dummy creation bug - KrystilizeNevaDies
+[19/06/2022 02:50] [VanillaReimplementation:master] 1 new commit || cd1c39e Switch back to native jdk17 in jitpack builds - KrystilizeNevaDies
+[19/06/2022 02:50] [VanillaReimplementation:master] 1 new commit || 5f41958 Switch back to sdkman build script - Jitpack fa... - KrystilizeNevaDies
+[19/06/2022 04:39] [VanillaReimplementation:master] 1 new commit || c467b56 Fix vanilla server + fun with entities in debug - KrystilizeNevaDies
+[19/06/2022 05:30] [VanillaReimplementation:master] 1 new commit || 091cf43 Chest opening and saving + rename vanilla-block... - KrystilizeNevaDies
+[19/06/2022 20:13] [VanillaReimplementation:master] 1 new commit || 915d24c Fix chests and remove redstone - KrystilizeNevaDies
+[19/06/2022 21:00] [VanillaReimplementation:master] 1 new commit || 38c2b99 Extend vanilla block handler, deprecate minesto... - KrystilizeNevaDies
+[01/07/2022 15:16] [VanillaReimplementation:mattw/opinions] 1 new commit || cb20114 quick example - mworzala
+[23/08/2022 21:41] [VanillaReimplementation:fluid-simulation] 1 new commit || 5146deb Add fluid simulation module - KrystilizeNevaDies
+[23/08/2022 21:41] [VanillaReimplementation:master] 1 new commit || af52907 Squashed commit of the following: - KrystilizeNevaDies
+[23/08/2022 21:41] [VanillaReimplementation:master] 1 new commit || 1a691d0 Add TogAr2 to readme - KrystilizeNevaDies
+[31/08/2022 10:49] [VanillaReimplementation:master] 1 new commit || cf12afa Merge pull request #16 from PestoNotPasta/block... - PestoNotPasta
+[31/08/2022 11:13] [VanillaReimplementation:master] 1 new commit || ef7e83f Create CONTRIBUTING.md - KrystilizeNevaDies
+[13/10/2022 08:15] [VanillaReimplementation:master] 3 new commits || 3802710 Cleanup, and api improvements - KrystilizeNevaDies 394ee99 Initial crafting data api - KrystilizeNevaDies b5d86f4 Implement vanilla recipe loading and experiment... - KrystilizeNevaDies
+[12/12/2022 16:59] [VanillaReimplementation:master] 1 new commit || 3072b82 Implement copper oxidisation and waxing - KrystilizeNevaDies
+[13/12/2022 02:50] [VanillaReimplementation:master] 1 new commit || 27369ec Remove debug and uncomment preoxidation require... - KrystilizeNevaDies
+[19/12/2022 14:00] [VanillaReimplementation:execute-command] 1 new commit || fe0ff4e Initial execute command progress - KrystilizeNevaDies
+[19/12/2022 16:16] [VanillaReimplementation:master] 1 new commit || a004b8d refactor existing block handlers to events wher... - KrystilizeNevaDies
+[19/12/2022 16:16] [VanillaReimplementation:master] 1 new commit || de2d21d Update README.md - KrystilizeNevaDies
+[23/12/2022 03:24] [VanillaReimplementation:lava-fluid] 1 new commit || 793e061 Add the lava fluid + water fluid test - KrystilizeNevaDies
+[23/12/2022 05:40] [VanillaReimplementation:lava-fluid] 1 new commit || 532730f fix block update manager - KrystilizeNevaDies
+[23/12/2022 05:51] [VanillaReimplementation:lava-fluid] 1 new commit || d4a5e25 Make fluids correctly tickable - KrystilizeNevaDies
+[26/12/2022 09:06] [VanillaReimplementation:lava-fluid] 1 new commit || 6fcb6f5 Change stateid map to block map - KrystilizeNevaDies
+[27/12/2022 06:24] [VanillaReimplementation:world-gen] 1 new commit || d1ac79a Wip vanilla worldgen reimpl. - KrystilizeNevaDies
+[27/12/2022 07:39] [VanillaReimplementation:world-gen] 2 new commits || 9316ebd Batch cleanup - KrystilizeNevaDies 673b5e8 Get mvp working - KrystilizeNevaDies
+[27/12/2022 14:06] [VanillaReimplementation:world-gen] 1 new commit || a432995 Get surface terrain generating - KrystilizeNevaDies
+[27/12/2022 14:26] [VanillaReimplementation:blocks-fix] 1 new commit || bf6ff4a Register block events correctly - KrystilizeNevaDies
+[27/12/2022 14:26] [VanillaReimplementation:master] 1 new commit || 45425a5 Register block events correctly (#17) - KrystilizeNevaDies
+[29/12/2022 08:54] [VanillaReimplementation:world-gen] 1 new commit || 05d6a3f Cleanup worldgen + rename - KrystilizeNevaDies
+[29/12/2022 10:19] [VanillaReimplementation:master] 1 new commit || 65602c0 Cleanup + introduce VanillaReimplementation.hoo... - KrystilizeNevaDies
+[29/12/2022 10:19] [VanillaReimplementation:world-gen] 3 new commits || 45425a5 Register block events correctly (#17) - KrystilizeNevaDies 65602c0 Cleanup + introduce VanillaReimplementation.hoo... - KrystilizeNevaDies b60eb2b Merge branch 'master' into world-gen - KrystilizeNevaDies
+[29/12/2022 10:19] [VanillaReimplementation:lava-fluid] 3 new commits || 45425a5 Register block events correctly (#17) - KrystilizeNevaDies 65602c0 Cleanup + introduce VanillaReimplementation.hoo... - KrystilizeNevaDies 96820cf Merge branch 'master' into lava-fluid - KrystilizeNevaDies
+[29/12/2022 10:19] [VanillaReimplementation:execute-command] 5 new commits || a004b8d refactor existing block handlers to events wher... - KrystilizeNevaDies de2d21d Update README.md - KrystilizeNevaDies 45425a5 Register block events correctly (#17) - KrystilizeNevaDies 65602c0 Cleanup + introduce VanillaReimplementation.hoo... - KrystilizeNevaDies 473d2d4 Merge branch 'master' into execute-command - KrystilizeNevaDies
+[29/12/2022 10:51] [VanillaReimplementation:master] 1 new commit || ac33405 Remove debug - KrystilizeNevaDies
+[29/12/2022 10:51] [VanillaReimplementation:execute-command] 2 new commits || ac33405 Remove debug - KrystilizeNevaDies 2c33b5d Merge branch 'master' into execute-command - KrystilizeNevaDies
+[29/12/2022 10:51] [VanillaReimplementation:lava-fluid] 2 new commits || ac33405 Remove debug - KrystilizeNevaDies 3d346a5 Merge branch 'master' into lava-fluid - KrystilizeNevaDies
+[29/12/2022 10:51] [VanillaReimplementation:world-gen] 2 new commits || ac33405 Remove debug - KrystilizeNevaDies c1df2be Merge branch 'master' into world-gen - KrystilizeNevaDies
+[29/12/2022 11:13] [VanillaReimplementation:world-gen] 1 new commit || 477be51 Rename & cleanup - KrystilizeNevaDies
+[29/12/2022 12:02] [VanillaReimplementation:world-gen] 1 new commit || 1adf426 Cleanup & better code reuse - KrystilizeNevaDies
+[29/12/2022 12:02] [VanillaReimplementation:world-gen] 1 new commit || 555cebe more structure changes - KrystilizeNevaDies
+[29/12/2022 13:03] [VanillaReimplementation:world-gen] 1 new commit || 4aa02ae Optimize double storage, defensively clone rnod... - KrystilizeNevaDies
+[07/01/2023 22:26] [VanillaReimplementation:world-gen] 5 new commits || 66b2b88 Revert "Optimize double storage, defensively cl... - KrystilizeNevaDies 98ee9db Revert "more structure changes" - KrystilizeNevaDies d16d957 Revert "Cleanup & better code reuse" - KrystilizeNevaDies afb6b5b Revert "Rename & cleanup" - KrystilizeNevaDies e50d131 Remove datapack loading module - KrystilizeNevaDies
+[24/01/2023 06:31] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 7edf2e8 upload - KrystilizeNevaDies
+[26/01/2023 03:21] [VanillaReimplementation:master] 1 new commit || d1ace21 Add mojang-data module (#19) - devPesto
+[26/01/2023 03:21] [VanillaReimplementation:hooks-dependencies] 1 new commit || d1ace21 Add mojang-data module (#19) - devPesto
+[26/01/2023 04:14] [VanillaReimplementation:hooks-dependencies] 1 new commit || f29ace5 Rework feature handling to use dependencies - KrystilizeNevaDies
+[26/01/2023 04:14] [VanillaReimplementation:hooks-dependencies] 1 new commit || 387887a Remove some debug, and handle errors better - KrystilizeNevaDies
+[26/01/2023 04:14] [VanillaReimplementation:master] 1 new commit || 8886c0f Rework feature handling to use dependencies (#20) - KrystilizeNevaDies
+[28/01/2023 03:45] [VanillaReimplementation:master] 1 new commit || e3b3ffe Remove tinylog, jansi in favor of internal impl - KrystilizeNevaDies
+[28/01/2023 10:06] [VanillaReimplementation:loading-logger] 1 new commit || a94021c Implement loading api on top of loading api - KrystilizeNevaDies
+[28/01/2023 14:35] [VanillaReimplementation:loading-logger] 1 new commit || d022406 Simplify impl and edit some questionable api - KrystilizeNevaDies
+[28/01/2023 15:18] [VanillaReimplementation:loading-logger] 2 new commits || ae4864f More refactoring and improvements - KrystilizeNevaDies 8b89bb1 Polish loading visuals - KrystilizeNevaDies
+[28/01/2023 15:18] [VanillaReimplementation:master] 1 new commit || 2b40205 Implement loading api on top of logging api (#22) - KrystilizeNevaDies
+[28/01/2023 17:39] [VanillaReimplementation:master] 1 new commit || ef836d4 Add loading stage for downloading the vanilla jar - KrystilizeNevaDies
+[29/01/2023 02:28] [VanillaReimplementation:master] 1 new commit || 022f707 Visualise indents easier - KrystilizeNevaDies
+[29/01/2023 06:12] [VanillaReimplementation:master] 1 new commit || 7266be3 Fix server jar build - KrystilizeNevaDies
+[01/02/2023 11:46] [VanillaReimplementation:shadowjar-minimise] 1 new commit || f299320 Add shadowjar minimising - KrystilizeNevaDies
+[01/02/2023 11:46] [VanillaReimplementation:master] 1 new commit || 97a090a Shadowjar minimising (#24) - KrystilizeNevaDies
+[01/02/2023 11:46] [VanillaReimplementation:master] 1 new commit || 71e40ce Remove "before_install" - KrystilizeNevaDies
+[01/02/2023 12:48] [VanillaReimplementation:ansi-logging-rework] 2 new commits || 97a090a Shadowjar minimising (#24) - KrystilizeNevaDies 71e40ce Remove "before_install" - KrystilizeNevaDies
+[02/02/2023 14:06] [VanillaReimplementation:wip-datapack-loading] 14 new commits || 65602c0 Cleanup + introduce VanillaReimplementation.hoo... - KrystilizeNevaDies ac33405 Remove debug - KrystilizeNevaDies d1ace21 Add mojang-data module (#19) - devPesto 8886c0f Rework feature handling to use dependencies (#20) - KrystilizeNevaDies e3b3ffe Remove tinylog, jansi in favor of internal impl - KrystilizeNevaDies
+[05/02/2023 11:32] [VanillaReimplementation:feature-fetch] 1 new commit || 68161f2 implement feature fetching - KrystilizeNevaDies
+[05/02/2023 11:32] [VanillaReimplementation:master] 1 new commit || 12827c0 implement feature fetching (#27) - KrystilizeNevaDies
+[05/02/2023 11:32] [VanillaReimplementation:wip-datapack-loading] 2 new commits || 12827c0 implement feature fetching (#27) - KrystilizeNevaDies 3c1a695 Merge branch 'master' into wip-datapack-loading - KrystilizeNevaDies
+[24/03/2023 13:30] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 95710e5 more initial datapack loading - KrystilizeNevaDies
+[25/03/2023 00:32] [VanillaReimplementation:wip-datapack-loading] 2 new commits || 68c1d20 load downloaded jar correctly - KrystilizeNevaDies b629cc0 Start json deserialization - KrystilizeNevaDies
+[29/03/2023 23:12] [VanillaReimplementation:wip-datapack-loading] 1 new commit || ca4490f more json deserialization - KrystilizeNevaDies
+[05/04/2023 11:00] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 18b7532 vanilla datapack loading refactor - KrystilizeNevaDies
+[10/04/2023 23:11] [VanillaReimplementation:wip-datapack-loading] 1 new commit || f022770 update - KrystilizeNevaDies
+[10/04/2023 23:11] [VanillaReimplementation:wip-datapack-loading] 17 new commits || d1ac79a Wip vanilla worldgen reimpl. - KrystilizeNevaDies 9316ebd Batch cleanup - KrystilizeNevaDies 673b5e8 Get mvp working - KrystilizeNevaDies a432995 Get surface terrain generating - KrystilizeNevaDies 05d6a3f Cleanup worldgen + rename - KrystilizeNevaDies
+[29/08/2023 00:07] [VanillaReimplementation:wip-datapack-loading] 2 new commits || 75d5ac2 Update gradle.properties - KrystilizeNevaDies 6f9f79b update - KrystilizeNevaDies
+[29/08/2023 16:01] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 0188741 update - KrystilizeNevaDies
+[30/08/2023 14:59] [VanillaReimplementation:wip-datapack-loading] 1 new commit || a1636dc update - KrystilizeNevaDies
+[31/08/2023 06:56] [VanillaReimplementation:wip-datapack-loading] 1 new commit || bdd7dbf update - KrystilizeNevaDies
+[01/09/2023 11:53] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 6e9377f implement basic generation - KrystilizeNevaDies
+[02/09/2023 15:56] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 88e5607 introduce unit tests and fix legacy random impl - KrystilizeNevaDies
+[03/09/2023 07:00] [VanillaReimplementation:wip-datapack-loading] 1 new commit || f0eddc5 add tests for noise, fix failing tests - KrystilizeNevaDies
+[23/09/2023 02:07] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 2cc9659 update implementations to pass more tests - KrystilizeNevaDies
+[23/09/2023 02:19] [VanillaReimplementation:master] 1 new commit || 9225fe7 update minestom version - KrystilizeNevaDies
+[23/09/2023 02:44] [VanillaReimplementation:master] 1 new commit || 93f29ab use minestom-ce while ce pullback is in progress - KrystilizeNevaDies
+[23/09/2023 04:38] [VanillaReimplementation:master] 1 new commit || 4aa39e0 Add how to use section to README.md - KrystilizeNevaDies
+[20/10/2023 16:07] [VanillaReimplementation:wip-datapack-loading] 4 new commits || 9225fe7 update minestom version - KrystilizeNevaDies 93f29ab use minestom-ce while ce pullback is in progress - KrystilizeNevaDies 4aa39e0 Add how to use section to README.md - KrystilizeNevaDies d71305f Merge branch 'master' into wip-datapack-loading - KrystilizeNevaDies
+[11/11/2023 03:14] [VanillaReimplementation:wip-datapack-loading] 1 new commit || c6e92d3 remove nbt path generic - KrystilizeNevaDies
+[11/11/2023 03:28] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 3ac517f fix compiling - KrystilizeNevaDies
+[26/12/2023 15:42] [VanillaReimplementation:master] 2 new commits || 7d9d184 refactor + cleanup crafting data - KrystilizeNevaDies 5e91d29 fix recipe usage + various improvements - KrystilizeNevaDies
+[26/12/2023 16:14] [VanillaReimplementation:master] 1 new commit || 8566616 Add the executable flag to gradlew for POSIX en... - StuporHero
+[27/12/2023 01:16] [VanillaReimplementation:wip-datapack-loading] 4 new commits || 7d9d184 refactor + cleanup crafting data - KrystilizeNevaDies 5e91d29 fix recipe usage + various improvements - KrystilizeNevaDies 8566616 Add the executable flag to gradlew for POSIX en... - StuporHero d8dbdc1 Merge branch 'master' into wip-datapack-loading - KrystilizeNevaDies
+[27/12/2023 02:10] [VanillaReimplementation:wip-datapack-loading] 1 new commit || aff005e merge from master - use datapack loading system... - KrystilizeNevaDies
+[27/12/2023 03:35] [VanillaReimplementation:wip-datapack-loading] 1 new commit || 64404b4 implement item tags in recipes - KrystilizeNevaDies
+[27/12/2023 03:35] [VanillaReimplementation:master] 1 new commit || 35eba9e Datapack loading (#38) - KrystilizeNevaDies
+[27/12/2023 06:37] [VanillaReimplementation:master] 1 new commit || 6c8bcfd styling cleanup - KrystilizeNevaDies
+[27/12/2023 16:43] [VanillaReimplementation:master] 4 new commits || 2c0f653 simplify filesystem api - KrystilizeNevaDies 7019044 refactor block behaviours - KrystilizeNevaDies 977a328 simplify dependency sorting - KrystilizeNevaDies e3c100a Implement rudimentary vanilla block loot - KrystilizeNevaDies
+[28/12/2023 01:39] [VanillaReimplementation:master] 1 new commit || b705a98 fix some loot functions - KrystilizeNevaDies
+[29/12/2023 09:15] [VanillaReimplementation:master] 1 new commit || 696ed69 fix dependency sorting - KrystilizeNevaDies
+[01/01/2024 08:53] [VanillaReimplementation:master] 1 new commit || 82c1016 Update README.md - KrystilizeNevaDies
+[06/01/2024 03:59] [VanillaReimplementation:master] 1 new commit || 5e9f1ad implement survival inventory crafting - KrystilizeNevaDies
+[06/01/2024 06:42] [VanillaReimplementation:master] 1 new commit || f1b1d57 support crafting table recipes - KrystilizeNevaDies
+[07/01/2024 09:09] [VanillaReimplementation:master] 1 new commit || 68f6d33 debug helpers - KrystilizeNevaDies
+[07/01/2024 10:07] [VanillaReimplementation:master] 1 new commit || d3fe468 improve logging + support slf4j - KrystilizeNevaDies
+[09/01/2024 21:21] [VanillaReimplementation:master] 2 new commits || 78bc73b clarify some errors - KrystilizeNevaDies 2ee543a implement some furnace smelting - KrystilizeNevaDies
+[12/01/2024 03:25] [VanillaReimplementation:master] 1 new commit || 4823c25 Stonecutting (#46) - lordtgm
+[12/01/2024 08:50] [VanillaReimplementation:master] 1 new commit || 0f8622b use generic output slot handling - KrystilizeNevaDies
+[13/01/2024 06:09] [VanillaReimplementation:master] 1 new commit || eaa394c add some missing edge cases in crafting invento... - KrystilizeNevaDies
+[13/01/2024 06:44] [VanillaReimplementation:master] 1 new commit || 0074b84 load datapack 1.20 trim patterns and materials - KrystilizeNevaDies
+[14/01/2024 09:17] [VanillaReimplementation:master] 1 new commit || de14334 smelting/blasting/smoking recipe support - KrystilizeNevaDies
+[29/01/2024 09:51] [VanillaReimplementation:master] 1 new commit || a0fad18 biome loading - KrystilizeNevaDies
+[29/01/2024 10:23] [VanillaReimplementation:master] 1 new commit || 3c78da4 Campfire cooking (#47) - bivashy
+[05/02/2024 07:22] [VanillaReimplementation:master] 1 new commit || bb4e93c Smithing (#49) - lordtgm
+[28/05/2024 14:18] [VanillaReimplementation:biome-feature-loading] 3 new commits || 1f71e4e start biome feature loading - KrystilizeNevaDies df71042 update to java 21 - KrystilizeNevaDies 8454b6c more datapack loading - KrystilizeNevaDies
+[30/05/2024 14:19] [VanillaReimplementation:biome-feature-loading] 1 new commit || 85c6bb0 fix noise implementation - KrystilizeNevaDies
+[12/09/2024 13:00] [VanillaReimplementation:biome-feature-loading] 2 new commits || c77f0ae cleanups - KrystilizeNevaDies 7b1d839 WIP Biome Loading progress - KrystilizeNevaDies
+[12/09/2024 16:22] [VanillaReimplementation:master] 1 new commit || 2aad223 update to minestom 1.20.1 - KrystilizeNevaDies
+[12/09/2024 16:22] [VanillaReimplementation:master] 1 new commit || 3f3c5e2 update to 1.21 - KrystilizeNevaDies
+[13/09/2024 10:42] [VanillaReimplementation:master] 2 new commits || a08833c Fix startup and some json loading - KrystilizeNevaDies 7db9d70 add wip Loot Table tests - KrystilizeNevaDies
+[13/09/2024 10:42] [VanillaReimplementation:master] 1 new commit || f4d6b90 add mojang-data to gitignore - KrystilizeNevaDies
+[17/09/2024 07:27] [VanillaReimplementation:master] 1 new commit || 479095c Update jitpack.yml - KrystilizeNevaDies
+[17/09/2024 07:39] [VanillaReimplementation:master] 1 new commit || 9e3bd46 commit gradle wrapper - KrystilizeNevaDies
+[29/09/2024 02:10] [VanillaReimplementation:master] 1 new commit || 0cd62d8 update to datapack version 48 - KrystilizeNevaDies
+[29/09/2024 03:26] [VanillaReimplementation:master] 1 new commit || dd92a99 switch to kyori Key for datapack loading - KrystilizeNevaDies
+[29/09/2024 04:21] [VanillaReimplementation:master] 1 new commit || a79a2d9 Swap to map-based block inventory - KrystilizeNevaDies
+[05/07/2025 20:35] [VanillaReimplementation:1.21.5] 1 new commit || 39f0fa8 Update Minestom to 1.21.5 (#57) - FluxCapacitor2
+[05/07/2025 21:21] [VanillaReimplementation:1_21_5] 1 new commit || f23b26a Fix TNT explode time and NPE on explode - GoldenStack
+[05/07/2025 21:58] [VanillaReimplementation:master] 1 new commit || e668a90 Update to 1.21.5 (#62) - GoldenStack
+[06/07/2025 03:50] [VanillaReimplementation:master] 1 new commit || 2c1178c Initial survival template: world loading and jo... - GoldenStack
+[06/07/2025 04:50] [VanillaReimplementation:master] 1 new commit || 1beb938 Add world border, fix typo, and guarantee survival - GoldenStack
+[06/07/2025 23:34] [VanillaReimplementation:master] 1 new commit || 9fbc4c1 Add datapack loading utilities - GoldenStack
+[07/07/2025 02:46] [VanillaReimplementation:master] 1 new commit || a4089fd Update to latest Minestom - GoldenStack
+[07/07/2025 02:57] [VanillaReimplementation:master] 1 new commit || cd19760 Port loot tables from Trove - GoldenStack
+[07/07/2025 06:02] [VanillaReimplementation:master] 1 new commit || 835172d Fix accuracy of loot dropped on mined block and... - GoldenStack
+[07/07/2025 06:21] [VanillaReimplementation:master] 1 new commit || b447c5d Add item dropping and change spawn items - GoldenStack
+[07/07/2025 07:09] [VanillaReimplementation:master] 1 new commit || c2b4268 Drop experience on block break - GoldenStack
+[07/07/2025 07:54] [VanillaReimplementation:master] 1 new commit || 376b532 Fix block state predicate using wrong subpredic... - GoldenStack
+[07/07/2025 10:01] [VanillaReimplementation:master] 1 new commit || 9a79ff8 Properly remove path prefixes while loading dat... - GoldenStack
+[07/07/2025 10:01] [VanillaReimplementation:master] 1 new commit || ee0c039 Remove unused function - GoldenStack
+[07/07/2025 10:16] [VanillaReimplementation:master] 1 new commit || 969e677 Fix relativization again - GoldenStack
+[07/07/2025 19:33] [VanillaReimplementation:master] 1 new commit || 1ed92a6 Add note on loot table optimization - GoldenStack
+[07/07/2025 19:46] [VanillaReimplementation:master] 1 new commit || 66d9f8c Switch to a relatively standardized naming sche... - GoldenStack
+[09/07/2025 10:39] [VanillaReimplementation:master] 1 new commit || 3033c1d Refactor crafting module and add to survival - GoldenStack
+[09/07/2025 10:39] [VanillaReimplementation:master] 1 new commit || 0d82eb8 Add logging for loot module and change event no... - GoldenStack
+[02/09/2025 05:26] [VanillaReimplementation:master] 1 new commit || 05c3434 Factor out crafting inventory handling - GoldenStack
+[03/10/2025 03:42] [VanillaReimplementation:copilot/fix-630214c4-d949-48bb-9307-a26cd071ee69] 1 new commit || a30145f Initial plan - Copilot
+[03/10/2025 03:42] [VanillaReimplementation:copilot/fix-630214c4-d949-48bb-9307-a26cd071ee69] 1 new commit || f06fa99 Initial exploration and plan for converting JSO... - Copilot
+[03/10/2025 03:54] [VanillaReimplementation:copilot/fix-630214c4-d949-48bb-9307-a26cd071ee69] 1 new commit || 7f527f6 Add initial codec implementations for Recipe ty... - Copilot
+[03/10/2025 03:54] [VanillaReimplementation:copilot/fix-630214c4-d949-48bb-9307-a26cd071ee69] 1 new commit || d3ca53e Complete codec implementations for all Recipe t... - Copilot
+[03/10/2025 03:54] [VanillaReimplementation:copilot/fix-630214c4-d949-48bb-9307-a26cd071ee69] 1 new commit || db08ff0 Add FloatProvider codec implementations and com... - Copilot
+[03/10/2025 03:54] [VanillaReimplementation:copilot/fix-630214c4-d949-48bb-9307-a26cd071ee69] 1 new commit || 3601909 Complete codec conversion framework with docume... - Copilot

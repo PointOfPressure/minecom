@@ -14,6 +14,178 @@ of what got escalated and why.
 
 ---
 
+## State of the project — full inventory (2026-07-13, Fable)
+
+One place to see everything done and everything not. Compiled from a full
+read of every doc (STRATEGY/AUDIT/CONVENTIONS/PERSISTENCE/COMMUNITY-INTEL/
+this file), the complete 127-file source survey, and the suite state on this
+date. Deeper strategy lives in docs/MASTERPLAN.md (written the same day).
+
+### What this is
+
+A vanilla-parity Minecraft 26.1.2 server built from scratch on Minestom
+(pinned 2026.07.01-26.1.2), written agent-orchestrated and
+verification-first: every mechanic is ported from the decompiled reference
+(never copied), claims a named vanilla source class, and ships with checks.
+~49,500 lines of Java across 127 files, 1,477 bundled real-vanilla data
+files (11 MB — recipes, loot tables, worldgen graphs, 1,185 structure
+templates), a 35 MB single-jar output, 102 commits since 2026-07-09.
+
+### Verification state (the product's spine)
+
+- **--playtest: 677/677 green** (headless full server + fake player driving
+  real gameplay through the event pipeline; section filter via
+  `--playtest <substring>`; port via MINECOM_TEST_PORT, default ephemeral).
+- **--selftest: 210/210 green** (server-less data-engine battery).
+- **Worldgen region-diff: 99.384% bit-exact** vs a real vanilla server over
+  1,296 chunks / 127.4M blocks (top remaining mismatch classes: sculk
+  patches, tree-foliage placement, ore-vs-stone swaps, snow, short_grass —
+  each identified and tracked). CAVEAT: the diff harness itself was never
+  committed — only its logs survive (test-logs/regiondiff_*). Rebuilding it
+  is a MASTERPLAN item; the piston fixture harness
+  (scripts/piston_vanilla_capture.py) now models the committed-harness
+  pattern to follow, including the NBT/Anvil reader it needs.
+- **Differential fixtures**: 40-case piston extend/retract layouts captured
+  from a REAL vanilla dedicated server, replayed cell-by-cell every run.
+- Flake discipline: every known flake in this file is either root-caused and
+  fixed, or armed with failure-only diagnostics (DIAG silk) so the next
+  firing explains itself. No known-red checks anywhere.
+
+### Done — by subsystem (compressed; AUDIT.md has per-item simplifications)
+
+- **Worldgen (the crown jewel, ~15k lines)**: full vanilla density-function
+  interpreter (VDensity) + exact noise stack (Xoroshiro, ImprovedNoise) +
+  aquifers, carvers, surface rules, ore veins, sculk, biome source, feature
+  decoration (trees et al.), Beardifier; structures via real jigsaw assembly
+  from bundled NBT templates — villages, trial chambers, ancient cities,
+  strongholds (full StrongholdPieces maze), ocean monuments (room-graph),
+  woodland mansions (MansionGrid), pillager outposts, bastions, igloos,
+  shipwrecks, ruined portals, ocean ruins, desert pyramids, jungle temples,
+  buried treasure, nether fossils; concentric-ring + grid placement both
+  bit-exact. End dimension on the same engine (spikes, chorus, gateways).
+  Nether is deliberately approximate (the one XL worldgen gap).
+- **Blocks/containers (~30 subsystems)**: chests (double/trapped/ender),
+  barrels, shulkers, furnaces×3, brewing, anvils, cauldrons, composters,
+  campfires, jukeboxes, lecterns, decorated pots, chiseled bookshelves,
+  cake/candles, item frames, scaffolding, note blocks (618 lines of
+  instrument rules), beds, respawn anchors, lodestones, structure loot
+  (56 real chest tables, rolled on first open like vanilla), lid
+  animations, harvesting, pumpkin carving, copper waxing, bubble columns,
+  fire spread (verbatim FireBlock, 207-entry odds table machine-diffed),
+  fluids (cellular sim — NOT vanilla-exact spread weighting), portals
+  (with cooldown), explosions (1352-ray vanilla algorithm), TNT, snow,
+  random-tick engine (grass/ice/crops/saplings/copper/bamboo/vines/
+  farmland/amethyst on the real 3-per-section dispatch).
+- **Redstone**: wire networks (15-decay, strong/weak), pistons with the
+  full slime/honey structure resolver (differentially verified), observers,
+  comparators (container reads incl. crafter/bulb/sensors), repeaters,
+  hoppers, droppers/dispensers (~25 dispenser behaviors), crafters, rails
+  (powered/activator/detector propagation), daylight detectors (real
+  sun-angle timeline math), lightning rods, target blocks, weighted plates,
+  copper bulbs, tripwires, sculk sensors + calibrated + the full vibration
+  engine (frequency table, occlusion, taps for open/close/eat/drink/equip),
+  shriekers with the faithful WardenSpawnTracker chain. Batched-per-tick
+  update order (vanilla's depth-first recursion NOT modeled — the known
+  design decision waiting on multi-core, HANDOFF item 4).
+- **Mobs**: ~45 species live. From-scratch vanilla brain system (VBrain +
+  Goals + VPathfinder A* ports) beside legacy Minestom-AI wiring (§11.1
+  seam); natural spawner is a faithful NaturalSpawner port with mob caps +
+  despawn + difficulty gating; full difficulty system (regional formula,
+  equipment tables, reinforcements); villagers (trades, breeding with the
+  real food economy, farmer harvest AI, profession blocks); warden (full
+  state machine + anger + sonic boom); creaking + hearts; breeze; happy
+  ghast (rideable, mount-order-deterministic); slimes/magma (sizes,
+  split-on-death); silverfish + infested blocks; iron/snow golems; raids
+  (bounded 3-wave); ender dragon (bounded fight); piglin bartering; sheep
+  shearing; breeding + baby states.
+- **Survival/data**: hunger/exhaustion/regen (vanilla FoodData constants),
+  air/drowning, fall damage, XP, fishing, bows/crossbows/tridents (loyalty,
+  channeling), thrown/splash/lingering potions, 13 drinkable effects,
+  weather + lightning (rod redirect, witch conversion), real crafting
+  (2x2 + table vs full Mojang recipe set), real loot-table evaluator
+  (fortune/silk conditions; enchant functions inert — no enchanting
+  system), anvil combining, /commands (~20).
+- **Persistence**: region-sharded sidecar store (RegionStore + StateAdapter
+  SPI, gzip-versioned shards, multi-core-ready by design) covering ~20
+  subsystems: containers, redstone positions, mobs (+villager
+  profession/inventory, sheep, babies, breeding cooldowns, slime sizes),
+  crops, fire countdowns, trial-chamber config+progress, inhabited time,
+  world extras. Anvil handles blocks. Overworld-only keys (known limit).
+- **Infra**: Bootstrap (shared prod/test wiring), fake-player test
+  framework, backup PreToolUse hook, CONVENTIONS enforced at 100% javadoc
+  coverage, three-tier model routing (this file), decompile cache
+  discipline (rule 7).
+
+### NOT done — the honest gap list
+
+**Player-visible gameplay (AUDIT.md Top-10 remnants):**
+1. Enchanting table + grindstone + smithing/trims + stonecutter/loom/
+   cartography (L — biggest missing player system; loot enchant functions
+   inert for the same reason).
+2. Taming (wolves/cats/horses/parrots), horse riding/saddles, leads, name
+   tags (L).
+3. Classic `minecraft:spawner` block entities — dungeons, mineshaft cave
+   spiders, fortress blazes, stronghold portal room (M, pattern exists via
+   TrialChambers).
+4. Elytra + firework flight, ender pearls, eyes of ender, maps, bundles,
+   shields-with-banners, totems, spyglass (S-M each).
+5. Villager zombie-conversion/curing, gossip/reputation, sleep schedules;
+   raid difficulty scaling + Bad Omen patrols (S-M each).
+6. Missing mobs: bee (M-L), cat, allay, sniffer, frog/tadpole, armadillo
+   extras, skeleton-horse trap, phantom night spawner, endermite-from-pearl.
+7. Mob equipment enchantments + equipment drop chances; attack-cooldown
+   (1.9 charge) model; server-enforced mining speed (haste/fatigue).
+8. Bedrock-pattern golem building, armor stands, banners, sign editing,
+   archaeology/brush, beacons (unlisted anywhere yet — no beacon system),
+   conduits (same).
+9. Nether: whole dimension is an approximate generator (XL — the single
+   largest parity gap in the project); piglin gold-armor/zombification
+   rules; hoglins.
+10. 26.x oddities: sulfur cube (26.2+ only), dried ghast/ghastling, some
+    26.x potion effects (oozing/weaving/infested/wind-charged).
+
+**Architecture/process (the strategic queue, STRATEGY §6):**
+- **Multi-core is entirely unstarted.** Everything runs on Minestom's
+  default single instance thread + scheduler. The region-ownership design
+  (Folia/MCHPRS-style islands, COMMUNITY-INTEL) exists only as intel notes
+  + the persistence sharding built to match it. This is the project's
+  entire durable performance thesis and its hardest correctness problem.
+- **Verification-suite hardening (§6 step 2) is undefined** — named as a
+  co-prerequisite for unification, no scope exists. MASTERPLAN proposes one;
+  needs owner sign-off.
+- **Unification pass blocked** on the above (CONVENTIONS §11 is the work
+  order: two AI systems, naming/lifecycle drift, god-class splits —
+  PlayTest.java is now 7,348 lines).
+- **Minestom 26.2 bump**: scoped (5 call sites) but gated on the 1,476-file
+  data re-extraction (no script exists — must be written against 26.1.2
+  first), sulfur-cube gap, passenger-positioning reconciliation. Owner
+  go/no-go.
+- **Region-diff harness not committed** (see Verification state above).
+- **Update-order semantics** (vanilla depth-first vs our batching) waits on
+  the multi-core redstone design — deliberate, do not do twice.
+- **Security sweep** (STRATEGY §5 exploit catalog) not started; no
+  SECURITY.md.
+- **README rewrite in a human voice** + launch-conduct plan (STRATEGY §4)
+  not done; LICENSE is still the placeholder, CLA infrastructure not set up.
+- **No CI** — the suites run by hand on this laptop only. No benchmark
+  harness exists either (the performance story currently has zero numbers
+  behind it beyond worldgen throughput incidentals).
+- Gamerule system absent (mobGriefing/keepInventory/etc. hardcoded);
+  multi-dimension persistence keys; entities/*.mca export; item entities
+  in flight.
+
+### Where this sits on the agreed roadmap (STRATEGY §6)
+
+Step 1 "finish first pass" — genuinely close for the overworld gameplay
+surface (the list above is the remainder); nether + enchanting are the two
+big outliers. Step 2 (CONVENTIONS lock ✔ / suite hardening ✗-undefined) is
+the actual current gate. Steps 3-10 (unification → security → human review
+→ launch → Lite profile → add-ons → version cadence) all pend behind it.
+Multi-core sits outside the numbered sequence entirely — MASTERPLAN
+proposes where it belongs.
+
+---
+
 ## Open
 
 **At-a-glance triage (2026-07-13, Opus)** — the Opus queue is worked:
