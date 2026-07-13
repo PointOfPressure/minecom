@@ -2,8 +2,8 @@
 """Shared vanilla-as-oracle plumbing (MASTERPLAN §2 item 2 — the fixture factory).
 
 Every differential harness follows the same recipe: drive the REAL vanilla
-26.1.2 dedicated server (~/versions/26.1.2 + ~/libraries, a Mojang bundler
-unpack, launched via -cp ... net.minecraft.server.Main), let it produce
+26.2 dedicated server (~/mc-26.2, a Mojang bundler unpack with its own
+libraries/ root, launched via -cp ... net.minecraft.server.Main), let it produce
 ground truth, then read that truth back out of its Anvil region files with a
 zero-dependency NBT reader. This module is that recipe, factored out of
 scripts/piston_vanilla_capture.py (the first committed harness) so the next
@@ -28,8 +28,11 @@ import shutil
 import zlib
 from pathlib import Path
 
-JAR = Path.home() / "versions/26.1.2/server-26.1.2.jar"
-LIBS = Path.home() / "libraries"
+# 26.2 bundler unpack keeps its own libraries/ root — do NOT merge into
+# ~/libraries (that tree belongs to the 26.1.2 unpack at ~/versions).
+MC_VERSION = "26.2"
+JAR = Path.home() / "mc-26.2/versions/26.2/server-26.2.jar"
+LIBS = Path.home() / "mc-26.2/libraries"
 
 VANILLA_REGION_SUBDIR = "world/dimensions/minecraft/overworld/region"
 

@@ -151,7 +151,7 @@ def main():
     w(f"- **SelfTest (server-less data engine): {st_pass} passed, {st_fail} failed**")
     if rd:
         w(f"- **Worldgen region diff: {rd['rate']:.4f}% bit-exact** vs a real "
-          f"vanilla 26.1.2 server — {rd['chunks']} chunks / {rd['blocks']:,} "
+          f"vanilla 26.2 server — {rd['chunks']} chunks / {rd['blocks']:,} "
           f"blocks, seed {rd['seed']} (`scripts/worldgen_region_diff.py`, "
           f"full-state comparison incl. block properties)")
     w(f"- **Differential fixtures: {len(piston['cases'])} piston "

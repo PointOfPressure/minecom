@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Piston differential-test fixture capture (HANDOFF: reorder-collision entry).
 
-Drives a REAL vanilla 26.1.2 dedicated server (~/versions/26.1.2/server-26.1.2.jar)
+Drives a REAL vanilla dedicated server (version = vanilla_oracle.JAR, 26.2 since
+the 2026-07-13 bump; the committed fixture was captured on 26.1.2 and stays valid
+until piston behavior changes — re-run this script to re-capture)
 through a battery of slime/honey piston contraptions and records, for each case,
 the exact final block layout after extension and after retraction. The output
 JSON (src/main/resources/vanilla/piston_reorder_cases.json) is the committed

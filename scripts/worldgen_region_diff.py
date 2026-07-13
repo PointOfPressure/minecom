@@ -7,7 +7,8 @@ ONE command that answers "how bit-exact is minecom's overworld?":
     python3 scripts/worldgen_region_diff.py --seed 123 --radius 4   # quick spot-check
 
 It (1) generates the chunk square [center-radius, center+radius)^2 on a REAL
-vanilla 26.1.2 dedicated server (driven over stdin, forceload tile by tile,
+vanilla dedicated server (version = vanilla_oracle.MC_VERSION; driven over
+stdin, forceload tile by tile,
 polled via save-all flush until every chunk reaches minecraft:full), (2)
 generates the same square with minecom's VanillaGen (`--genregions` mode of
 target/minecom.jar, run in its own work dir), then (3) compares every block
@@ -43,9 +44,9 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from vanilla_oracle import (JAR, VANILLA_REGION_SUBDIR, RegionReader, Server,
-                            default_block_properties, prepare_workdir,
-                            section_indices)
+from vanilla_oracle import (JAR, MC_VERSION, VANILLA_REGION_SUBDIR,
+                            RegionReader, Server, default_block_properties,
+                            prepare_workdir, section_indices)
 
 REPO = Path(__file__).resolve().parent.parent
 SECTION_MIN, SECTION_MAX = -4, 19          # overworld y -64..319
@@ -268,7 +269,10 @@ def main():
     if not args.jar.exists():
         sys.exit(f"missing {args.jar} — build it first: mvn -q -DskipTests package")
 
-    work = args.work / f"{args.seed}_r{args.radius}_{ccx}x{ccz}"
+    # Per-MC-version work dirs: the vanilla world cache is only valid for the
+    # server version that generated it (the 26.1.2 cache lives in the
+    # unsuffixed pre-26.2 dirs and is deliberately kept).
+    work = args.work / f"{args.seed}_r{args.radius}_{ccx}x{ccz}_{MC_VERSION}"
     vanilla_dir, minecom_dir = work / "vanilla", work / "minecom"
     if args.fresh and work.exists():
         shutil.rmtree(work)
@@ -295,7 +299,9 @@ def main():
         gen_minecom(minecom_dir, args.jar, args.seed, args.radius, ccx, ccz, log)
 
     log("loading vanilla blocks report (default-state property table)...")
-    defaults = default_block_properties(args.work / "blocks_report")
+    # per-version like the world caches: the report enumerates every block's
+    # default-state properties, and 26.2 added blocks (sulfur family)
+    defaults = default_block_properties(args.work / f"blocks_report_{MC_VERSION}")
     rate, bad = compare(vanilla_dir / VANILLA_REGION_SUBDIR,
                         minecom_dir / "world/region", chunks, args.top, defaults, log)
     log(f"log: {log_path}")
