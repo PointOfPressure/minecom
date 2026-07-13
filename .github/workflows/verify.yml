@@ -1,0 +1,65 @@
+# Verification CI (MASTERPLAN §2 item 5, owner-approved 2026-07-13).
+# The suites are the product: build + selftest on every push; the full
+# playtest runs nightly (it needs ~25 min and real-time waits, too slow
+# and too timing-sensitive for every push on shared runners).
+name: verify
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *" # nightly full playtest
+
+jobs:
+  build-and-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Build
+        run: mvn -B -q package -DskipTests
+      - name: Selftest (210 data-engine checks)
+        run: |
+          java -jar target/minecom.jar --selftest | tee selftest.log
+          tail -1 selftest.log | grep -q " 0 failed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-log-${{ github.sha }}
+          path: selftest.log
+
+  full-playtest:
+    # nightly or manual only — real-time gameplay waits make this a poor
+    # fit for per-push runners, and a flake here must stay a loud signal,
+    # not per-push noise
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Build
+        run: mvn -B -q package -DskipTests
+      - name: Full playtest (677 gameplay checks)
+        run: |
+          java -jar target/minecom.jar --playtest | tee playtest.log
+          tail -5 playtest.log | grep -q " 0 failed"
+      - name: Check for the silk-touch flake diagnostic
+        run: |
+          if grep -q "DIAG silk" playtest.log; then
+            echo "::warning::DIAG silk fired — this log closes HANDOFF's silk-touch flake. Preserve it!"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playtest-log-${{ github.sha }}
+          path: playtest.log
