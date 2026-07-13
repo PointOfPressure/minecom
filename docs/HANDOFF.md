@@ -320,6 +320,23 @@ extracted from the real 26.1.2 server jar. A Minecraft-version bump means
   were produced. Whoever bumps this reconstructs that procedure from scratch.
   **This is the single largest undocumented risk in the upgrade** and is a far
   bigger job than the 5-line API migration.
+  - **DONE 2026-07-13 (Fable): the script now exists** —
+    `scripts/extract_vanilla_data.py` (Python 3, stdlib only) rebuilds the
+    whole tree from the jar and `--validate` proves it: **1,476/1,476 PASS,
+    0 FAIL** against the bundled 26.1.2 tree (JSON parsed-equal, .nbt
+    byte-identical; ~0.7 s warm, ~13 s cold). Per-file provenance is in the
+    script docstring. Notes: (1) `piston_reorder_cases.json` is the one
+    non-jar-derived file (from `scripts/piston_vanilla_capture.py`), skipped
+    by design; (2) `biome_parameters_overworld.json` and
+    `features_per_step.json` are jar *code*, not jar data — the script runs
+    the jar's own datagen (`net.minecraft.data.Main --reports`, needs
+    `~/libraries/` from the bundler unpack, cached in `~/.cache/minecom/`)
+    and ports `FeatureSorter.buildFeaturesPerStep` exactly; (3)
+    `structure_biomes/*.json` value *order* in the bundled tree is provably
+    inconsistent hand-extraction noise (consumer is a HashSet), so those are
+    validated as sets — everything else is strict. For the 26.2 bump: run
+    `--jar ~/versions/26.2/server-26.2.jar`, but note 26.2's registry-dir
+    renames (if any) must be re-checked against the paths in the docstring.
 - **`~/versions/` has only `26.1.2/`.** A 26.2 server jar exists (Mojang's
   manifest lists 26.2, released 2026-06-16) but is not downloaded.
 
