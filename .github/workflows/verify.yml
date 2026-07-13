@@ -26,7 +26,8 @@ jobs:
       - name: Selftest (210 data-engine checks)
         run: |
           java -jar target/minecom.jar --selftest | tee selftest.log
-          tail -1 selftest.log | grep -q " 0 failed"
+          # the report ends with a trailing blank line — grep the file, not tail -1
+          grep -q " 0 failed" selftest.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -52,7 +53,7 @@ jobs:
       - name: Full playtest (677 gameplay checks)
         run: |
           java -jar target/minecom.jar --playtest | tee playtest.log
-          tail -5 playtest.log | grep -q " 0 failed"
+          grep -q " 0 failed" playtest.log
       - name: Check for the silk-touch flake diagnostic
         run: |
           if grep -q "DIAG silk" playtest.log; then
