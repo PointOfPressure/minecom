@@ -1,16 +1,1 @@
-{
-  "values": [
-    "minecraft:desert",
-    "minecraft:plains",
-    "minecraft:savanna",
-    "minecraft:snowy_plains",
-    "minecraft:taiga",
-    "minecraft:grove",
-    "minecraft:meadow",
-    "minecraft:frozen_peaks",
-    "minecraft:jagged_peaks",
-    "minecraft:stony_peaks",
-    "minecraft:snowy_slopes",
-    "minecraft:cherry_grove"
-  ]
-}
+{"values":["minecraft:desert","minecraft:plains","minecraft:savanna","minecraft:snowy_plains","minecraft:taiga","minecraft:meadow","minecraft:frozen_peaks","minecraft:jagged_peaks","minecraft:stony_peaks","minecraft:snowy_slopes","minecraft:cherry_grove","minecraft:grove"]}

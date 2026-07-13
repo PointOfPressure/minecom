@@ -15,7 +15,7 @@
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <minestom.version>2026.07.01-26.1.2</minestom.version>
+    <minestom.version>2026.07.12-26.2</minestom.version>
   </properties>
 
   <dependencies>

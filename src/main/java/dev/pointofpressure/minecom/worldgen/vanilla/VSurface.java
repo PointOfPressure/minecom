@@ -761,8 +761,14 @@ public final class VSurface {
         String type = path(o.get("type").getAsString());
         return switch (type) {
             case "biome" -> {
+                // 26.2 serializes single-biome conditions as a bare string, not a 1-element list
                 Set<String> set = new HashSet<>();
-                for (JsonElement e : o.getAsJsonArray("biome_is")) set.add(e.getAsString());
+                JsonElement biomeIs = o.get("biome_is");
+                if (biomeIs.isJsonArray()) {
+                    for (JsonElement e : biomeIs.getAsJsonArray()) set.add(e.getAsString());
+                } else {
+                    set.add(biomeIs.getAsString());
+                }
                 yield context -> new LazyCondition(context.lastUpdateY) {
                     long contextLastUpdate() { return context.lastUpdateY; }
                     boolean compute() { return set.contains(context.biome()); }

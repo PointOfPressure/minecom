@@ -2941,6 +2941,20 @@ public final class PlayTest {
     }
 
     /**
+     * Mirrors the real client input-packet flow (26.2: PlayerStartSneakingEvent is
+     * gone; sneak starts arrive as PlayerInputEvent with the shift key newly held).
+     * refreshInput also syncs Player#isSneaking, so scenarios must releaseShiftKey()
+     * once the press has been observed or the player stays sneaking.
+     */
+    private static void pressShiftKey() {
+        player.refreshInput(false, false, false, false, false, true, false);
+    }
+
+    private static void releaseShiftKey() {
+        player.refreshInput(false, false, false, false, false, false, false);
+    }
+
+    /**
      * Mirrors the real client packet flow: fire InventoryPreClickEvent, then apply
      * the default click only if no handler cancelled it. (Programmatic leftClick()
      * alone skips the pre-event, which real clients always produce.)
@@ -3234,9 +3248,11 @@ public final class PlayTest {
 
         var orb = new net.minestom.server.entity.ExperienceOrb((short) 10);
         orb.setInstance(world, player.getPosition());
-        var event = new net.minestom.server.event.item.PickupExperienceEvent(player, orb);
-        event.setExperienceCount((short) 10);
-        EventDispatcher.call(event);
+        // 26.2: Player.update auto-collects intersecting orbs (cooldown-gated) and
+        // fires PickupExperienceEvent itself — dispatching one manually on top of
+        // that double-applies mending. Wait for the real pickup instead.
+        boolean pickedUp = waitFor(orb::isRemoved, 3000);
+        check("experience orb is auto-collected by the player", pickedUp);
         tick(1);
 
         int damageAfter = player.getItemInMainHand().get(DataComponents.DAMAGE);
@@ -4061,9 +4077,10 @@ public final class PlayTest {
         tick(1);
         check("boat: right-click seats the player", boat.getPassengers().contains(player));
 
-        EventDispatcher.call(new net.minestom.server.event.player.PlayerStartSneakingEvent(player));
+        pressShiftKey();
         tick(1);
         check("boat: sneaking dismounts the player", !boat.getPassengers().contains(player));
+        releaseShiftKey();
 
         EventDispatcher.call(new EntityAttackEvent(player, boat));
         tick(2);
@@ -4110,8 +4127,9 @@ public final class PlayTest {
         tick(1);
         check("a non-sneaking click on an empty chest boat seats the player instead",
                 boat.getPassengers().contains(player));
-        EventDispatcher.call(new net.minestom.server.event.player.PlayerStartSneakingEvent(player));
+        pressShiftKey();
         tick(1);
+        releaseShiftKey();
 
         EventDispatcher.call(new EntityAttackEvent(player, boat));
         tick(2);
@@ -7203,7 +7221,11 @@ public final class PlayTest {
         boolean exploded = waitFor(creeper::isRemoved, 8000);
         long dt = TICKS.get() - startTick;
         check("creeper swells and explodes (took " + dt + " ticks, expect ~30, >=24)", exploded && dt >= 24);
-        check("creeper explosion hurt the player", player.getHealth() < 20);
+        check("creeper explosion hurt the player (health=" + player.getHealth()
+                        + ", pos=" + player.getPosition().blockX() + "," + player.getPosition().blockZ()
+                        + ", inWorld=" + (player.getInstance() == world)
+                        + ", mode=" + player.getGameMode() + ", dead=" + player.isDead() + ")",
+                player.getHealth() < 20);
         clearEntitiesExceptPlayer();
         resetPlayer();
         world.setTime(1000);

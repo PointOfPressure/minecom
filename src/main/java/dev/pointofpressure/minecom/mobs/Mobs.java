@@ -149,6 +149,7 @@ public final class Mobs {
             case "stray" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.stray(instance, pos);
             case "bogged" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.bogged(instance, pos);
             case "slime" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.slime(instance, pos);
+            case "sulfur_cube" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.sulfurCube(instance, pos);
             case "enderman" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.enderman(instance, pos);
             case "piglin" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.piglin(instance, pos);
             case "piglin_brute" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.piglinBrute(instance, pos);

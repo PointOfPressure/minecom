@@ -244,6 +244,25 @@ public final class VDensity {
                     return rarity * Math.abs(noise.getValue(x / rarity, y / rarity, z / rarity));
                 };
             }
+            case "interval_select" -> {
+                // DensityFunctions.IntervalSelect (26.2): input picks functions[i] for the
+                // first i with input < thresholds[i], else the last function. thresholds is
+                // validated ascending with size == functions.size() - 1.
+                DF input = parse(o.get("input"), ctx);
+                var thresholdArr = o.get("thresholds").getAsJsonArray();
+                double[] thresholds = new double[thresholdArr.size()];
+                for (int i = 0; i < thresholds.length; i++) thresholds[i] = thresholdArr.get(i).getAsDouble();
+                var functionArr = o.get("functions").getAsJsonArray();
+                DF[] functions = new DF[functionArr.size()];
+                for (int i = 0; i < functions.length; i++) functions[i] = parse(functionArr.get(i), ctx);
+                yield (x, y, z) -> {
+                    double v = input.compute(x, y, z);
+                    for (int i = 0; i < thresholds.length; i++) {
+                        if (v < thresholds[i]) return functions[i].compute(x, y, z);
+                    }
+                    return functions[functions.length - 1].compute(x, y, z);
+                };
+            }
             case "spline" -> buildSpline(o.get("spline"), ctx);
             case "old_blended_noise" -> {
                 BlendedNoisePort noise = ctx.blendedNoise(

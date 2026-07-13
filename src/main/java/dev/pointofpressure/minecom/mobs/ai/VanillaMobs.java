@@ -418,9 +418,13 @@ public final class VanillaMobs {
                 Pos at = mob.getPosition();
                 Instance in = mob.getInstance();
                 boolean charged = meta.isCharged();
-                mob.remove();
+                // Creeper.explodeCreeper order (26.2 decompile): dead → explode → discard.
+                // Exploding BEFORE remove() also means anyone who observed the creeper
+                // vanish is guaranteed the blast damage already landed (the old
+                // remove-first order raced observers polling isRemoved).
                 dev.pointofpressure.minecom.blocks.Explosions.explode(in, at.add(0, 0.5, 0),
-                        3f, 1.0 / 3, mob, charged);
+                        3f, 1.0 / 3, mob, charged, mob);
+                mob.remove();
             }
         }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);
@@ -1511,6 +1515,22 @@ public final class VanillaMobs {
     }
 
     /**
+     * Sulfur cube (26.2; decompiled net.minecraft.world.entity.monster.cubemob.
+     * SulfurCube): a PASSIVE cube mob — vanilla's addTargetingGoals() is empty,
+     * and contact damage/explosions come only from data-driven archetypes.
+     * Natural spawn size is 2 (setSpawnSize's adult branch; size 1 = baby), with
+     * the shared AbstractCubeMob attribute rules (HP size^2, speed 0.2+0.1*size)
+     * and slime hop movement. Deliberately not modeled yet (AUDIT.md — sulfur
+     * parity is a Tier follow-up): the archetype system (bouncy/explosive/hot...),
+     * item swallowing, bucketing, shearing, breeding/baby state, fuse priming,
+     * and split-on-death (vanilla splits into exactly 2; maybeSplitSlime stays
+     * slime/magma-only so a dying sulfur cube just dies).
+     */
+    public static EntityCreature sulfurCube(Instance instance, Pos pos) {
+        return slimeLike(EntityType.SULFUR_CUBE, instance, pos, 2);
+    }
+
+    /**
      * Slime.finalizeSpawn's size roll: tier = rand(3), bumped one tier with
      * probability 0.5 x regional special multiplier (so Hard/late worlds skew
      * large), size = 1 << tier — always 1, 2 or 4. Applies to every spawn path
@@ -1541,17 +1561,22 @@ public final class VanillaMobs {
      */
     private static EntityCreature slimeLike(EntityType type, Instance instance, Pos pos, int size) {
         boolean magma = type == EntityType.MAGMA_CUBE;
+        boolean sulfur = type == EntityType.SULFUR_CUBE; // passive: no targeting, no touch damage
         int clamped = Math.max(1, Math.min(127, size)); // Slime.setSize's MIN_SIZE..MAX_SIZE clamp
         EntityCreature mob = new EntityCreature(type);
         VBrain brain = brain(mob, 0.2 + 0.1 * clamped, 16,
-                magma ? clamped + 2 : clamped, clamped * clamped, magma ? clamped * 3 : 0);
+                sulfur ? 0 : magma ? clamped + 2 : clamped, clamped * clamped, magma ? clamped * 3 : 0);
         mob.setTag(SLIME_SIZE, clamped);
-        if (mob.getEntityMeta() instanceof net.minestom.server.entity.metadata.other.SlimeMeta meta) {
+        // 26.2 split metadata.other.SlimeMeta into metadata.cube.{Slime,MagmaCube}Meta;
+        // the shared base keeps this one instanceof covering all cube mobs, as before.
+        if (mob.getEntityMeta() instanceof net.minestom.server.entity.metadata.cube.AbstractCubeMeta meta) {
             meta.setSize(clamped);
         }
         mob.setBoundingBox(0.52 * clamped, 0.52 * clamped, 0.52 * clamped);
-        brain.addTargetGoal(1, new Goals.NearestAttackablePlayer(brain, false));
-        brain.addTargetGoal(2, new Goals.HurtByTarget(brain, false));
+        if (!sulfur) {
+            brain.addTargetGoal(1, new Goals.NearestAttackablePlayer(brain, false));
+            brain.addTargetGoal(2, new Goals.HurtByTarget(brain, false));
+        }
         int[] jumpIn = {0};
         long[] meleeReadyAt = {0};
         long[] age = {0};

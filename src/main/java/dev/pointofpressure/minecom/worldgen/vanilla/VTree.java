@@ -7,6 +7,7 @@ import net.minestom.server.instance.block.Block;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -125,7 +126,9 @@ final class VTree {
 
         if (trunks.isEmpty() && foliage.isEmpty()) return false;
 
-        // decorators
+        // decorators — writes recorded like vanilla's decorationSetter, so
+        // updateLeaves can pre-mark them visited
+        Set<Pos> decorations = new LinkedHashSet<>();
         JsonArray decorators = config.getAsJsonArray("decorators");
         if (decorators != null && !decorators.isEmpty()) {
             List<Pos> logsSorted = hashOrderedSorted(trunks);
@@ -133,14 +136,103 @@ final class VTree {
             for (JsonElement d : decorators) {
                 JsonObject dec = d.getAsJsonObject();
                 switch (path(dec.get("type").getAsString())) {
-                    case "beehive" -> beehive(canvas, dec, random, logsSorted, leavesSorted);
-                    case "alter_ground" -> alterGround(canvas, dec, random, logsSorted);
-                    case "place_on_ground" -> placeOnGround(canvas, dec, random, logsSorted);
+                    case "beehive" -> beehive(canvas, dec, random, logsSorted, leavesSorted, decorations);
+                    case "alter_ground" -> alterGround(canvas, dec, random, logsSorted, decorations);
+                    case "place_on_ground" -> placeOnGround(canvas, dec, random, logsSorted, decorations);
                     default -> { }
                 }
             }
         }
+        updateLeaves(canvas, trunks, foliage, decorations);
         return true;
+    }
+
+    /**
+     * TreeFeature.updateLeaves (26.2 decompile): after placing, vanilla rewrites
+     * every reachable leaf's distance property via a bucketed BFS from the logs.
+     * Any block in #prevents_nearby_leaf_decay (= #logs) is distance 0 — including
+     * a NEIGHBORING tree's logs inside the bounding box; a leaf's distance is
+     * min(its current distance value, parent+1), capped below 7. Decoration
+     * positions are pre-marked visited so they are never traversed or rewritten.
+     * The bounding box is vanilla's encapsulatingPositions over logs + foliage +
+     * decorations (no root placers are modeled, so no root positions). The
+     * trailing StructureTemplate.updateShapeAtEdge pass is not modeled (the
+     * canvas has no neighbor shape updates). This is what turns the serialized
+     * foliage_provider distance=7 into the real 1..6 gradient near trunks.
+     */
+    private void updateLeaves(VFeature.Canvas canvas, Set<Pos> logs, Set<Pos> foliage, Set<Pos> decorations) {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (Set<Pos> set : List.of(logs, foliage, decorations)) {
+            for (Pos p : set) {
+                minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+                minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+            }
+        }
+        if (minX > maxX) return;
+
+        List<Set<Pos>> toCheck = new ArrayList<>(7);
+        for (int i = 0; i < 7; i++) toCheck.add(new java.util.HashSet<>());
+        Set<Pos> visited = new java.util.HashSet<>();
+        for (Pos p : decorations) {
+            if (inside(p, minX, minY, minZ, maxX, maxY, maxZ)) visited.add(p);
+        }
+        // vanilla's trunks set is a HashSet built by incremental insert; the BFS pops
+        // via its iterator, so bucket order matters — rebuild the same table shape
+        // (Pos.hashCode == BlockPos.hashCode) before seeding bucket 0
+        java.util.HashSet<Pos> seed = new java.util.HashSet<>();
+        for (Pos p : logs) seed.add(p);
+        toCheck.get(0).addAll(seed);
+        Set<String> preventsDecay = host.tag("minecraft:prevents_nearby_leaf_decay");
+
+        int distance = 0;
+        while (distance < 7) {
+            Set<Pos> bucket = toCheck.get(distance);
+            if (bucket.isEmpty()) {
+                distance++;
+                continue;
+            }
+            Iterator<Pos> it = bucket.iterator();
+            Pos pos = it.next();
+            it.remove();
+            if (!inside(pos, minX, minY, minZ, maxX, maxY, maxZ)) continue;
+            if (distance != 0) {
+                Block state = canvas.get(pos.x, pos.y, pos.z);
+                if (state != null) {
+                    canvas.set(pos.x, pos.y, pos.z,
+                            state.withProperty("distance", String.valueOf(distance)));
+                }
+            }
+            visited.add(pos);
+            for (int[] d : NEIGHBORS) {
+                Pos n = pos.offset(d[0], d[1], d[2]);
+                if (!inside(n, minX, minY, minZ, maxX, maxY, maxZ) || visited.contains(n)) continue;
+                Block neighborState = canvas.get(n.x, n.y, n.z);
+                Integer at = distanceAt(neighborState, preventsDecay);
+                if (at == null) continue;
+                int newDistance = Math.min(at, distance + 1);
+                if (newDistance < 7) {
+                    toCheck.get(newDistance).add(n);
+                    distance = Math.min(distance, newDistance);
+                }
+            }
+        }
+    }
+
+    private static final int[][] NEIGHBORS = {
+            {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+
+    private static boolean inside(Pos p, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY && p.z >= minZ && p.z <= maxZ;
+    }
+
+    /** LeavesBlock.getOptionalDistanceAt: 0 for #prevents_nearby_leaf_decay, else the distance property. */
+    private static Integer distanceAt(Block state, Set<String> preventsDecay) {
+        if (state == null) return null;
+        if (preventsDecay.contains(state.name())) return 0;
+        String value = state.getProperty("distance");
+        return value == null ? null : Integer.valueOf(value);
     }
 
     /** vanilla builds a HashSet then sorts by Y (stable) — reproduce both steps. */
@@ -611,7 +703,7 @@ final class VTree {
     // ================================================================== decorators
 
     private void beehive(VFeature.Canvas canvas, JsonObject dec, VFeature.XWorldgenRandom random,
-                         List<Pos> logs, List<Pos> leaves) {
+                         List<Pos> logs, List<Pos> leaves, Set<Pos> decorations) {
         float probability = dec.get("probability").getAsFloat();
         if (logs.isEmpty()) return;
         if (random.nextFloat() >= probability) return;
@@ -637,6 +729,7 @@ final class VTree {
         for (Pos pos : placements) {
             if (canvas.get(pos.x, pos.y, pos.z) == null && canvas.get(pos.x, pos.y, pos.z + 1) == null) {
                 canvas.set(pos.x, pos.y, pos.z, Block.BEE_NEST.withProperty("facing", "south"));
+                decorations.add(pos);
                 int numBees = 2 + random.nextInt(2);
                 for (int i = 0; i < numBees; i++) {
                     random.nextInt(599); // Occupant.create ticks-in-hive draw
@@ -652,11 +745,13 @@ final class VTree {
      * state draw when the spot is open ground]. Exact draw parity here is what
      * keeps every later tree in the count-loop aligned with vanilla.
      */
-    private void placeOnGround(VFeature.Canvas canvas, JsonObject dec, VFeature.XWorldgenRandom random, List<Pos> logs) {
+    private void placeOnGround(VFeature.Canvas canvas, JsonObject dec, VFeature.XWorldgenRandom random,
+                               List<Pos> logs, Set<Pos> decorations) {
         if (logs.isEmpty()) return;
-        int radius = dec.get("radius").getAsInt();
-        int height = dec.get("height").getAsInt();
-        int tries = dec.get("tries").getAsInt();
+        // PlaceOnGroundDecorator.CODEC defaults, omitted from 26.2's serialized data
+        int radius = dec.has("radius") ? dec.get("radius").getAsInt() : 2;
+        int height = dec.has("height") ? dec.get("height").getAsInt() : 1;
+        int tries = dec.has("tries") ? dec.get("tries").getAsInt() : 128;
         JsonObject provider = dec.getAsJsonObject("block_state_provider");
         int minY = logs.get(0).y; // logsSorted is ascending by Y
         int minX = logs.get(0).x, maxX = minX, minZ = logs.get(0).z, maxZ = minZ;
@@ -681,7 +776,10 @@ final class VTree {
                     && isSolidRenderApprox(canvas.get(x, y, z))
                     && canvas.oceanFloorHeight(x, z) <= y + 1) {
                 Block state = weightedState(provider, random);
-                if (state != null) canvas.set(x, y + 1, z, state);
+                if (state != null) {
+                    canvas.set(x, y + 1, z, state);
+                    decorations.add(new Pos(x, y + 1, z));
+                }
             }
         }
     }
@@ -695,44 +793,46 @@ final class VTree {
         return !host.tag("minecraft:replaceable_by_trees").contains(n);
     }
 
-    private void alterGround(VFeature.Canvas canvas, JsonObject dec, VFeature.XWorldgenRandom random, List<Pos> logs) {
+    private void alterGround(VFeature.Canvas canvas, JsonObject dec, VFeature.XWorldgenRandom random,
+                             List<Pos> logs, Set<Pos> decorations) {
         Block provider = ruleState(dec.getAsJsonObject("provider"), canvas, 0, 0, 0);
         if (provider == null || logs.isEmpty()) return;
         int minY = logs.get(0).y;
         for (Pos pos : logs) {
             if (pos.y != minY) continue;
-            placeCircle(canvas, provider, pos.x - 1, pos.y, pos.z - 1);
-            placeCircle(canvas, provider, pos.x + 2, pos.y, pos.z - 1);
-            placeCircle(canvas, provider, pos.x - 1, pos.y, pos.z + 2);
-            placeCircle(canvas, provider, pos.x + 2, pos.y, pos.z + 2);
+            placeCircle(canvas, provider, pos.x - 1, pos.y, pos.z - 1, decorations);
+            placeCircle(canvas, provider, pos.x + 2, pos.y, pos.z - 1, decorations);
+            placeCircle(canvas, provider, pos.x - 1, pos.y, pos.z + 2, decorations);
+            placeCircle(canvas, provider, pos.x + 2, pos.y, pos.z + 2, decorations);
             for (int i = 0; i < 5; i++) {
                 int placement = random.nextInt(64);
                 int xx = placement % 8;
                 int zz = placement / 8;
                 if (xx == 0 || xx == 7 || zz == 0 || zz == 7) {
-                    placeCircle(canvas, provider, pos.x - 3 + xx, pos.y, pos.z - 3 + zz);
+                    placeCircle(canvas, provider, pos.x - 3 + xx, pos.y, pos.z - 3 + zz, decorations);
                 }
             }
         }
     }
 
-    private void placeCircle(VFeature.Canvas canvas, Block provider, int x, int y, int z) {
+    private void placeCircle(VFeature.Canvas canvas, Block provider, int x, int y, int z, Set<Pos> decorations) {
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
                 if (Math.abs(dx) != 2 || Math.abs(dz) != 2) {
-                    placeBlockAt(canvas, provider, x + dx, y, z + dz);
+                    placeBlockAt(canvas, provider, x + dx, y, z + dz, decorations);
                 }
             }
         }
     }
 
-    private void placeBlockAt(VFeature.Canvas canvas, Block provider, int x, int y, int z) {
+    private void placeBlockAt(VFeature.Canvas canvas, Block provider, int x, int y, int z, Set<Pos> decorations) {
         for (int dy = 2; dy >= -3; dy--) {
             int py = y + dy;
             Block current = canvas.get(x, py, z);
             // vanilla AlterGroundDecorator.placeBlockAt: provider rule = replace grass/dirt (podzol provider rule-less)
             if (current != null && (current.name().equals("minecraft:grass_block") || current.name().equals("minecraft:dirt"))) {
                 canvas.set(x, py, z, provider);
+                decorations.add(new Pos(x, py, z));
                 break;
             }
             if (current != null && dy < 0) break;

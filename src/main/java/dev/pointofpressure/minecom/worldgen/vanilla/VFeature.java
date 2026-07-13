@@ -815,9 +815,11 @@ public final class VFeature {
         JsonElement vb = config.get("valid_blocks");
         if (vb.isJsonArray()) for (JsonElement e : vb.getAsJsonArray()) valid.add(e.getAsString());
         else valid.add(vb.getAsString());
-        int rockCount = config.get("rock_count").getAsInt();
-        int holeCount = config.get("hole_count").getAsInt();
-        boolean requiresBelow = config.get("requires_block_below").getAsBoolean();
+        // SpringConfiguration.CODEC defaults, omitted from 26.2's serialized data
+        int rockCount = config.has("rock_count") ? config.get("rock_count").getAsInt() : 4;
+        int holeCount = config.has("hole_count") ? config.get("hole_count").getAsInt() : 1;
+        boolean requiresBelow = !config.has("requires_block_below")
+                || config.get("requires_block_below").getAsBoolean();
         String fluid = config.getAsJsonObject("state").get("Name").getAsString();
         Block state = fluid.equals("minecraft:lava") ? Block.LAVA : Block.WATER;
 
@@ -878,41 +880,49 @@ public final class VFeature {
         JsonObject blocks = config.getAsJsonObject("blocks");
         JsonObject layers = config.getAsJsonObject("layers");
         JsonObject crack = config.getAsJsonObject("crack");
-        int minGenOffset = config.get("min_gen_offset").getAsInt();
-        int maxGenOffset = config.get("max_gen_offset").getAsInt();
-        double noiseMultiplier = config.get("noise_multiplier").getAsDouble();
+        // GeodeConfiguration/GeodeLayerSettings/GeodeCrackSettings codec defaults —
+        // 26.2 omits default-valued fields from the serialized data
+        int minGenOffset = optInt(config, "min_gen_offset", -16);
+        int maxGenOffset = optInt(config, "max_gen_offset", 16);
+        double noiseMultiplier = optDouble(config, "noise_multiplier", 0.05);
         int invalidThreshold = config.get("invalid_blocks_threshold").getAsInt();
-        double useAlternateChance = config.get("use_alternate_layer0_chance").getAsDouble();
-        boolean requireAlternate = config.get("placements_require_layer0_alternate").getAsBoolean();
-        double usePotentialChance = config.get("use_potential_placements_chance").getAsDouble();
+        double useAlternateChance = optDouble(config, "use_alternate_layer0_chance", 0.0);
+        boolean requireAlternate = !config.has("placements_require_layer0_alternate")
+                || config.get("placements_require_layer0_alternate").getAsBoolean();
+        double usePotentialChance = optDouble(config, "use_potential_placements_chance", 0.35);
         Set<String> invalidBlocks = tag(blocks.get("invalid_blocks").getAsString().substring(1));
         Set<String> cannotReplace = tag(blocks.get("cannot_replace").getAsString().substring(1));
 
-        int numPoints = sampleInt(config.get("distribution_points"), random);
-        int outerWallMax = config.getAsJsonObject("outer_wall_distance").get("max_inclusive").getAsInt();
+        JsonElement outerWallDistance = config.has("outer_wall_distance")
+                ? config.get("outer_wall_distance") : uniformJson(4, 5);
+        JsonElement pointOffset = config.has("point_offset")
+                ? config.get("point_offset") : uniformJson(1, 2);
+        int numPoints = sampleInt(config.has("distribution_points")
+                ? config.get("distribution_points") : uniformJson(3, 4), random);
+        int outerWallMax = outerWallDistance.getAsJsonObject().get("max_inclusive").getAsInt();
         double crackSizeAdjustment = (double) numPoints / outerWallMax;
-        double innerAir = 1.0 / Math.sqrt(layers.get("filling").getAsDouble());
-        double innermostBlockLayer = 1.0 / Math.sqrt(layers.get("inner_layer").getAsDouble() + crackSizeAdjustment);
-        double innerCrust = 1.0 / Math.sqrt(layers.get("middle_layer").getAsDouble() + crackSizeAdjustment);
-        double outerCrust = 1.0 / Math.sqrt(layers.get("outer_layer").getAsDouble() + crackSizeAdjustment);
-        double crackSize = 1.0 / Math.sqrt(crack.get("base_crack_size").getAsDouble()
+        double innerAir = 1.0 / Math.sqrt(optDouble(layers, "filling", 1.7));
+        double innermostBlockLayer = 1.0 / Math.sqrt(optDouble(layers, "inner_layer", 2.2) + crackSizeAdjustment);
+        double innerCrust = 1.0 / Math.sqrt(optDouble(layers, "middle_layer", 3.2) + crackSizeAdjustment);
+        double outerCrust = 1.0 / Math.sqrt(optDouble(layers, "outer_layer", 4.2) + crackSizeAdjustment);
+        double crackSize = 1.0 / Math.sqrt(optDouble(crack, "base_crack_size", 2.0)
                 + random.nextDouble() / 2.0 + (numPoints > 3 ? crackSizeAdjustment : 0.0));
-        boolean shouldGenerateCrack = random.nextFloat() < crack.get("generate_crack_chance").getAsFloat();
-        int crackPointOffset = crack.get("crack_point_offset").getAsInt();
+        boolean shouldGenerateCrack = random.nextFloat() < (float) optDouble(crack, "generate_crack_chance", 1.0);
+        int crackPointOffset = optInt(crack, "crack_point_offset", 2);
 
         List<long[]> points = new ArrayList<>(); // {x, y, z, pointOffset}
         int numInvalid = 0;
         for (int i = 0; i < numPoints; i++) {
-            int dx = sampleInt(config.get("outer_wall_distance"), random);
-            int dy = sampleInt(config.get("outer_wall_distance"), random);
-            int dz = sampleInt(config.get("outer_wall_distance"), random);
+            int dx = sampleInt(outerWallDistance, random);
+            int dy = sampleInt(outerWallDistance, random);
+            int dz = sampleInt(outerWallDistance, random);
             int px = ox + dx, py = oy + dy, pz = oz + dz;
             Block state = canvas.get(px, py, pz);
             String name = state == null ? "minecraft:air" : state.name();
             if (state == null || invalidBlocks.contains(name)) {
                 if (++numInvalid > invalidThreshold) return;
             }
-            points.add(new long[]{px, py, pz, sampleInt(config.get("point_offset"), random)});
+            points.add(new long[]{px, py, pz, sampleInt(pointOffset, random)});
         }
 
         List<int[]> crackPoints = new ArrayList<>();
@@ -1073,6 +1083,24 @@ public final class VFeature {
     }
 
     /** IntProvider: constant / uniform / others unimplemented. */
+    /** Optional-with-default codec fields, omitted by 26.2's serializer when at the default. */
+    static int optInt(JsonObject o, String field, int def) {
+        return o.has(field) ? o.get(field).getAsInt() : def;
+    }
+
+    static double optDouble(JsonObject o, String field, double def) {
+        return o.has(field) ? o.get(field).getAsDouble() : def;
+    }
+
+    /** UniformInt.of(min, max) in IntProvider JSON form, for defaulted provider fields. */
+    static JsonObject uniformJson(int min, int max) {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "minecraft:uniform");
+        o.addProperty("min_inclusive", min);
+        o.addProperty("max_inclusive", max);
+        return o;
+    }
+
     static int sampleInt(JsonElement json, XWorldgenRandom random) {
         if (json.isJsonPrimitive()) return json.getAsInt();
         JsonObject o = json.getAsJsonObject();

@@ -129,7 +129,7 @@ public final class VNaturalSpawner {
             // monsters
             "minecraft:zombie", "minecraft:skeleton", "minecraft:creeper", "minecraft:spider",
             "minecraft:husk", "minecraft:drowned", "minecraft:zombie_villager", "minecraft:stray",
-            "minecraft:bogged", "minecraft:slime",
+            "minecraft:bogged", "minecraft:slime", "minecraft:sulfur_cube", "minecraft:cave_spider",
             "minecraft:zombified_piglin", "minecraft:magma_cube", "minecraft:enderman",
             "minecraft:piglin", "minecraft:hoglin",
             // creatures

@@ -353,8 +353,20 @@ public final class LootTables {
             case "entity_properties" -> {
                 JsonObject predicate = cond.getAsJsonObject("predicate");
                 if (predicate == null) yield true;
-                if (predicate.has("type_specific")) {
-                    JsonObject typeSpecific = predicate.getAsJsonObject("type_specific");
+                // 26.2 flattened EntityPredicate sub-predicates: the single
+                // "type_specific": {"type": "minecraft:slime", ...} wrapper became
+                // dispatch keys like "minecraft:type_specific/cube_mob": {...}
+                JsonObject typeSpecific = predicate.has("type_specific")
+                        ? predicate.getAsJsonObject("type_specific") : null;
+                if (typeSpecific == null) {
+                    for (var e : predicate.entrySet()) {
+                        if (e.getKey().startsWith("minecraft:type_specific/")) {
+                            typeSpecific = e.getValue().getAsJsonObject();
+                            break;
+                        }
+                    }
+                }
+                if (typeSpecific != null) {
                     if (typeSpecific.has("in_open_water")) {
                         yield typeSpecific.get("in_open_water").getAsBoolean() == ctx.openWater();
                     }
@@ -362,7 +374,7 @@ public final class LootTables {
                         yield sizeMatches(typeSpecific.get("size"), ctx.entitySize());
                     }
                 }
-                yield !predicate.has("vehicle");
+                yield !predicate.has("vehicle") && !predicate.has("minecraft:vehicle");
             }
             default -> false; // unknown (incl. enchantment-based): behave like unenchanted vanilla
         };

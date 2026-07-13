@@ -33,14 +33,16 @@
    the tree, that is what this exists to replace. Restore is a plain `cp`
    back from the dated directory.
 7. **Decompiling new reference classes** (26.x is unobfuscated): extract
-   the `.class` files from `~/versions/26.1.2/server-26.1.2.jar` into a
+   the `.class` files from `~/mc-26.2/versions/26.2/server-26.2.jar` into a
    temp dir, run `java -jar vanilla-src/tools/vineflower.jar <classdir>
    <outdir>`, and cache the resulting `.java` under the matching
    `vanilla-src/net/...` path so the next session finds it. Check
-   `vanilla-src/` first — don't re-decompile what's already cached.
+   `vanilla-src/` first — don't re-decompile what's already cached, BUT
+   cached files predating the 2026-07-13 26.2 bump are 26.1.2 decompiles:
+   re-decompile any class you port worldgen behavior against.
 8. **Bundled vanilla data (`src/main/resources/vanilla/`) is regenerated,
    never hand-edited.** `scripts/extract_vanilla_data.py --validate`
-   rebuilds all 1,476 jar-derived files from the server jar and proves the
+   rebuilds all 1,486 jar-derived files from the server jar and proves the
    result (per-file provenance in its docstring). If a data file looks
    wrong, fix the extractor and regenerate; a version bump re-runs it
    against the new jar.

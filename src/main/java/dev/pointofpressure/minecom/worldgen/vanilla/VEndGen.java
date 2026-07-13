@@ -209,8 +209,8 @@ public final class VEndGen implements Generator {
     }
 
     private static GenerationUnit fakeUnit(int cx, int cz, Consumer<Block> tally) {
-        Point start = new Vec(cx << 4, 0, cz << 4);
-        Point size = new Vec(16, HEIGHT, 16);
+        var start = new net.minestom.server.coordinate.BlockVec(cx << 4, 0, cz << 4);
+        var size = new net.minestom.server.coordinate.BlockVec(16, HEIGHT, 16);
         return new GenerationUnit() {
             public UnitModifier modifier() {
                 return new UnitModifier() {
@@ -225,9 +225,9 @@ public final class VEndGen implements Generator {
                     public void setBiome(int x, int y, int z, RegistryKey<Biome> biome) { }
                 };
             }
-            public Point size() { return size; }
-            public Point absoluteStart() { return start; }
-            public Point absoluteEnd() { return start.add(size); }
+            public net.minestom.server.coordinate.BlockVec size() { return size; }
+            public net.minestom.server.coordinate.BlockVec absoluteStart() { return start; }
+            public net.minestom.server.coordinate.BlockVec absoluteEnd() { return start.add(size); }
             public GenerationUnit fork(Point a, Point b) { throw new UnsupportedOperationException(); }
             public void fork(Consumer<Block.Setter> c) { }
         };

@@ -41,11 +41,24 @@ public final class Explosions {
 
     public static void explode(Instance instance, Point center, float power,
                                double dropChance, Entity source) {
-        explode(instance, center, power, dropChance, source, false);
+        explode(instance, center, power, dropChance, source, false, null);
     }
 
     public static void explode(Instance instance, Point center, float power,
                                double dropChance, Entity source, boolean charged) {
+        explode(instance, center, power, dropChance, source, charged, null);
+    }
+
+    /**
+     * @param exclude entity the blast never damages — vanilla exploders mark
+     *                themselves dead before detonating (Creeper.explodeCreeper:
+     *                {@code this.dead = true; level.explode(...)}), which this
+     *                models explicitly. Distinct from {@code source}: a ghast
+     *                CAN be killed by its own deflected fireball (source is the
+     *                shooter for attribution, not the exploding entity).
+     */
+    public static void explode(Instance instance, Point center, float power,
+                               double dropChance, Entity source, boolean charged, Entity exclude) {
         dev.pointofpressure.minecom.redstone.Vibrations.emit("explode", center, source);
         Set<Long> destroyed = new HashSet<>();
         double cx = center.x(), cy = center.y(), cz = center.z();
@@ -97,6 +110,7 @@ public final class Explosions {
 
         double range = power * 2;
         for (Entity entity : instance.getEntities()) {
+            if (entity == exclude) continue;
             if (!(entity instanceof LivingEntity living) || living.isDead()) continue;
             double dist = living.getPosition().distance(center);
             if (dist >= range) continue;

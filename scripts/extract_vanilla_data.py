@@ -3,8 +3,9 @@
 
 Reconstructed 2026-07-13 (26.2-upgrade step 1, docs/MASTERPLAN.md section 6): past
 sessions extracted the bundled tree by hand with no surviving script; this file is
-the reproducible replacement. Validated 100% against the bundled 26.1.2 tree
-(JSON compared semantically, .nbt byte-identical) via --validate.
+the reproducible replacement. Originally validated 100% against the bundled
+26.1.2 tree (JSON compared semantically, .nbt byte-identical) via --validate;
+since the 2026-07-13 bump the bundled tree and default jar are 26.2.
 
 Usage:
     python3 scripts/extract_vanilla_data.py [--jar JAR] [--out DIR]
@@ -126,7 +127,7 @@ import tempfile
 import zipfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_JAR = os.path.expanduser("~/versions/26.1.2/server-26.1.2.jar")
+DEFAULT_JAR = os.path.expanduser("~/mc-26.2/versions/26.2/server-26.2.jar")
 DEFAULT_OUT = os.path.join(REPO_ROOT, "src", "main", "resources", "vanilla")
 CACHE_ROOT = os.path.expanduser("~/.cache/minecom")
 

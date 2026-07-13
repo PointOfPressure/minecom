@@ -162,7 +162,8 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.Minecarts.register(events);
         dev.pointofpressure.minecom.blocks.Boats.register(events);
         // sneak dismounts from any vehicle (boat, minecart, ...)
-        events.addListener(net.minestom.server.event.player.PlayerStartSneakingEvent.class, e -> {
+        events.addListener(net.minestom.server.event.player.PlayerInputEvent.class, e -> {
+            if (!e.hasPressedShiftKey()) return;
             var vehicle = e.getPlayer().getVehicle();
             if (vehicle != null) vehicle.removePassenger(e.getPlayer());
         });
