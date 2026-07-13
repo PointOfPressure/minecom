@@ -8,3 +8,4 @@ dependency-reduced-pom.xml
 
 # Decompiled Mojang source (reference-only, never redistribute — see project license notes)
 vanilla-src/
+__pycache__/
