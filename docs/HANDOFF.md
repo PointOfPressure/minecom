@@ -14,6 +14,59 @@ of what got escalated and why.
 
 ---
 
+## Dungeons landed (2026-07-14, Sonnet 5) — v0.20.0, closes the last classic-spawner gap
+
+`VFeature.placeMonsterRoom`, decompile-verified against 26.2's `MonsterRoomFeature` (re-
+decompiled fresh — the cached copy predated the 2026-07-13 26.2 bump; `StructurePiece` and
+`Feature` were also re-decompiled for `reorient`/`safeSetBlock`, same reason). This was the one
+gap the previous session's classic-spawner work (`ClassicSpawners.java`, see the entry below)
+explicitly left open: minecom had no generated dungeon feature at all — no carving, no room, no
+chest, no spawner — dungeons were never implemented as worldgen, not merely undecorated.
+
+- **No new data needed.** `placed_features.json` already bundled `minecraft:monster_room`
+  (count 10) and `minecraft:monster_room_deep` (count 4), and `loot_chests.json` already had
+  `chests/simple_dungeon` — only the `monster_room` configured-feature TYPE was unhandled in
+  `VFeature.placeConfigured`'s dispatch switch (fell through the silent `default -> {}`).
+- **Full port**: the real validity gate (1-5 air-pocket openings at floor level via a paired
+  dy=0/dy=1 empty check, AND a fully solid floor at dy=-1 and ceiling at dy=4 across the whole
+  footprint — no partial rooms), the wall-carve pass (cobblestone skin, 25%-at-floor mossy
+  cobblestone, an unconditional unsupported-wall trim distinct from the safeSetBlock-gated skin
+  pass), 0-2 loot chests via `StructurePiece.reorient` (ported faithfully, including its
+  distinct `isSolidRender`-equivalent predicate — Minestom's `Block.registry().occludes()` —
+  which is NOT the same predicate as the wallCount check's plain `isSolid()`; both kept
+  separate, not merged), and the center spawner rolled uniformly from
+  `{skeleton, zombie, zombie, spider}` (doubled zombie is real vanilla, not a bug — 50/25/25).
+- **Reuse over fork**: chest loot goes through the exact same `Containers.registerLoot`
+  pending-loot-table registry every other structure's containers use (stronghold library,
+  igloo lab chest, jungle temple, ...), and the spawner goes through the exact same
+  `ClassicSpawners.registerSpawnerOverworld` one-liner the previous session's HANDOFF entry
+  predicted ("a two-line call away once dungeons exist").
+- **Test hooks added** (none of them change production behavior, all `public` additions purely
+  for PlayTest to drive real generation end to end, same precedent as
+  `VStructureManager.testRenderMineshaftSpiderCorridor`): `VFeature.testPlaceMonsterRoom`,
+  `VFeature.testRandom` (+ making `XWorldgenRandom.nextInt` public), `VanillaGen.features()`,
+  `Containers.testPendingLoot`, `ClassicSpawners.testEntityId`.
+- **Verification**: one new PlayTest scenario (`scenarioDungeon`, 6 checks). Since dungeons
+  require pre-existing solid terrain to carve into (unlike mineshaft's fully-open carve, which
+  needs no real terrain), the scenario hand-carves a generous solid-stone box in the live
+  flat-world instance and predicts each candidate seed's `xr`/`zr` roll via a throwaway
+  `XWorldgenRandom` seeded identically to the one that actually drives placement (both are pure
+  functions of the seed, so the prediction is exact) — this lets the carve guarantee the
+  validity gate passes deterministically rather than hoping a natural chunk contains one, while
+  still exercising the real, unmodified production code path end to end. 80 seeds tried on the
+  same spot: 80/80 placed, all 80 registered a valid skeleton/zombie/spider entity id
+  (zombie=39/skeleton=22/spider=19 — matches the expected ~50/25/25 split), at least one seed
+  also rolled a chest, and that chest's armed loot table was confirmed
+  `minecraft:chests/simple_dungeon`. Full suites: **SelfTest 228/228, PlayTest 713/713** (was
+  707 — +6 new checks), both clean, no DIAG silk, no regressions in the classic-spawner or
+  mineshaft scenarios re-run alongside.
+- **Region-diff**: 99.361284% (seed 20260708, radius 18, 1,296 chunks / 127,401,984 blocks) —
+  **up from the 99.3554% baseline**, confirming dungeons now generate correctly rather than
+  leaving pre-existing terrain where vanilla would have carved a room. No dungeon-related block
+  types (spawner/chest/cobblestone/mossy_cobblestone) appear in the mismatch breakdown.
+
+---
+
 ## Classic mob spawner block entities landed (2026-07-14, Sonnet 5) — MASTERPLAN §3 Tier 1 item 2, v0.19.0
 
 `ClassicSpawners.java`, decompile-verified against 26.2's `BaseSpawner`/

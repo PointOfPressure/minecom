@@ -221,6 +221,7 @@ public final class PlayTest {
         scenario("difficulty: peaceful nullifies mobs and hunger, easy/hard scale damage, hard calls zombie reinforcements", PlayTest::scenarioDifficulty);
         scenario("trial chambers: the spawner runs a full wave trial and ejects rewards, the vault unlocks once per player with a trial key, wind charges burst, progress survives a save/wipe/reload", PlayTest::scenarioTrialChamber);
         scenario("classic spawner: player-range activation, spawn bursts, light-gate reuse, nearby-entity cap, XP-only breaking, definition persistence, and a real mineshaft spider-corridor render", PlayTest::scenarioClassicSpawner);
+        scenario("dungeon: MonsterRoomFeature carves a real room, places a chest against the simple_dungeon loot table, and wires its spawner to ClassicSpawners", PlayTest::scenarioDungeon);
         scenario("boat: sneak dismounts the rider, attacking breaks it and drops the item", PlayTest::scenarioBoatBreakAndDismount);
         scenario("chest boat: sneak-click opens its 27-slot inventory instead of riding, breaking spills contents", PlayTest::scenarioChestBoat);
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
@@ -4440,6 +4441,111 @@ public final class PlayTest {
 
         clearEntitiesExceptPlayer();
         dev.pointofpressure.minecom.Difficulty.set(savedDifficulty);
+    }
+
+    /**
+     * Drives {@code VFeature.testPlaceMonsterRoom} — real production dungeon-generation code,
+     * not a stub — against a hand-carved solid-stone room in the live world. Each candidate
+     * seed's xr/zr roll is predicted first via a throwaway {@code XWorldgenRandom} seeded
+     * identically to the one that actually drives placement (both are pure functions of the
+     * seed, so the prediction is exact), which lets the carve guarantee the validity gate's
+     * air-pocket-count and solid-floor/ceiling requirements pass deterministically rather than
+     * hoping a natural chunk happens to contain one. Several seeds are tried on the same spot so
+     * a chest-bearing roll (exercising the loot-table wiring) and a decent sample for the
+     * skeleton/zombie/zombie/spider mob-weight distribution both show up without depending on
+     * any single seed's luck.
+     */
+    private static void scenarioDungeon() {
+        clearEntitiesExceptPlayer();
+        var natRules = new dev.pointofpressure.minecom.mobs.VNaturalSpawner(world, (x, y, z) -> "minecraft:plains");
+        dev.pointofpressure.minecom.blocks.ClassicSpawners.registerInstance(world, natRules);
+
+        int dby = Y - 20;
+        int dsx = 400, dsz = 400;
+
+        dev.pointofpressure.minecom.worldgen.vanilla.VFeature.Canvas dungeonCanvas =
+                new dev.pointofpressure.minecom.worldgen.vanilla.VFeature.Canvas() {
+                    public Block get(int x, int y, int z) {
+                        Block b = world.getBlock(x, y, z);
+                        return b.isAir() ? null : b;
+                    }
+                    public void set(int x, int y, int z, Block b) {
+                        world.setBlock(x, y, z, b == null ? Block.AIR : b);
+                    }
+                    public int oceanFloorHeight(int x, int z) { return 0; }
+                    public int worldSurfaceHeight(int x, int z) { return 0; }
+                };
+
+        // VFeature's tag/JSON data don't depend on the seed this generator was built with —
+        // testPlaceMonsterRoom takes its own XWorldgenRandom per call — so one VanillaGen is
+        // reused across every trial instead of rebuilding (and re-parsing its worldgen JSON) 80 times.
+        var gen = new dev.pointofpressure.minecom.worldgen.vanilla.VanillaGen(1L);
+        var features = gen.features();
+
+        boolean anyPlaced = false;
+        boolean chestSeen = false;
+        java.util.Map<String, Integer> mobTally = new java.util.HashMap<>();
+        int trials = 0;
+
+        for (long trySeed = 20260714_001L; trySeed < 20260714_001L + 80; trySeed++) {
+            var probe = dev.pointofpressure.minecom.worldgen.vanilla.VFeature.testRandom(trySeed);
+            int xr = probe.nextInt(2) + 2;
+            probe.nextInt(2); // zr — not needed to pick the opening face, but must be drawn to keep the probe's own state irrelevant beyond xr
+            int maxX = xr + 1;
+
+            for (int dx = -5; dx <= 5; dx++) {
+                for (int dz = -5; dz <= 5; dz++) {
+                    for (int dy = -2; dy <= 5; dy++) {
+                        world.setBlock(dsx + dx, dby + dy, dsz + dz, Block.STONE);
+                    }
+                }
+            }
+            world.setBlock(dsx + maxX, dby, dsz, Block.CAVE_AIR);
+            world.setBlock(dsx + maxX, dby + 1, dsz, Block.CAVE_AIR);
+
+            var actual = dev.pointofpressure.minecom.worldgen.vanilla.VFeature.testRandom(trySeed);
+            boolean ok = features.testPlaceMonsterRoom(dungeonCanvas, actual, dsx, dby, dsz);
+            if (!ok) continue;
+            trials++;
+            anyPlaced = true;
+
+            String entityId = dev.pointofpressure.minecom.blocks.ClassicSpawners.testEntityId(world, dsx, dby, dsz);
+            if (entityId != null) mobTally.merge(entityId, 1, Integer::sum);
+
+            if (!chestSeen) {
+                outer:
+                for (int dx = -5; dx <= 5; dx++) {
+                    for (int dz = -5; dz <= 5; dz++) {
+                        if (world.getBlock(dsx + dx, dby, dsz + dz).name().equals("minecraft:chest")) {
+                            chestSeen = true;
+                            String table = dev.pointofpressure.minecom.blocks.Containers.testPendingLoot(
+                                    new Vec(dsx + dx, dby, dsz + dz));
+                            check("dungeon: the chest's armed loot table is minecraft:chests/simple_dungeon (got " + table + ")",
+                                    "minecraft:chests/simple_dungeon".equals(table));
+                            break outer;
+                        }
+                    }
+                }
+            }
+        }
+
+        check("dungeon: MonsterRoomFeature validity gate accepts a real solid room with exactly one air-pocket opening ("
+                + trials + "/80 seeds placed)", anyPlaced);
+        check("dungeon: the origin spawner is registered with ClassicSpawners after a successful placement",
+                anyPlaced && dev.pointofpressure.minecom.blocks.ClassicSpawners.testHasSpawner(world, dsx, dby, dsz));
+        check("dungeon: at least one of the tried seeds also placed a loot chest", chestSeen);
+
+        int zombie = mobTally.getOrDefault("minecraft:zombie", 0);
+        int skeleton = mobTally.getOrDefault("minecraft:skeleton", 0);
+        int spider = mobTally.getOrDefault("minecraft:spider", 0);
+        int total = zombie + skeleton + spider;
+        check("dungeon: every registered spawner mob is one of skeleton/zombie/spider (" + total + "/" + trials + " accounted for)",
+                total == trials && total > 0);
+        check("dungeon: mob weights favor zombie 2:1 over skeleton and spider individually (MOBS={skeleton,zombie,zombie,spider}) — "
+                        + "zombie=" + zombie + " skeleton=" + skeleton + " spider=" + spider,
+                total >= 20 && zombie > skeleton && zombie > spider);
+
+        clearEntitiesExceptPlayer();
     }
 
     /** Carves a fully-enclosed 11x11x5 dark room (walls/floor/roof solid, interior air) centered at (cx, by+1, cz) — large enough to contain BaseSpawner's default spawnRange=4 roll. */

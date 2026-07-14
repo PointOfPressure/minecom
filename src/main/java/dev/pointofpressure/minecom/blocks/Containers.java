@@ -55,6 +55,11 @@ public final class Containers {
         PENDING_LOOT.put(posKey(pos), lootTablePath);
     }
 
+    /** Test hook: the pending loot table path armed for a position, or null if none. */
+    public static String testPendingLoot(Point pos) {
+        return PENDING_LOOT.get(posKey(pos));
+    }
+
     /**
      * ChestBlockEntity/ContainerOpenersCounter's actionId-1 "viewer count" BlockActionPacket:
      * this is what actually drives the client-side lid-opening animation — {@code

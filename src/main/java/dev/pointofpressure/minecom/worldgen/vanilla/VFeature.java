@@ -343,6 +343,7 @@ public final class VFeature {
                 int pick = random.nextInt(list.size());
                 placeNestedPlaced(canvas, list.get(pick), random, x, y, z);
             }
+            case "monster_room" -> placeMonsterRoom(canvas, random, x, y, z);
             default -> { } // unimplemented feature type
         }
     }
@@ -607,6 +608,175 @@ public final class VFeature {
         } else {
             canvas.set(x, y, z, state);
         }
+    }
+
+    // ------------------------------------------------------------------ monster room (dungeon)
+
+    private static final String[] MONSTER_ROOM_MOBS = {
+            "minecraft:skeleton", "minecraft:zombie", "minecraft:zombie", "minecraft:spider"
+    };
+
+    /**
+     * MonsterRoomFeature.place (decompile-verified against 26.2, cached at
+     * vanilla-src/net/minecraft/world/level/levelgen/feature/MonsterRoomFeature.java): the
+     * classic "dungeon" — a small cobble/mossy-cobblestone room carved from existing solid
+     * terrain, validity-gated on a real air-pocket count (1-5 side openings at floor level, AND
+     * a solid floor at dy=-1 and ceiling at dy=4 across the whole footprint — no partial rooms),
+     * 0-2 loot chests (facing chosen via {@link #mrReorientChest}, ported from
+     * StructurePiece.reorient, decompile-verified at
+     * vanilla-src/net/minecraft/world/level/levelgen/structure/StructurePiece.java), and a
+     * center spawner rolled uniformly from {skeleton, zombie, zombie, spider} (the doubled
+     * zombie entry is real vanilla, not a bug — {@code Util.getRandom} on a 4-element array with
+     * two zombie slots, i.e. zombie 50% / skeleton 25% / spider 25%). Placement (count/height
+     * range) comes from the already-bundled {@code minecraft:monster_room} /
+     * {@code minecraft:monster_room_deep} placed features (placed_features.json) — no new
+     * worldgen data was needed, only this feature-type handler.
+     */
+    private boolean placeMonsterRoom(Canvas canvas, XWorldgenRandom random, int ox, int oy, int oz) {
+        Set<String> cannotReplace = tag("minecraft:features_cannot_replace");
+        int xr = random.nextInt(2) + 2;
+        int minX = -xr - 1, maxX = xr + 1;
+        int zr = random.nextInt(2) + 2;
+        int minZ = -zr - 1, maxZ = zr + 1;
+        int holeCount = 0;
+
+        for (int dx = minX; dx <= maxX; dx++) {
+            for (int dy = -1; dy <= 4; dy++) {
+                for (int dz = minZ; dz <= maxZ; dz++) {
+                    int hx = ox + dx, hy = oy + dy, hz = oz + dz;
+                    boolean solid = mrSolid(canvas, hx, hy, hz);
+                    if (dy == -1 && !solid) return false;
+                    if (dy == 4 && !solid) return false;
+                    if ((dx == minX || dx == maxX || dz == minZ || dz == maxZ) && dy == 0
+                            && canvas.get(hx, hy, hz) == null && canvas.get(hx, hy + 1, hz) == null) {
+                        holeCount++;
+                    }
+                }
+            }
+        }
+        if (holeCount < 1 || holeCount > 5) return false;
+
+        for (int dx = minX; dx <= maxX; dx++) {
+            for (int dy = 3; dy >= -1; dy--) {
+                for (int dz = minZ; dz <= maxZ; dz++) {
+                    int wx = ox + dx, wy = oy + dy, wz = oz + dz;
+                    Block wallState = canvas.get(wx, wy, wz);
+                    boolean edge = dx == minX || dy == -1 || dz == minZ || dx == maxX || dy == 4 || dz == maxZ;
+                    if (edge) {
+                        if (wy >= MIN_Y && !mrSolid(canvas, wx, wy - 1, wz)) {
+                            canvas.set(wx, wy, wz, Block.CAVE_AIR); // unconditional — matches real level.setBlock, not safeSetBlock
+                        } else if (wallState != null && wallState.isSolid() && !mrIsChest(wallState)) {
+                            if (dy == -1 && random.nextInt(4) != 0) {
+                                mrSafeSet(canvas, wx, wy, wz, Block.MOSSY_COBBLESTONE, cannotReplace);
+                            } else {
+                                mrSafeSet(canvas, wx, wy, wz, Block.COBBLESTONE, cannotReplace);
+                            }
+                        }
+                    } else if (!mrIsChest(wallState) && !mrIsSpawner(wallState)) {
+                        mrSafeSet(canvas, wx, wy, wz, Block.CAVE_AIR, cannotReplace);
+                    }
+                }
+            }
+        }
+
+        for (int cc = 0; cc < 2; cc++) {
+            for (int i = 0; i < 3; i++) {
+                int xc = ox + random.nextInt(xr * 2 + 1) - xr;
+                int zc = oz + random.nextInt(zr * 2 + 1) - zr;
+                if (canvas.get(xc, oy, zc) == null) {
+                    int wallCount = 0;
+                    if (mrSolid(canvas, xc + 1, oy, zc)) wallCount++;
+                    if (mrSolid(canvas, xc - 1, oy, zc)) wallCount++;
+                    if (mrSolid(canvas, xc, oy, zc + 1)) wallCount++;
+                    if (mrSolid(canvas, xc, oy, zc - 1)) wallCount++;
+                    if (wallCount == 1) {
+                        Block chest = mrReorientChest(canvas, xc, oy, zc);
+                        if (mrSafeSet(canvas, xc, oy, zc, chest, cannotReplace)) {
+                            dev.pointofpressure.minecom.blocks.Containers.registerLoot(
+                                    new net.minestom.server.coordinate.Vec(xc, oy, zc), "minecraft:chests/simple_dungeon");
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (mrSafeSet(canvas, ox, oy, oz, Block.SPAWNER, cannotReplace)) {
+            String entityId = MONSTER_ROOM_MOBS[random.nextInt(MONSTER_ROOM_MOBS.length)];
+            dev.pointofpressure.minecom.blocks.ClassicSpawners.registerSpawnerOverworld(ox, oy, oz, entityId);
+        }
+        return true;
+    }
+
+    /** Test hook: exposes {@link #placeMonsterRoom} to PlayTest so it can drive real dungeon
+     *  generation end to end (validity gate, wall carve, chest loot, spawner registration)
+     *  against a hand-built or world-backed {@link Canvas}, the same way
+     *  {@code VStructureManager.testRenderMineshaftSpiderCorridor} exposes mineshaft placement. */
+    public boolean testPlaceMonsterRoom(Canvas canvas, XWorldgenRandom random, int x, int y, int z) {
+        return placeMonsterRoom(canvas, random, x, y, z);
+    }
+
+    /** Test hook: a fresh, deterministically-seeded {@link XWorldgenRandom} for PlayTest to
+     *  drive (and, via a throwaway probe instance with the same seed, predict) feature RNG. */
+    public static XWorldgenRandom testRandom(long seed) {
+        return new XWorldgenRandom(seed);
+    }
+
+    private static boolean mrSolid(Canvas canvas, int x, int y, int z) {
+        Block b = canvas.get(x, y, z);
+        return b != null && b.isSolid();
+    }
+
+    private static boolean mrOccludes(Canvas canvas, int x, int y, int z) {
+        Block b = canvas.get(x, y, z);
+        return b != null && b.registry().occludes();
+    }
+
+    private static boolean mrIsChest(Block b) {
+        return b != null && b.name().equals("minecraft:chest");
+    }
+
+    private static boolean mrIsSpawner(Block b) {
+        return b != null && b.name().equals("minecraft:spawner");
+    }
+
+    /** Feature.safeSetBlock: only overwrite a position whose current block is NOT tagged
+     *  minecraft:features_cannot_replace. Returns whether the write happened, so callers can
+     *  gate follow-up state (chest loot table, spawner mob id) the same way real vanilla gates
+     *  on the block entity actually having been placed. */
+    private boolean mrSafeSet(Canvas canvas, int x, int y, int z, Block block, Set<String> cannotReplace) {
+        Block current = canvas.get(x, y, z);
+        String name = current == null ? "minecraft:air" : current.name();
+        if (cannotReplace.contains(name)) return false;
+        canvas.set(x, y, z, block);
+        return true;
+    }
+
+    /** StructurePiece.reorient (decompile-verified): face the chest away from its single
+     *  occluding (isSolidRender-equivalent — Minestom's registry().occludes()) horizontal
+     *  neighbor; with zero or 2+ occluding neighbors, or any neighbor already a chest (returned
+     *  unmodified, default north-facing), probe a fixed north/opposite/clockwise/opposite
+     *  sequence instead. isSolidRender is deliberately distinct from the plain isSolid() used by
+     *  the wallCount check above — both ported faithfully, not merged. */
+    private Block mrReorientChest(Canvas canvas, int x, int y, int z) {
+        Block chest = Block.CHEST;
+        VTemplate.Dir solidNeighbor = null;
+        for (VTemplate.Dir dir : new VTemplate.Dir[]{VTemplate.Dir.NORTH, VTemplate.Dir.SOUTH, VTemplate.Dir.WEST, VTemplate.Dir.EAST}) {
+            Block neighbor = canvas.get(x + dir.dx, y, z + dir.dz);
+            if (mrIsChest(neighbor)) return chest;
+            if (neighbor != null && neighbor.registry().occludes()) {
+                if (solidNeighbor != null) { solidNeighbor = null; break; }
+                solidNeighbor = dir;
+            }
+        }
+        if (solidNeighbor != null) {
+            return chest.withProperty("facing", solidNeighbor.opposite().name().toLowerCase());
+        }
+        VTemplate.Dir lockDir = VTemplate.Dir.NORTH;
+        if (mrOccludes(canvas, x + lockDir.dx, y, z + lockDir.dz)) lockDir = lockDir.opposite();
+        if (mrOccludes(canvas, x + lockDir.dx, y, z + lockDir.dz)) lockDir = lockDir.clockWiseY();
+        if (mrOccludes(canvas, x + lockDir.dx, y, z + lockDir.dz)) lockDir = lockDir.opposite();
+        return chest.withProperty("facing", lockDir.name().toLowerCase());
     }
 
     // ------------------------------------------------------------------ ore
@@ -1210,7 +1380,7 @@ public final class VFeature {
             return (int) (source.nextLong() >>> 64 - bits);
         }
 
-        int nextInt(int bound) {
+        public int nextInt(int bound) {
             if ((bound & bound - 1) == 0) return (int) ((long) bound * next(31) >> 31);
             int sample, modulo;
             do {

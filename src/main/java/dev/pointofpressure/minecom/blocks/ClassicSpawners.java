@@ -202,6 +202,14 @@ public final class ClassicSpawners {
         return SPAWNERS.getOrDefault(instance, Map.of()).containsKey(pack(x, y, z));
     }
 
+    /** Test hook: the registered mob entity id at this position (its first/only spawnPotentials
+     *  entry, matching how every current integration point calls {@link #registerSpawner} with a
+     *  single-mob-type list), or null if none is registered. */
+    public static String testEntityId(Instance instance, int x, int y, int z) {
+        Data d = SPAWNERS.getOrDefault(instance, Map.of()).get(pack(x, y, z));
+        return d == null || d.spawnPotentials.isEmpty() ? null : d.spawnPotentials.get(0).entityId();
+    }
+
     /** Marks which registered {@link #registerInstance} dimension is the Overworld/Nether, for the two convenience overloads below. */
     public static void designateDimensions(Instance overworld, Instance nether) {
         overworldInstance = overworld;

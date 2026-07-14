@@ -88,6 +88,11 @@ public final class VanillaGen implements Generator {
         return structures;
     }
 
+    /** Biome decoration layer (ore/tree/vegetation/monster_room/... configured features). */
+    public VFeature features() {
+        return features;
+    }
+
     /** Cached undecorated chunk (shape + surface + carve). */
     public VSurface.ChunkData cachedData(int chunkX, int chunkZ) {
         long key = ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);

@@ -718,12 +718,17 @@ leftovers.
   nether fortress blaze (`NetherGen.fortress`, one fixed position — the
   platform is already a documented stand-in, not a real piece-tree, so there
   was no real per-piece spawner slot to port). Full detail in HANDOFF.md
-  (search "classic spawner", 2026-07-14). **Still open: dungeons** — this
-  project has NO generated dungeon feature at all (no carving/room/chest/
-  spawner placement anywhere; confirmed by grep, not merely undecorated) — a
-  new `DungeonFeature` port is a prerequisite before dungeons can use the now-
-  ready spawner system. (S once dungeons themselves exist — the spawner side
-  is a two-line `ClassicSpawners.registerSpawner` call away)
+  (search "classic spawner", 2026-07-14). ~~Still open: dungeons~~ **done
+  2026-07-14 (Sonnet, v0.20.0)** — `VFeature.placeMonsterRoom` (decompile-
+  verified against 26.2's `MonsterRoomFeature`) now handles the
+  `minecraft:monster_room`/`minecraft:monster_room_deep` configured features
+  that were already bundled in placed_features.json but silently skipped
+  (unhandled feature type, not missing data): validity gate, cobble/mossy-
+  cobble wall carve, 0-2 loot chests against `chests/simple_dungeon` via
+  `StructurePiece.reorient`, and the center spawner (skeleton/zombie/zombie/
+  spider) via the now-ready `ClassicSpawners.registerSpawnerOverworld` — the
+  predicted one-liner. Full detail in HANDOFF.md (search "Dungeons landed",
+  2026-07-14). Region-diff moved up 99.3554% -> 99.361284%.
 - VStructureManager.java:1962 — jungle temple: "hidden lever-and-piston vault"
   — dispenser traps with arrows/tripwire exist? (the note says wiring
   simplified; verify with a generated temple).
@@ -783,11 +788,12 @@ leftovers.
 
 ## Top 10 by player impact
 
-1. Structure chest loot filling (empty dungeon/chamber/city chests) — M
+1. Structure chest loot filling (empty chamber/city chests; dungeon chests
+   DONE 2026-07-14 v0.20.0, see below) — M remaining
 2. ~~Classic `minecraft:spawner` block entities~~ — mineshaft/stronghold/
-   fortress DONE 2026-07-14 (v0.19.0, `ClassicSpawners.java`); dungeons still
-   open (no generated dungeon feature exists at all yet — see worldgen
-   section above) — S remaining
+   fortress DONE 2026-07-14 (v0.19.0, `ClassicSpawners.java`); dungeons DONE
+   2026-07-14 (v0.20.0, `VFeature.placeMonsterRoom` — see worldgen section
+   above) — all four integration points now complete
 3. ~~Enchanting table (+ grindstone/smithing)~~ — table + grindstone DONE
    2026-07-14 (v0.18.0); smithing table (netherite + trims) still open — S
 4. Persistence of containers/mobs across restarts — L
