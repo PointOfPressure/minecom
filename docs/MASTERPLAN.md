@@ -345,6 +345,19 @@ partnership, build-in-public). What the new intel sharpens:
    will open-source "when stable") and vibenilla (Apache 2.0, AI-provenance-
    flagged — the same flag lands on us; the suite is the counter). Being
    *first to publish numbers* matters more than being first to exist.
+4b. **First adopter integration requirement (2026-07-14, from Minestom
+   Discord — wildmaster84/Lavender)**: the standing worldgen lib people
+   actually plug in is `rocks.minestom.worldgen` — pattern is
+   `new WorldGenerators(path, seed)` → `.overworld()/.nether()/.end()`
+   returning a Minestom `Generator` (see Lavender.java's
+   createDimensionWorld). When minecom's worldgen ships as a module, expose
+   a facade matching that exact shape so migration is an import swap; data
+   ships in-jar (their datapack-extract step disappears). Until nether/end
+   are verified (Tier 4), the facade should let unverified dimensions
+   delegate to the caller's existing generator rather than overclaim —
+   "verified overworld now, other dims fall through" was the public promise
+   made in-channel. Adopters care about migration friction first, parity
+   second.
 5. **Community presence**: continue as a named regular in Minestom Discord
    (already happening per the exports); contribute something upstream
    (a lighting fix, a passenger fix — both are wanted [DIR §4]) before
