@@ -47,6 +47,16 @@ Aggregates keyed "minecraft:<name>" (namespace prefix ADDED):
   configured_features.json data/minecraft/worldgen/configured_feature/**  (all 221)
   placed_features.json    data/minecraft/worldgen/placed_feature/**       (all 258)
   structure_sets.json     data/minecraft/worldgen/structure_set/**        (all 20)
+  enchantment.json        data/minecraft/enchantment/**                   (all 43; data-driven
+                          enchantment defs — weight, cost curves, max_level, slots,
+                          supported_items/primary_items tag refs, exclusive_set)
+  enchantment_provider.json data/minecraft/enchantment_provider/**        (all 8, incl. raid/**;
+                          not consumed by the table/anvil/grindstone engine itself —
+                          bundled for the future mob-equipment-enchant work, AUDIT item 7)
+Aggregate keyed by bare relative path (no namespace prefix, matches tags_item/tags_block):
+  tags_enchantment.json   data/minecraft/tags/enchantment/**              (all 15 incl.
+                          exclusive_set/*, curse, in_enchanting_table, non_treasure,
+                          treasure, tradeable; raw, "#..." refs NOT resolved)
 Biome projections (fields of data/minecraft/worldgen/biome/<b>.json, keyed
 "minecraft:<b>"):
   biome_carvers.json      "carvers" field, all 65 biomes
@@ -110,6 +120,17 @@ data generator: `java -cp <jar>:<libraries...> net.minecraft.data.Main --reports
       (featureIndex = first-seen order, step), DFS over a (step, featureIndex)-sorted
       graph, post-order reversed, then split by step. Deterministic; matches vanilla's
       feature-index decoration salts exactly.
+  item_enchantability.json {item id: minecraft:enchantable component's "value"} for
+      the 77 items that carry one — reports/minecraft/components/item/*.json
+      ("Default Components" datagen report). Item component defaults live in
+      Items.java CODE, not jar JSON data, so this datagen report (same --reports
+      invocation as biome_parameters, now cached as a whole reports/ tree — see
+      find_reports_root) is the only reproducible extraction path. Absence from
+      this map means the item can't roll enchantments from the table at all
+      (e.g. elytra/shears — real vanilla behavior, not an omission).
+  item_repairable.json    {item id: item-tag ref} from the same report's
+      minecraft:repairable component — which raw materials repair an item on
+      the anvil (e.g. diamond_sword -> "#minecraft:diamond_tool_materials").
 
 NOT COVERED (deliberately): piston_reorder_cases.json is not jar-derived — it is a
 behavior capture recorded from a live vanilla server by scripts/piston_vanilla_capture.py.
@@ -220,6 +241,9 @@ def build_aggregates(jar):
         "configured_features.json": ("json", aggregate(jar, "data/minecraft/worldgen/configured_feature/", "minecraft:")),
         "placed_features.json": ("json", aggregate(jar, "data/minecraft/worldgen/placed_feature/", "minecraft:")),
         "structure_sets.json": ("json", aggregate(jar, "data/minecraft/worldgen/structure_set/", "minecraft:")),
+        "enchantment.json": ("json", aggregate(jar, "data/minecraft/enchantment/", "minecraft:")),
+        "enchantment_provider.json": ("json", aggregate(jar, "data/minecraft/enchantment_provider/", "minecraft:")),
+        "tags_enchantment.json": ("json", aggregate(jar, "data/minecraft/tags/enchantment/")),
     }
 
 
@@ -280,36 +304,58 @@ def build_structure_biomes(jar):
 
 # ------------------------------------------------------------------ datagen
 
-def find_report(jar_path, reports_dir):
-    """Locate (or generate + cache) reports/biome_parameters/minecraft/overworld.json."""
-    rel = os.path.join("reports", "biome_parameters", "minecraft", "overworld.json")
+def find_reports_root(jar_path, reports_dir):
+    """Locate (or generate + cache) a full datagen reports/ dir. Used for
+    biome_parameters/minecraft/overworld.json AND minecraft/components/item/*.json
+    (item enchantability + repairable — see build_item_data)."""
+    marker = os.path.join("biome_parameters", "minecraft", "overworld.json")
     if reports_dir:
-        p = os.path.join(reports_dir, "biome_parameters", "minecraft", "overworld.json")
-        if not os.path.isfile(p):
-            sys.exit("--reports-dir given but %s not found" % p)
-        return p
+        if not os.path.isfile(os.path.join(reports_dir, marker)):
+            sys.exit("--reports-dir given but %s not found" % os.path.join(reports_dir, marker))
+        return reports_dir
     version = json.loads(zipfile.ZipFile(jar_path).read("version.json"))["id"]
     cache = os.path.join(CACHE_ROOT, "vanilla-reports-" + version)
-    cached = os.path.join(cache, rel)
-    if os.path.isfile(cached):
-        return cached
+    cached_root = os.path.join(cache, "reports")
+    if os.path.isfile(os.path.join(cached_root, marker)):
+        return cached_root
     # bundler-unpack layout: <root>/versions/<v>/server-<v>.jar + <root>/libraries/
     libs = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(jar_path)))), "libraries")
     if not os.path.isdir(libs):
-        sys.exit("Cannot generate biome_parameters report: no libraries/ dir at %s\n"
+        sys.exit("Cannot generate datagen reports: no libraries/ dir at %s\n"
                  "(need the Mojang bundler unpack layout, or pass --reports-dir)" % libs)
     jars = [os.path.join(dp, f) for dp, _, fs in os.walk(libs) for f in fs if f.endswith(".jar")]
     cp = os.pathsep.join([os.path.abspath(jar_path)] + sorted(jars))
-    os.makedirs(cache, exist_ok=True)
-    print("running vanilla datagen (--reports) once, caching to %s ..." % cache)
+    print("running vanilla datagen (--reports) once, caching to %s ..." % cached_root)
     with tempfile.TemporaryDirectory(prefix="minecom-datagen-") as wd:
         subprocess.run(["java", "-cp", cp, "net.minecraft.data.Main", "--reports",
                         "--output", os.path.join(wd, "out")],
                        cwd=wd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        src = os.path.join(wd, "out", rel)
-        os.makedirs(os.path.dirname(cached), exist_ok=True)
-        shutil.copyfile(src, cached)
-    return cached
+        if os.path.isdir(cached_root):
+            shutil.rmtree(cached_root)
+        os.makedirs(cache, exist_ok=True)
+        shutil.copytree(os.path.join(wd, "out", "reports"), cached_root)
+    return cached_root
+
+
+def build_item_data(reports_root):
+    """Per-item minecraft:enchantable value + minecraft:repairable tag ref, from
+    reports/minecraft/components/item/*.json (the "Default Components" datagen
+    report — item component defaults are set in Items.java code, not jar JSON
+    data, so this report is the only reproducible extraction path; see
+    Enchantable.java / Repairable.java in the decompiled reference)."""
+    item_dir = os.path.join(reports_root, "minecraft", "components", "item")
+    enchantability = {}
+    repairable = {}
+    for name in sorted(os.listdir(item_dir)):
+        if not name.endswith(".json"):
+            continue
+        comps = json.load(open(os.path.join(item_dir, name)))["components"]
+        item_id = "minecraft:" + name[:-len(".json")]
+        if "minecraft:enchantable" in comps:
+            enchantability[item_id] = comps["minecraft:enchantable"]["value"]
+        if "minecraft:repairable" in comps:
+            repairable[item_id] = comps["minecraft:repairable"]["items"]
+    return enchantability, repairable
 
 
 def f32(x):
@@ -439,7 +485,8 @@ def build_biome_projections(jar, biome_order):
 
 def build_all(jar_path, reports_dir=None):
     jar = Jar(jar_path)
-    report = json.load(open(find_report(jar_path, reports_dir)))
+    reports_root = find_reports_root(jar_path, reports_dir)
+    report = json.load(open(os.path.join(reports_root, "biome_parameters", "minecraft", "overworld.json")))
     biome_order = overworld_biome_order(report)
     out = {}
     out.update(build_aggregates(jar))
@@ -448,6 +495,9 @@ def build_all(jar_path, reports_dir=None):
     out.update(build_biome_projections(jar, biome_order))
     out["biome_parameters_overworld.json"] = ("json", build_biome_parameters(report))
     out["features_per_step.json"] = ("json", build_features_per_step(jar, biome_order))
+    enchantability, repairable = build_item_data(reports_root)
+    out["item_enchantability.json"] = ("json", enchantability)
+    out["item_repairable.json"] = ("json", repairable)
     return out
 
 

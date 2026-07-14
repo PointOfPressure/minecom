@@ -8,6 +8,7 @@ import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.blocks.Farming;
 import dev.pointofpressure.minecom.blocks.Furnaces;
+import dev.pointofpressure.minecom.data.Enchants;
 import dev.pointofpressure.minecom.survival.Experience;
 import dev.pointofpressure.minecom.survival.WeatherCycle;
 import net.kyori.adventure.nbt.TagStringIO;
@@ -215,6 +216,7 @@ public final class Persist {
         o.addProperty("food", p.getFood());
         o.addProperty("saturation", p.getFoodSaturation());
         o.addProperty("xp", Experience.total(p));
+        o.addProperty("enchantSeed", Enchants.seed(p));
         o.add("inv", writeItems(p.getInventory()));
         PLAYERS.put(p.getUuid().toString(), o);
     }
@@ -237,6 +239,7 @@ public final class Persist {
         p.setFood(o.get("food").getAsInt());
         p.setFoodSaturation(o.get("saturation").getAsFloat());
         Experience.set(p, o.get("xp").getAsInt());
+        if (o.has("enchantSeed")) Enchants.setSeed(p, o.get("enchantSeed").getAsInt());
     }
 
     // ------------------------------------------------------------------ items

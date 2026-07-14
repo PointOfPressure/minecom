@@ -589,8 +589,13 @@ leftovers.
 - Combat.java — mob spawn-equipment **enchantments** never applied
   (populateDefaultEquipmentEnchantments: 0.25/0.5 x specialMultiplier chance,
   MOB_SPAWN_EQUIPMENT provider — difficulty threading exists now, needs an
-  enchant-provider evaluator, M); worn-equipment **drop chances** on death
-  (8.5% per filled slot, +looting) — mobs never drop their armor/weapons. (S)
+  enchant-provider evaluator, M; enchantment_provider.json is bundled as of
+  v0.18.0 — data/minecraft/enchantment_provider/*.json, incl. raid/** — but
+  the EnchantmentsByCost/EnchantmentsByCostWithDifficulty/SingleEnchantment
+  provider TYPES from vanilla-src/net/minecraft/world/item/enchantment/
+  providers/ still need porting, decompiled but unused); worn-equipment
+  **drop chances** on death (8.5% per filled slot, +looting) — mobs never
+  drop their armor/weapons. (S)
 - Breeding.java — only same-species pair+item; no baby growth acceleration by
   feeding, no love-mode particles timing nuances, no per-animal breeding items
   beyond spec sets (mostly right), horses/llamas can't breed (no taming). (S)
@@ -603,17 +608,47 @@ leftovers.
 
 ## survival/ + data/
 
-- LootTables.java:17 — "No enchantment system exists" for loot evaluation:
-  enchant_randomly/enchant_with_levels functions in tables (trial reward
-  enchanted books, end city gear) come out unenchanted; set_potion works? (my
-  trial tables roll POTION items — verify the potion component is applied,
-  else they drop as water bottles). Fortune/silk-touch conditions work via
-  tool passing. (M)
-- Enchants.java — enchanting TABLE flow: is there an enchanting table UI with
-  real xp/lapis costs and randomized offers? (grep suggests enchant command +
-  anvil combining only — the table itself missing = L). Grindstone
-  (disenchant+xp), smithing table (netherite + trims), stonecutter, loom,
-  cartography: none. (M-L)
+- LootTables.java:17 — UPDATE 2026-07-14: "no enchantment system exists" is
+  now stale — Enchants.java has one (EnchantmentDef/allDefs/weightedPick,
+  v0.18.0), so enchant_randomly/enchant_with_levels loot-table functions
+  (trial reward enchanted books, end city gear) are directly wireable
+  against it now (candidates = allDefs() filtered by supportsItem()/
+  inEnchantingTable()-equivalent per the function's own options, weighted
+  pick same as the table); still unimplemented, just unblocked. set_potion
+  works? (my trial tables roll POTION items — verify the potion component is
+  applied, else they drop as water bottles). Fortune/silk-touch conditions
+  work via tool passing. (M)
+- Enchants.java — DONE 2026-07-14 (v0.18.0, MASTERPLAN §3 Tier 1 item 1):
+  the enchanting economy engine, ported from decompiled EnchantmentHelper/
+  EnchantmentMenu/AnvilMenu/GrindstoneMenu (26.2, vanilla-src/), built on the
+  now-bundled data-driven enchantment JSONs (src/main/resources/vanilla/
+  enchantment.json, item_enchantability.json, item_repairable.json,
+  tags_enchantment.json — extract_vanilla_data.py extended, item component
+  defaults pulled from the datagen "Default Components" report since
+  data/minecraft/items/*.json doesn't exist in 26.2). Table: real per-player
+  persisted enchantment seed (Persist.java), bit-exact bookshelf-power cost
+  formula + hide-slot rule, seed-deterministic weighted offer selection
+  (exclusive_set-aware), the buttonId+1 lapis/xp quirk (NOT the displayed
+  cost), reroll-on-take. Anvil: raw-material repair (item_repairable.json)
+  ALONGSIDE the existing same-item combine, real per-enchantment anvil_cost
+  fees (not flat +1), rename via Minestom's real (if undocumented outside
+  listener/AnvilListener.java) PlayerAnvilInputEvent, rename-only 39-cap
+  exception, prior-work-penalty tax. Grindstone (new): disenchant keeps
+  curses via tags/enchantment/curse.json, non-curse enchant xp refund at
+  table min_cost (not anvil_cost), 5% durability-merge bonus (vs anvil's
+  12%). 18 SelfTest checks (fixed-seed offer/cost determinism) + 3 new
+  PlayTest scenarios (real block+event flow) + the existing anvil scenario
+  corrected to match the real "price<=0 -> cost 0 even with tax" rule.
+  Known simplifications (stated per rule 4, not silently faked): anvil block
+  damage-on-use (12% chip chance) not modeled; rename-cost comparison uses
+  only the stored custom name, not vanilla's resolved-default-name edge
+  case; table candidate ordering is alphabetical (enchantment.json's jar
+  listing order) rather than the real in_enchanting_table tag's declared
+  file order — internally deterministic (same seed -> same result) but not
+  bit-identical to a live vanilla server, since no differential oracle
+  exists for this subsystem (unlike piston/worldgen). Smithing table
+  (netherite + trims), stonecutter, loom, cartography table: still none.
+  (M-L)
 - Potions.java — 13 effect cases handled on drink; missing: splash potion AoE
   scaling by distance, lingering clouds, tipped arrows, turtle master, slow
   falling (check), levitation via potion, bad omen bottle (ominous bottle item
@@ -737,7 +772,8 @@ leftovers.
 1. Structure chest loot filling (empty dungeon/chamber/city chests) — M
 2. Classic `minecraft:spawner` block entities (dungeons, mineshafts, fortress,
    stronghold) via the TrialChambers registry pattern — M
-3. Enchanting table (+ grindstone/smithing) — L
+3. ~~Enchanting table (+ grindstone/smithing)~~ — table + grindstone DONE
+   2026-07-14 (v0.18.0); smithing table (netherite + trims) still open — S
 4. Persistence of containers/mobs across restarts — L
 5. Random-tick engine (crop/grass/fire/copper/sapling) — L
 6. Villager→zombie-villager conversion + curing loop (difficulty hooks ready) — S/M

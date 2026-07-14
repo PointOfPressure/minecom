@@ -32,10 +32,15 @@ public final class VanillaData {
     private static JsonObject tagsItem;
     private static JsonObject tagsBlock;
     private static JsonObject tagsDamage;
+    private static JsonObject tagsEnchantment;
+    static JsonObject enchantments;
+    static JsonObject itemEnchantability;
+    static JsonObject itemRepairable;
 
     private static final Map<String, Set<String>> ITEM_TAG_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> BLOCK_TAG_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> DAMAGE_TAG_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Set<String>> ENCHANTMENT_TAG_CACHE = new ConcurrentHashMap<>();
     private static boolean loaded;
 
     public static synchronized void load() {
@@ -50,7 +55,12 @@ public final class VanillaData {
         tagsItem = read("/vanilla/tags_item.json");
         tagsBlock = read("/vanilla/tags_block.json");
         tagsDamage = read("/vanilla/tags_damage_type.json");
+        tagsEnchantment = read("/vanilla/tags_enchantment.json");
+        enchantments = read("/vanilla/enchantment.json");
+        itemEnchantability = read("/vanilla/item_enchantability.json");
+        itemRepairable = read("/vanilla/item_repairable.json");
         Recipes.index();
+        Enchants.index();
         loaded = true;
     }
 
@@ -101,6 +111,13 @@ public final class VanillaData {
         return m != null && itemTag(tag).contains(m.key().asString());
     }
 
+    /** item_repairable.json[material] — the item tag its raw repair material must belong to, or null. */
+    public static String itemRepairTag(Material m) {
+        if (m == null) return null;
+        var v = itemRepairable.get(m.key().asString());
+        return v == null ? null : v.getAsString();
+    }
+
     public static boolean blockHasTag(Block b, String tag) {
         return b != null && blockTag(tag).contains(b.key().asString());
     }
@@ -108,6 +125,10 @@ public final class VanillaData {
     /** Damage-type tag membership by damage type id, e.g. damageTypeHasTag("minecraft:fall", "bypasses_armor"). */
     public static boolean damageTypeHasTag(String damageTypeId, String tag) {
         return resolveTag(tagsDamage, tag, DAMAGE_TAG_CACHE).contains(damageTypeId);
+    }
+
+    static Set<String> enchantmentTag(String tag) {
+        return resolveTag(tagsEnchantment, tag, ENCHANTMENT_TAG_CACHE);
     }
 
     /** Trial spawner config registry entry by id path, e.g. "trial_chamber/melee/zombie/normal". */

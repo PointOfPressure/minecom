@@ -14,6 +14,107 @@ of what got escalated and why.
 
 ---
 
+## Enchanting engine landed (2026-07-14, Sonnet 5) — MASTERPLAN §3 Tier 1 item 1, v0.18.0
+
+Table + anvil + grindstone, decompile-verified against 26.2 (EnchantmentHelper,
+EnchantmentMenu, AnvilMenu, GrindstoneMenu, EnchantingTableBlock, Player's
+enchantment-seed fields — all cached fresh under vanilla-src/, superseding any
+stale pre-26.2-bump copies per CLAUDE.md rule 7), built on the now-bundled
+data-driven enchantment JSONs rather than hardcoded tables. Full detail in
+AUDIT.md's Enchants.java entry (search "DONE 2026-07-14"); summary:
+
+- **Data**: extract_vanilla_data.py extended for enchantment.json,
+  enchantment_provider.json, tags_enchantment.json, and — since
+  `data/minecraft/items/*.json` doesn't exist in 26.2 (item component
+  defaults live in `Items.java` code) — item_enchantability.json /
+  item_repairable.json pulled from the jar's own "Default Components"
+  datagen report (`reports/minecraft/components/item/*.json`; the datagen
+  caching in find_report was generalized to find_reports_root, caching the
+  whole reports/ tree once instead of one file). 1491 bundled files now,
+  --validate clean.
+- **Table**: real per-player persisted enchantment seed (Persist.java —
+  `enchantSeed`), bit-exact getEnchantmentCost port (continuing RNG stream
+  across all 3 slots, NOT reseeded per slot — a 30-cap that was in the old
+  code doesn't exist in vanilla, removed), bookshelf air-gap check
+  (EnchantingTableBlock.isValidBookShelf's transmitter-tile requirement, not
+  just shelf-tile identity), seed-deterministic weighted offer selection
+  (exclusive_set-aware, book one-less-offer trim), and the buttonId+1
+  lapis/xp quirk — clicking a slot deducts 1/2/3 levels, NOT the displayed
+  8/16/24-ish requirement (a genuinely easy detail to get backwards; verify
+  against EnchantmentMenu.clickMenuButton directly if touching this again).
+- **Anvil**: added raw-material repair (item_repairable.json) alongside the
+  pre-existing same-item combine, switched enchant-merge fees from flat +1
+  to the real per-enchantment anvil_cost, added rename via Minestom's real
+  `PlayerAnvilInputEvent`/`AnvilListener` (net/minestom/server/listener/ —
+  this exists despite not being under event/inventory/ with the other
+  inventory events; a first pass looking only in that package would wrongly
+  conclude Minestom has no rename support, so LOOK IN listener/ TOO before
+  writing off a Minestom capability gap).
+- **Grindstone**: entirely new — disenchant keeps curses
+  (tags/enchantment/curse.json), non-curse enchants refund xp at the
+  table's min_cost (NOT anvil_cost — a different formula from the anvil's
+  fee, easy to conflate), repair-merge uses a 5% durability bonus (anvil is
+  12%).
+- **Verification**: 18 new SelfTest checks (data loading, fixed-seed offer
+  determinism across 300 seeded rolls, cost-formula spot checks, anvil/
+  grindstone pure-function checks) — selftest now 228/228. 3 new PlayTest
+  scenarios driving the real block+event flow (table, grindstone, anvil
+  rename) + the pre-existing anvil scenario's cost assertions corrected to
+  match the REAL "price<=0 -> finalPrice 0 even with a REPAIR_COST tax"
+  rule (the old test's "two pristine unenchanted pickaxes cost 2" premise
+  was itself wrong — real vanilla charges 0 for a true no-op combine; fixed
+  by damaging the test pickaxes so a genuine durability-improvement price
+  exists for the tax to stack on). Full playtest run: 689/689 (one run
+  during this session showed 688/689 — see the flake note below, unrelated
+  and pre-existing).
+- **Bug found + fixed en route**: Anvils.java and the new Grindstone.java
+  were originally wired to recompute their preview (slot 2) on
+  `InventoryClickEvent`, mirroring the pre-existing (pre-this-session)
+  Anvils.java pattern — but real vanilla's `slotsChanged` fires on ANY
+  container item change (`SimpleContainer.setChanged()`), not specifically
+  on a click. This under-recomputes for programmatic/non-click item
+  placement and is why the very first grindstone PlayTest attempt failed
+  (setItemStack(0, ...) never triggered a preview). Fixed by switching both
+  to `InventoryItemChangeEvent` (which the enchanting table code already
+  used correctly from the start) — more accurate to vanilla AND fixes the
+  latent gap. If any other block-UI subsystem in this codebase still uses
+  InventoryClickEvent to gate its own recompute, it likely has the same
+  latent bug — worth an audit pass.
+- **Deliberate simplifications** (AUDIT.md has the full list): anvil block
+  damage-on-use not modeled; rename-cost comparison uses only the stored
+  custom name; table candidate ordering is alphabetical rather than the
+  real in_enchanting_table tag's declared file order (internally
+  deterministic, not bit-identical to a live server — no differential
+  oracle exists for this subsystem to make that distinction observable).
+- **Not touched, still open**: smithing table, stonecutter, loom,
+  cartography table (AUDIT top-10 item 3 partially closed, not fully);
+  LootTables.java's enchant_randomly/enchant_with_levels loot functions are
+  now directly wireable against Enchants.allDefs() but not yet wired;
+  Combat.java's mob-spawn-equipment enchant provider similarly unblocked
+  (enchantment_provider.json bundled) but not yet wired.
+
+**Escalation — pre-existing flake found, NOT caused by this work (out of
+scope, logging per rule 3 rather than chasing it)**: `[trident] riptide on
+dry land does nothing` (PlayTest, Trident.java — a file this session never
+touched) failed once in a full-suite run and once more in isolation, but
+passed clean across 5 other isolated + 1 other full-suite run in the same
+session — genuinely intermittent, not a scenario-order artifact (it failed
+running in complete isolation too). Trident.java's own gate logic
+(`riptideStrength>0f && !wet -> return`) reads correct by inspection; the
+likely culprit is a timing race between the comment's own claim ("Force
+weather off explicitly — the background WeatherCycle keeps running for the
+whole suite") and `WeatherCycle.setRaining(world, false)` actually taking
+effect before the very next tick's `isInWater(player) ||
+WeatherCycle.isRaining(...)` check, OR a residual-block-state race on the
+water/air swap at the same reused coordinates the wet sub-test just used.
+Two-attempt budget spent reading the code; needs either a stronger model or
+just someone willing to add a few debug ticks and re-run repeatedly to
+narrow the race. Not armed with a DIAG-style diagnostic (that pattern is
+reserved for the untouched silk one per standing instructions) — a fresh
+session should decide whether to add one or root-cause directly.
+
+---
+
 ## State of the project — full inventory (2026-07-13, Fable)
 
 One place to see everything done and everything not. Compiled from a full

@@ -1,11 +1,13 @@
 package dev.pointofpressure.minecom.data;
 
+import net.minestom.server.component.DataComponents;
 import net.minestom.server.entity.EntityType;
 import net.minestom.server.instance.block.Block;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 
 import java.util.List;
+import java.util.Random;
 
 /** Exercises the vanilla-data engine without a running server. Run with --selftest or standalone. */
 public final class SelfTest {
@@ -1348,6 +1350,114 @@ public final class SelfTest {
                         .anyMatch(s -> s.material() == Material.MAGMA_CREAM);
             }
             check("magma loot: a size-2 magma cube can drop magma cream", bigMagma);
+        }
+
+        // ---- enchanting engine: data-driven defs, table offer determinism, anvil/grindstone ----
+        {
+            Enchants.EnchantmentDef sharpness = Enchants.def("sharpness");
+            Enchants.EnchantmentDef smite = Enchants.def("smite");
+            Enchants.EnchantmentDef unbreaking = Enchants.def("unbreaking");
+            Enchants.EnchantmentDef mending = Enchants.def("mending");
+            check("enchantment.json: 43 defs loaded", Enchants.allDefs().size() == 43);
+            check("sharpness def: weight 10, anvil_cost 1, max_level 5",
+                    sharpness.weight() == 10 && sharpness.anvilCost() == 1 && sharpness.maxLevel() == 5);
+            check("Cost.calculate: sharpness min/max at level 5 (base + perLevel*(level-1))",
+                    sharpness.minCost().at(5) == 45 && sharpness.maxCost().at(5) == 65);
+            check("in_enchanting_table resolves the #non_treasure tag ref (sharpness in, mending out)",
+                    Enchants.inEnchantingTable(sharpness) && !Enchants.inEnchantingTable(mending));
+            check("curse.json: binding/vanishing curses only",
+                    Enchants.isCurse(Enchants.def("binding_curse")) && Enchants.isCurse(Enchants.def("vanishing_curse"))
+                            && !Enchants.isCurse(sharpness));
+            check("exclusive_set/damage: sharpness<->smite exclusive both directions, sharpness<->unbreaking not",
+                    Enchants.exclusive(sharpness, smite) && Enchants.exclusive(smite, sharpness)
+                            && !Enchants.exclusive(sharpness, unbreaking));
+
+            // EnchantmentHelper.getEnchantmentCost: fixed-seed determinism (6 nextInt calls,
+            // 2 per slot, continuing stream — NOT reseeded per slot).
+            int[] costsA = Enchants.tableCosts(new Random(42L), 7);
+            int[] costsB = Enchants.tableCosts(new Random(42L), 7);
+            check("tableCosts: same seed + bookcases -> identical 3 costs every run ("
+                    + java.util.Arrays.toString(costsA) + ")", java.util.Arrays.equals(costsA, costsB));
+            boolean allSaneOrHidden = true;
+            for (int trial = 0; trial < 200; trial++) {
+                int bookcases = trial % 16;
+                int[] c = Enchants.tableCosts(new Random(trial * 97L + 3), bookcases);
+                for (int slot = 0; slot < 3; slot++) {
+                    if (c[slot] != 0 && c[slot] < slot + 1) allSaneOrHidden = false;
+                }
+            }
+            check("tableCosts: EnchantmentMenu's costs[i]<i+1 -> 0 hide-slot rule holds across 200 trials",
+                    allSaneOrHidden);
+
+            // EnchantmentHelper.selectEnchantment/getAvailableEnchantmentResults, via getEnchantmentList.
+            ItemStack pick = ItemStack.of(Material.DIAMOND_PICKAXE);
+            List<Enchants.Offer> offersA = Enchants.getEnchantmentList(777, pick, 2, 30);
+            List<Enchants.Offer> offersB = Enchants.getEnchantmentList(777, pick, 2, 30);
+            check("getEnchantmentList: same seed+slot+cost -> identical offer list every run",
+                    offersA.equals(offersB));
+            boolean everyOfferValidForPick = true;
+            boolean anyOfferSeen = false;
+            for (int trial = 0; trial < 300; trial++) {
+                List<Enchants.Offer> offers = Enchants.getEnchantmentList(trial * 31 + 5, pick, trial % 3, 20 + trial % 20);
+                for (Enchants.Offer o : offers) {
+                    anyOfferSeen = true;
+                    if (!Enchants.isPrimaryItem(o.def(), pick)) everyOfferValidForPick = false;
+                    if (o.level() < 1 || o.level() > o.def().maxLevel()) everyOfferValidForPick = false;
+                }
+                for (int i = 0; i < offers.size(); i++) {
+                    for (int j = i + 1; j < offers.size(); j++) {
+                        if (Enchants.exclusive(offers.get(i).def(), offers.get(j).def())) everyOfferValidForPick = false;
+                    }
+                }
+            }
+            check("getEnchantmentList: 300 seeded rolls all produced offers", anyOfferSeen);
+            check("getEnchantmentList: every offer is primary-item-eligible, in-level-range, mutually non-exclusive",
+                    everyOfferValidForPick);
+            check("getEnchantmentList: an unenchantable item (no ENCHANTABLE component) yields nothing",
+                    Enchants.getEnchantmentList(1, ItemStack.of(Material.DIRT), 0, 10).isEmpty());
+
+            // Anvils.compute: same-item combine, real-max level cap, prior-work tax, raw-material repair, rename.
+            ItemStack ironA = ItemStack.of(Material.IRON_PICKAXE).with(b -> b.set(DataComponents.DAMAGE, 200));
+            ironA = Enchants.with(ironA, net.minestom.server.item.enchant.Enchantment.EFFICIENCY, 3);
+            ItemStack ironB = ItemStack.of(Material.IRON_PICKAXE).with(b -> b.set(DataComponents.DAMAGE, 200));
+            ironB = Enchants.with(ironB, net.minestom.server.item.enchant.Enchantment.EFFICIENCY, 3);
+            var combined = dev.pointofpressure.minecom.blocks.Anvils.compute(ironA, ironB, null, false);
+            check("Anvils.compute: durability heals with the 12% bonus and efficiency bumps a level (cost="
+                    + combined.cost() + ")",
+                    combined.item().get(DataComponents.DAMAGE) < 200
+                            && Enchants.level(combined.item(), "efficiency") == 4 && combined.cost() > 0);
+
+            ItemStack unbreakingA = Enchants.with(ItemStack.of(Material.IRON_PICKAXE),
+                    net.minestom.server.item.enchant.Enchantment.UNBREAKING, 3);
+            ItemStack unbreakingB = Enchants.with(ItemStack.of(Material.IRON_PICKAXE),
+                    net.minestom.server.item.enchant.Enchantment.UNBREAKING, 3);
+            var unbreakingCombined = dev.pointofpressure.minecom.blocks.Anvils.compute(unbreakingA, unbreakingB, null, false);
+            check("Anvils.compute: enchant level caps at the enchantment's OWN real max (Unbreaking III+III stays 3)",
+                    Enchants.level(unbreakingCombined.item(), "unbreaking") == 3);
+
+            ItemStack damagedPick = ItemStack.of(Material.IRON_PICKAXE).with(b -> b.set(DataComponents.DAMAGE, 100));
+            ItemStack ironIngots = ItemStack.of(Material.IRON_INGOT).withAmount(3);
+            var repaired = dev.pointofpressure.minecom.blocks.Anvils.compute(damagedPick, ironIngots, null, false);
+            check("Anvils.compute: raw-material repair (iron ingots on an iron pickaxe) heals damage (cost="
+                    + repaired.cost() + ", repairItemCountCost=" + repaired.repairItemCountCost() + ")",
+                    !repaired.item().isAir() && repaired.item().get(DataComponents.DAMAGE) < 100
+                            && repaired.repairItemCountCost() > 0);
+
+            var renamed = dev.pointofpressure.minecom.blocks.Anvils.compute(
+                    ItemStack.of(Material.IRON_PICKAXE), ItemStack.AIR, "Excalibur", false);
+            check("Anvils.compute: rename-only costs exactly 1 level",
+                    renamed.cost() == 1 && renamed.onlyRenaming());
+
+            // Grindstone.compute: disenchant keeps curses, strips the rest.
+            ItemStack cursedSword = Enchants.with(ItemStack.of(Material.DIAMOND_SWORD),
+                    net.minestom.server.item.enchant.Enchantment.SHARPNESS, 3);
+            cursedSword = Enchants.with(cursedSword, net.minestom.server.item.enchant.Enchantment.VANISHING_CURSE, 1);
+            ItemStack ground = dev.pointofpressure.minecom.blocks.Grindstone.compute(cursedSword, ItemStack.AIR);
+            check("Grindstone.compute: strips sharpness but keeps vanishing_curse",
+                    Enchants.level(ground, "sharpness") == 0 && Enchants.level(ground, "vanishing_curse") == 1);
+            check("Grindstone.compute: an unenchanted item alone produces no result",
+                    dev.pointofpressure.minecom.blocks.Grindstone.compute(
+                            ItemStack.of(Material.IRON_PICKAXE), ItemStack.AIR).isAir());
         }
 
         REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");

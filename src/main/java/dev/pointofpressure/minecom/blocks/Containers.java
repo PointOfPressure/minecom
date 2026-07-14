@@ -417,7 +417,7 @@ public final class Containers {
     }
 
     /** Give to inventory or drop at the player's feet if full. */
-    static void giveOrDrop(Player player, ItemStack stack) {
+    public static void giveOrDrop(Player player, ItemStack stack) {
         if (stack.isAir()) return;
         if (!player.getInventory().addItemStack(stack)) {
             dev.pointofpressure.minecom.survival.Survival.dropItem(player, stack, true);

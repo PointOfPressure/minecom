@@ -6,6 +6,7 @@ import dev.pointofpressure.minecom.mobs.Mobs;
 import dev.pointofpressure.minecom.survival.Experience;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.component.DataComponents;
+import net.minestom.server.item.component.EnchantmentList;
 import net.minestom.server.coordinate.BlockVec;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
@@ -176,6 +177,9 @@ public final class PlayTest {
         scenario("lava hurts, fire resistance saves", PlayTest::scenarioLava);
         scenario("piston pushes entities", PlayTest::scenarioPistonPush);
         scenario("anvil combines durability + enchants", PlayTest::scenarioAnvil);
+        scenario("anvil rename costs exactly 1 level via PlayerAnvilInputEvent", PlayTest::scenarioAnvilRename);
+        scenario("enchanting table: real block flow, seed-deterministic offer, buttonId+1 xp cost", PlayTest::scenarioEnchantingTable);
+        scenario("grindstone: disenchant keeps curses, refunds xp", PlayTest::scenarioGrindstone);
         scenario("fishing loot from real tables", PlayTest::scenarioFishing);
         scenario("fishing: treasure requires real open water, not just any fishable puddle", PlayTest::scenarioFishingOpenWater);
         scenario("vanilla-ai: hurt zombie alerts the pack", PlayTest::scenarioZombieAlert);
@@ -6967,9 +6971,13 @@ public final class PlayTest {
 
         // AnvilMenu's "prior work penalty": REPAIR_COST starts at 0, and each combine sets the
         // result's REPAIR_COST to max(inputs)*2+1 — a fresh pair costs 0 tax, but re-combining
-        // an already-once-combined item taxes the NEXT combine on top of its normal price.
-        ItemStack fresh1 = ItemStack.of(Material.IRON_PICKAXE);
-        ItemStack fresh2 = ItemStack.of(Material.IRON_PICKAXE);
+        // an already-once-combined item taxes the NEXT combine on top of its normal price. Real
+        // AnvilMenu.createResult only charges (price>0) when a combine actually DOES something —
+        // two pristine unenchanted, undamaged items produce price=0 -> cost 0 even with a forged
+        // REPAIR_COST tax (finalPrice is `price<=0 ? 0 : tax+price`) — so these use damaged
+        // pickaxes (a genuine durability improvement, price 2) to keep the tax observable.
+        ItemStack fresh1 = ItemStack.of(Material.IRON_PICKAXE).with(b -> b.set(DataComponents.DAMAGE, 200));
+        ItemStack fresh2 = ItemStack.of(Material.IRON_PICKAXE).with(b -> b.set(DataComponents.DAMAGE, 200));
         check("anvil: a never-combined pair costs no repair-cost tax (cost "
                         + dev.pointofpressure.minecom.blocks.Anvils.costOf(fresh1, fresh2) + ")",
                 dev.pointofpressure.minecom.blocks.Anvils.costOf(fresh1, fresh2) == 2);
@@ -6977,17 +6985,123 @@ public final class PlayTest {
         Integer repairCostAfterOne = onceCombined.get(DataComponents.REPAIR_COST);
         check("anvil: the result's REPAIR_COST becomes max(0,0)*2+1 = 1 after one combine",
                 repairCostAfterOne != null && repairCostAfterOne == 1);
-        ItemStack thirdFresh = ItemStack.of(Material.IRON_PICKAXE);
+        ItemStack thirdFresh = ItemStack.of(Material.IRON_PICKAXE).with(b -> b.set(DataComponents.DAMAGE, 200));
         int taxedCost = dev.pointofpressure.minecom.blocks.Anvils.costOf(onceCombined, thirdFresh);
         check("anvil: re-combining that item taxes the next combine's cost (base 2 + tax 1 = 3, got "
                 + taxedCost + ")", taxedCost == 3);
 
         // AnvilMenu.createResult: cost >= 40 refuses entirely ("Too Expensive!") outside creative.
         ItemStack veryUsed = ItemStack.of(Material.IRON_PICKAXE)
-                .with(b -> b.set(DataComponents.REPAIR_COST, 50));
+                .with(b -> { b.set(DataComponents.DAMAGE, 200); b.set(DataComponents.REPAIR_COST, 50); });
         int expensiveCost = dev.pointofpressure.minecom.blocks.Anvils.costOf(veryUsed, thirdFresh);
         check("anvil: a heavily-repair-cost-taxed item pushes total cost past the 40 cap (got "
                 + expensiveCost + ")", expensiveCost >= 40);
+    }
+
+    /** AnvilMenu.setItemName via Minestom's real (if undocumented) PlayerAnvilInputEvent. */
+    private static void scenarioAnvilRename() {
+        BlockVec pos = new BlockVec(28, Y + 1, 20);
+        world.setBlock(pos, Block.ANVIL);
+        interact(pos);
+        boolean opened = player.getOpenInventory() instanceof Inventory;
+        check("anvil (rename) opens window", opened);
+        if (!opened) return;
+        Inventory anvil = (Inventory) player.getOpenInventory();
+        anvil.setItemStack(0, ItemStack.of(Material.DIAMOND_SWORD));
+        tick(1);
+        Experience.set(player, Experience.xpForLevel(5));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerAnvilInputEvent(player, anvil, "Excalibur"));
+        tick(1);
+        ItemStack preview = anvil.getItemStack(2);
+        check("anvil: renaming alone previews a result named Excalibur",
+                !preview.isAir() && preview.get(DataComponents.CUSTOM_NAME) != null);
+        int levelBefore = player.getLevel();
+        click(anvil, 2);
+        ItemStack cursor = anvil.getCursorItem(player);
+        check("anvil: rename-only costs exactly 1 level and the taken item carries the custom name",
+                player.getLevel() == levelBefore - 1 && cursor.get(DataComponents.CUSTOM_NAME) != null);
+        anvil.setCursorItem(player, ItemStack.AIR);
+        player.closeInventory();
+        tick(2);
+        world.setBlock(pos, Block.AIR);
+    }
+
+    /**
+     * EnchantmentMenu, ported: real block + real bookshelf-power path (0 bookshelves here,
+     * so slot 0's cost is guaranteed nonzero — max(selected/3,1) is always >=1), a fixed
+     * per-player seed for determinism, and the buttonId+1 xp/lapis quirk (NOT the displayed
+     * level requirement).
+     */
+    private static void scenarioEnchantingTable() {
+        BlockVec pos = new BlockVec(20, Y + 1, 24);
+        world.setBlock(pos, Block.ENCHANTING_TABLE);
+        dev.pointofpressure.minecom.data.Enchants.setSeed(player, 42);
+        Experience.set(player, Experience.xpForLevel(30));
+        interact(pos);
+        boolean opened = player.getOpenInventory() instanceof Inventory;
+        check("enchanting table opens window", opened);
+        if (!opened) return;
+        Inventory table = (Inventory) player.getOpenInventory();
+        table.setItemStack(0, ItemStack.of(Material.DIAMOND_PICKAXE));
+        tick(1);
+        table.setItemStack(1, ItemStack.of(Material.LAPIS_LAZULI, 3));
+        tick(1);
+        int levelBefore = player.getLevel();
+        EventDispatcher.call(new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, table, 0));
+        tick(1);
+        ItemStack result = table.getItemStack(0);
+        EnchantmentList list = result.get(DataComponents.ENCHANTMENTS);
+        check("enchanting table: clicking the top offer enchants the pickaxe (got "
+                        + (list == null ? "{}" : list.enchantments()) + ")",
+                list != null && !list.enchantments().isEmpty());
+        check("enchanting table: clicking slot 0 costs exactly 1 level (buttonId+1, NOT the displayed cost)",
+                player.getLevel() == levelBefore - 1);
+        check("enchanting table: clicking slot 0 consumes exactly 1 lapis",
+                table.getItemStack(1).amount() == 2);
+        player.closeInventory();
+        tick(2);
+        world.setBlock(pos, Block.AIR);
+    }
+
+    /** GrindstoneMenu, ported: curses survive disenchanting, non-curses refund xp. */
+    private static void scenarioGrindstone() {
+        BlockVec pos = new BlockVec(24, Y + 1, 24);
+        world.setBlock(pos, Block.GRINDSTONE);
+        interact(pos);
+        boolean opened = player.getOpenInventory() instanceof Inventory;
+        check("grindstone opens window", opened);
+        if (!opened) return;
+        Inventory grindstone = (Inventory) player.getOpenInventory();
+        ItemStack cursedSword = dev.pointofpressure.minecom.data.Enchants.with(
+                ItemStack.of(Material.DIAMOND_SWORD), net.minestom.server.item.enchant.Enchantment.SHARPNESS, 3);
+        cursedSword = dev.pointofpressure.minecom.data.Enchants.with(cursedSword,
+                net.minestom.server.item.enchant.Enchantment.VANISHING_CURSE, 1);
+        grindstone.setItemStack(0, cursedSword);
+        tick(1);
+        check("grindstone previews a disenchant result", !grindstone.getItemStack(2).isAir());
+        click(grindstone, 2);
+        ItemStack cursor = grindstone.getCursorItem(player);
+        check("grindstone: taken item lost sharpness but kept vanishing_curse",
+                dev.pointofpressure.minecom.data.Enchants.level(cursor, "sharpness") == 0
+                        && dev.pointofpressure.minecom.data.Enchants.level(cursor, "vanishing_curse") == 1);
+        // GrindstoneMenu.onTake spawns a physical ExperienceOrb (ExperienceOrb.award), not an
+        // instant Experience.add — matches Furnaces.java's different (instant) convention only
+        // by coincidence; the grindstone's own orb still needs to be walked over to collect.
+        // Entity#setInstance is async (fire-and-forget here, like every other Experience.orb
+        // call site), so poll tick-counted rather than assuming it lands within a fixed tick(n).
+        boolean orbSpawned = waitFor(() -> world.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.EXPERIENCE_ORB), 2000);
+        int orbXp = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.EXPERIENCE_ORB)
+                .mapToInt(e -> ((net.minestom.server.entity.ExperienceOrb) e).getExperienceCount())
+                .sum();
+        check("grindstone: disenchanting a non-curse enchant spawns a real xp orb (got " + orbXp + ")",
+                orbSpawned && orbXp > 0);
+        grindstone.setCursorItem(player, ItemStack.AIR);
+        player.closeInventory();
+        tick(2);
+        clearEntitiesExceptPlayer();
+        world.setBlock(pos, Block.AIR);
     }
 
     private static void scenarioFishing() {
