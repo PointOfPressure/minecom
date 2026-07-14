@@ -132,16 +132,14 @@ landable:
 
 Ordered by (player impact × unlock value), sizes from AUDIT:
 
-**Tier 1 — the two systems everything else waits on:**
-1. **Enchanting engine** (table UI + xp/lapis costs + randomized offers +
-   grindstone + smithing) — L. Unlocks: loot-table enchant functions (end
-   city/trial rewards currently drop unenchanted — the exact coupling that
-   stalled VRI [VRI §3.6]), mob equipment enchants, anvils' full loop.
-2. ~~**Classic `minecraft:spawner` block entities**~~ — DONE 2026-07-14
-   (v0.19.0, `ClassicSpawners.java`, see HANDOFF.md): mineshaft/fortress/
-   stronghold wired. Dungeons still open — no generated dungeon feature
-   exists in this project at all yet, a separate worldgen prerequisite
-   (AUDIT.md's worldgen section).
+**Tier 1 — the two systems everything else waits on: BOTH DONE 2026-07-14**
+1. ~~**Enchanting engine**~~ — DONE (v0.18.0): table + anvil + grindstone,
+   data-driven, incl. the loot-table enchant functions unlock
+   (enchant_randomly/enchant_with_levels — LootTables.java).
+2. ~~**Classic `minecraft:spawner` block entities**~~ — DONE (v0.19.0,
+   `ClassicSpawners.java`): mineshaft/fortress/stronghold wired; dungeons
+   closed by v0.20.0's MonsterRoomFeature port (region-diff rose to
+   99.3613%).
 
 **Tier 2 — visible-daily survival gaps:** taming (wolf/cat/horse + saddles,
 leads, name tags) L; villager zombie-conversion/curing S/M; elytra+firework
