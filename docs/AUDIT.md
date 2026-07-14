@@ -705,11 +705,25 @@ leftovers.
 
 - VStructureManager.java:951-967 — ancient city: carving fully-open instead of
   80% probabilistic ceiling; city-center jigsaw growth capped; sculk patches +
-  the spider spawner block + entity spawns deferred as "bounded next increment".
-- VStructureManager.java:1101 — mineshaft spider spawner block deferred (needs
-  spawner mob-type API — same shape as the new TrialChambers registry; could
-  reuse that pattern for classic `minecraft:spawner` block entities generally:
-  dungeons, fortress blaze spawners, stronghold silverfish). (M, high-value)
+  the spider spawner block + entity spawns deferred as "bounded next increment"
+  (ancient city's spawner specifically — NOT the same as the mineshaft one
+  below, which is now done; ancient city was explicitly out of scope for that
+  work, see MASTERPLAN §3 Tier 1 item 2).
+- ~~VStructureManager.java:1101 — mineshaft spider spawner block deferred~~
+  **done 2026-07-14 (Sonnet)** — `ClassicSpawners.java` (decompile-verified
+  against 26.2's `BaseSpawner`/`SpawnerBlockEntity`/`SpawnData`/`SpawnerBlock`)
+  now backs classic `minecraft:spawner` block entities generally: mineshaft
+  spiderCorridor cave_spider (`VStructureManager.msMaybePlaceSpiderSpawner`),
+  stronghold portal-room silverfish (`VStrongholdGen.ppPortalRoom`), and
+  nether fortress blaze (`NetherGen.fortress`, one fixed position — the
+  platform is already a documented stand-in, not a real piece-tree, so there
+  was no real per-piece spawner slot to port). Full detail in HANDOFF.md
+  (search "classic spawner", 2026-07-14). **Still open: dungeons** — this
+  project has NO generated dungeon feature at all (no carving/room/chest/
+  spawner placement anywhere; confirmed by grep, not merely undecorated) — a
+  new `DungeonFeature` port is a prerequisite before dungeons can use the now-
+  ready spawner system. (S once dungeons themselves exist — the spawner side
+  is a two-line `ClassicSpawners.registerSpawner` call away)
 - VStructureManager.java:1962 — jungle temple: "hidden lever-and-piston vault"
   — dispenser traps with arrows/tripwire exist? (the note says wiring
   simplified; verify with a generated temple).
@@ -770,8 +784,10 @@ leftovers.
 ## Top 10 by player impact
 
 1. Structure chest loot filling (empty dungeon/chamber/city chests) — M
-2. Classic `minecraft:spawner` block entities (dungeons, mineshafts, fortress,
-   stronghold) via the TrialChambers registry pattern — M
+2. ~~Classic `minecraft:spawner` block entities~~ — mineshaft/stronghold/
+   fortress DONE 2026-07-14 (v0.19.0, `ClassicSpawners.java`); dungeons still
+   open (no generated dungeon feature exists at all yet — see worldgen
+   section above) — S remaining
 3. ~~Enchanting table (+ grindstone/smithing)~~ — table + grindstone DONE
    2026-07-14 (v0.18.0); smithing table (netherite + trims) still open — S
 4. Persistence of containers/mobs across restarts — L

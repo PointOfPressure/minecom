@@ -95,7 +95,15 @@ public final class NetherGen implements Generator {
     private static final int FORTRESS_SPACING = 432;   // ~27 chunks
     private static final int FORTRESS_Y = 66;
 
-    /** A bounded nether fortress: a nether-brick platform + railed bridges (spawns blazes). */
+    /**
+     * A bounded nether fortress: a nether-brick platform + railed bridges, plus one blaze
+     * spawner ({@code ClassicSpawners.registerSpawnerNether}) at the platform's own center —
+     * real vanilla places a blaze spawner in a specific "nether_bridge" piece variant that has
+     * no equivalent here (this platform is a documented stand-in, not a piece-tree port, see the
+     * class javadoc), so a single fixed position is used instead of a real piece-driven one; this
+     * is the same kind of approximation already accepted for this method's platform/bridge shape
+     * itself.
+     */
     private static void fortress(net.minestom.server.instance.generator.UnitModifier mod, int baseX, int baseZ) {
         int fcx = Math.floorDiv(baseX, FORTRESS_SPACING) * FORTRESS_SPACING + FORTRESS_SPACING / 2;
         int fcz = Math.floorDiv(baseZ, FORTRESS_SPACING) * FORTRESS_SPACING + FORTRESS_SPACING / 2;
@@ -111,12 +119,24 @@ public final class NetherGen implements Generator {
                 boolean edge = platform ? (Math.abs(lx) == 6 || Math.abs(lz) == 6)
                         : (bridgeX ? Math.abs(lz) == 1 : Math.abs(lx) == 1);
                 for (int y = FORTRESS_Y + 1; y <= FORTRESS_Y + 5; y++) mod.setBlock(wx, y, wz, Block.AIR);
+                if (lx == 0 && lz == 0) {
+                    mod.setBlock(wx, FORTRESS_Y + 1, wz, Block.SPAWNER);
+                    dev.pointofpressure.minecom.blocks.ClassicSpawners.registerSpawnerNether(
+                            wx, FORTRESS_Y + 1, wz, "minecraft:blaze");
+                }
                 if (edge) {
                     mod.setBlock(wx, FORTRESS_Y + 1, wz, Block.NETHER_BRICK_FENCE);
                     mod.setBlock(wx, FORTRESS_Y + 2, wz, Block.NETHER_BRICK_FENCE);
                 }
             }
         }
+    }
+
+    /** Test hook: the world position of the blaze spawner in the fortress cell containing (worldX, worldZ) — pure math, matches {@link #fortress}'s own center calc. */
+    public static int[] testFortressSpawnerPos(int worldX, int worldZ) {
+        int fcx = Math.floorDiv(worldX, FORTRESS_SPACING) * FORTRESS_SPACING + FORTRESS_SPACING / 2;
+        int fcz = Math.floorDiv(worldZ, FORTRESS_SPACING) * FORTRESS_SPACING + FORTRESS_SPACING / 2;
+        return new int[]{fcx, FORTRESS_Y + 1, fcz};
     }
 
     // ------------------------------------------------------------------ nether fossils

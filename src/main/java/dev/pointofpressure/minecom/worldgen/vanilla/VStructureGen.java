@@ -88,6 +88,13 @@ public final class VStructureGen {
             if (b.nbt != null && (name.equals("minecraft:trial_spawner") || name.equals("minecraft:vault"))) {
                 dev.pointofpressure.minecom.blocks.TrialChambers.registerTemplateBlockEntity(wx, wy, wz, name, b.nbt);
             }
+            // classic minecraft:spawner block entities embedded in a .nbt template (none bundled
+            // today — this project's dungeons/mineshafts/fortresses/strongholds are all
+            // procedural, matching real vanilla; kept here so a future template-based structure
+            // gets this for free, see ClassicSpawners.registerTemplateBlockEntity's javadoc)
+            if (b.nbt != null && name.equals("minecraft:spawner")) {
+                dev.pointofpressure.minecom.blocks.ClassicSpawners.registerTemplateBlockEntity(wx, wy, wz, name, b.nbt);
+            }
             // structure-authored container loot (RandomizableContainer's LootTable NBT field,
             // rolled on first open — see Containers.registerLoot/rollPendingLoot)
             VStructureManager.registerContainerLoot(name, b.nbt, wx, wy, wz);

@@ -14,6 +14,130 @@ of what got escalated and why.
 
 ---
 
+## Classic mob spawner block entities landed (2026-07-14, Sonnet 5) — MASTERPLAN §3 Tier 1 item 2, v0.19.0
+
+`ClassicSpawners.java`, decompile-verified against 26.2's `BaseSpawner`/
+`SpawnerBlockEntity`/`SpawnData`/`SpawnerBlock` (cached fresh under
+`vanilla-src/net/minecraft/world/level/`). Full detail in the class's own
+javadoc; summary:
+
+- **Cycle**: player-range activation (default 16), `spawnDelay` reroll
+  (min/max 200/800 by default), up to `spawnCount` (4) attempts per burst
+  with the SAME picked `SpawnData` entry, collision + per-mob light-rule
+  checks, a live `maxNearbyEntities` (6) re-count each attempt (not a tracked
+  set), particle burst + delay reroll on any success, silent retry-next-tick
+  on an all-soft-fail burst — all decompiled line-by-line from `BaseSpawner`,
+  including which failure branches are hard-fails (reroll + abort the whole
+  burst) vs soft-fails (continue to the next attempt).
+- **Reuse over fork**: the light-level and collision predicates are the SAME
+  `VNaturalSpawner.checkSpawnRules`/`noCollision` methods natural spawning
+  already uses (made `public` on that class for this reuse) — not
+  reimplemented. Trial spawners were checked first; they don't share code
+  here because `TrialSpawner` is a materially different state machine (waves,
+  detected-player tracking, reward ejection) with no `BaseSpawner` cycle
+  underneath it in real vanilla either.
+- **Multi-dimension**: unlike `TrialChambers` (Overworld-only "known limit"),
+  fortress blaze spawners live in the Nether, so the registry is keyed per
+  `Instance`, not just position — `registerSpawnerOverworld`/
+  `registerSpawnerNether` convenience overloads exist for worldgen call sites
+  (`VStructureManager`, `VStrongholdGen`, `NetherGen`) that have no live
+  `Instance` reference at generation time (same constraint
+  `TrialChambers.registerTemplateBlockEntity` already had).
+- **Wired into**: mineshaft spiderCorridor cave_spider
+  (`VStructureManager.msMaybePlaceSpiderSpawner`, decompiled from
+  `MineshaftPieces$MineShaftCorridor.build`'s `hasPlacedSpider` search —
+  approximated as a single piece-seeded section+offset choice instead of
+  vanilla's per-chunk-render continuously-advancing stream, matching this
+  file's existing spiderCorridor/hasRails precedent), stronghold portal-room
+  silverfish (`VStrongholdGen.ppPortalRoom` — the mob-type NBT this file's own
+  class javadoc previously said was "skipped" is now wired), and nether
+  fortress blaze (`NetherGen.fortress` — ONE fixed spawner position at the
+  platform center, since that platform is already a documented stand-in for a
+  real piece-tree, not something with an actual "nether_bridge" piece variant
+  to place a spawner in).
+- **NOT done — dungeons**: MASTERPLAN §3 item 2 lists dungeons as an
+  integration target, but this project has **no generated dungeon feature at
+  all** (confirmed by grep: no carving, no room, no chest, no spawner —
+  dungeons were never implemented as a worldgen feature in the first place,
+  unlike mineshaft/stronghold/fortress which existed and just lacked the
+  spawner). Building one is a real, separate worldgen task (carve a small
+  room, random mossy-cobble/cobble walls, 0-2 chests, one spawner with the
+  classic skeleton/zombie/spider weighted roll) — out of scope for a
+  block-entity-behavior task, logged here rather than attempted half-scoped.
+  The spawner side is now trivial once dungeons exist
+  (`ClassicSpawners.registerSpawnerOverworld` one-liner).
+- **Breaking**: `SpawnerBlock.spawnAfterBreak`'s unconditional
+  `15+rand(15)+rand(15)` (15-43) XP, no item ever (confirmed no
+  `minecraft:spawner` loot table anywhere, Minestom's own registry included —
+  Silk Touch changes nothing), creative awards none.
+- **Two real bugs found and fixed while landing this** (both in the PlayTest
+  harness, not the production code, but worth the callout for whoever next
+  writes a scenario that spans multiple dimensions or touches
+  `Persist.wipeAdaptersForTest()`):
+  1. `ClassicSpawners.designateDimensions` was being called from inside
+     individual scenarios (stronghold's, the classic-spawner scenario's,
+     fortress's own) rather than once globally. `scenarioBed`'s Nether
+     explosion test force-loads the exact chunk the fortress spawner sits in
+     (both land in chunk 13,13 near spawn) — and it runs FAR earlier in the
+     scenario list than any of those three. Chunk generation is cached, so by
+     the time a later scenario calls `designateDimensions`, the chunk (and
+     its `registerSpawnerNether` call) had already run with `netherInstance`
+     still null — silently and permanently skipping registration despite the
+     block itself placing correctly. Root-caused via a temporary
+     `System.err.println` diagnostic (identity-hashcode + position) run
+     against the FULL suite (the bug never reproduced in an isolated
+     `--playtest fortress` run — only in full-suite order). Fixed by moving
+     the call to ONE global `ClassicSpawners.designateDimensions` right after
+     `Bootstrap.boot()` in `PlayTest.run`, before any scenario can touch a
+     chunk. Removed the now-redundant per-scenario calls.
+  2. Even after fixing (1), the fortress check still failed. Cause:
+     `ClassicSpawners`' `wipe()` (the `StateAdapter` "playtest wipe hook")
+     was clearing EVERY dimension's in-memory registry
+     (`SPAWNERS.values().forEach(Map::clear)`), but `collect`/`restore` only
+     ever run against the Overworld (`Persist` is single-dimension
+     project-wide — see `TrialChambers`' own "known limit" note). The
+     classic-spawner scenario's own save/wipe/reload persistence check was
+     wiping the Nether's already-registered fortress spawner as a side
+     effect, with no way to recover it (restore never touches Nether data).
+     Fixed by scoping `wipe()` to `SPAWNERS.get(overworldInstance)` only,
+     matching `collect`/`restore`'s actual scope exactly. This class of bug
+     (a `StateAdapter` whose `wipe()` scope doesn't match its
+     `collect`/`restore` scope) is worth checking for in any FUTURE
+     multi-dimension adapter.
+- **Verification**: one new PlayTest scenario (`scenarioClassicSpawner`) plus
+  targeted extensions to the existing stronghold and nether-fortress
+  scenarios — no new SelfTest checks (this is a live-tick block-entity state
+  machine with no meaningful pure-function surface, same call TrialChambers
+  made for its own coverage). Full suite: **707/707** (was 689 pre-session +
+  18 new checks, all green after the two bugs above were fixed — confirmed
+  clean on a full, unfiltered `--playtest` run, not just the new/touched
+  scenarios in isolation). During this session's playtest reruns, single
+  UNRELATED scenarios failed intermittently and inconsistently across runs
+  (trident riptide, channeling lightning redirect, grindstone xp orb, elder
+  guardian laser timing, fire spread) — never the same one twice, never a
+  file this session touched — consistent with pre-existing flakiness (the
+  trident riptide one is already documented as such in this file's prior
+  entry), not a regression. Not chased further; logging the pattern here in
+  case a future session wants to run the suite N times and hunt them
+  properly.
+- **SelfTest not re-verified end to end this session**: `--selftest` took
+  15+ minutes without producing any output in this session's runs (both with
+  and without this session's changes applied) before being killed for time
+  budget reasons. A direct A/B comparison (`git stash` back to the pre-session
+  v0.18.0 tree, rebuild, rerun) showed IDENTICAL behavior — same multi-minute
+  silent runtime — confirming this is a pre-existing characteristic of
+  `--selftest`, not something this session's changes caused (and by
+  construction couldn't: every new call site added this session
+  — `registerSpawnerOverworld`/`registerSpawnerNether` — is a no-op guarded
+  on `overworldInstance`/`netherInstance` being non-null, and `--selftest`
+  never calls `designateDimensions` at all, so those fields are always null
+  in that harness). Worth a future session's `--selftest` output actually
+  being profiled (does it print incrementally? does it genuinely take this
+  long normally, or is THIS itself a separate pre-existing hang?) — logging
+  here rather than guessing further.
+
+---
+
 ## Enchanting engine landed (2026-07-14, Sonnet 5) — MASTERPLAN §3 Tier 1 item 1, v0.18.0
 
 Table + anvil + grindstone, decompile-verified against 26.2 (EnchantmentHelper,

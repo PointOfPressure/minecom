@@ -1110,10 +1110,11 @@ public final class VStructureManager {
      * on a real "is there ceiling above" check), and cobweb decoration (all real, position-
      * seeded rather than a shared continuously-advancing stream — same chunk-render-order-
      * independence requirement already established for ruined portal's spreadNetherrack), and
-     * rails ({@link #msMaybePlaceRail} — real floor-solidity-gated). Still NOT decorated:
-     * chest-loot (real vanilla spawns a chest MINECART ENTITY here, not a block — matches the
-     * established no-worldgen-entity-spawn precedent), and the spider spawner (a BLOCK, but
-     * needs the spawner mob-type API plus the same entity-spawn-adjacent caution).
+     * rails ({@link #msMaybePlaceRail} — real floor-solidity-gated), and the spider spawner
+     * ({@link #msMaybePlaceSpiderSpawner} — {@code ClassicSpawners.registerSpawnerOverworld},
+     * cave_spider, decompile-verified against {@code MineshaftPieces$MineShaftCorridor.build}).
+     * Still NOT decorated: chest-loot (real vanilla spawns a chest MINECART ENTITY here, not a
+     * block — matches the established no-worldgen-entity-spawn precedent).
      */
     private void placeMineshaftCorridor(MSPiece p, boolean mesa, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
         for (int x = p.minX(); x <= p.maxX(); x++) {
@@ -1156,6 +1157,12 @@ public final class VStructureManager {
                     }
                 }
             }
+            // spiderCorridor's cave_spider spawner — see msMaybePlaceSpiderSpawner's javadoc.
+            VSurface.LegacyRandom spiderRng = new VSurface.LegacyRandom(
+                    XRandom.blockSeed(p.minX(), p.minY(), p.minZ()) ^ 0x5B1DE2L);
+            int section = spiderRng.nextInt(p.numSections());
+            int spiderLz = 2 + section * 5 - 1 + spiderRng.nextInt(3);
+            msMaybePlaceSpiderSpawner(p, spiderLz, minX, minZ, maxX, maxZ, canvas);
         }
 
         // hasRails: a rail track down the corridor's center line, gated on a real solid-floor
@@ -1241,6 +1248,31 @@ public final class VStructureManager {
         float probability = msIsInterior(interiorCheck[0], interiorCheck[1], interiorCheck[2], minX, minZ, maxX, maxZ) ? 0.7F : 0.9F;
         VSurface.LegacyRandom rng = new VSurface.LegacyRandom(XRandom.blockSeed(railPos[0], railPos[1], railPos[2]) ^ 0x8A11L);
         if (rng.nextFloat() < probability) canvas.set(railPos[0], railPos[1], railPos[2], Block.RAIL.withProperty("shape", "north_south"));
+    }
+
+    /**
+     * {@code MineshaftPieces$MineShaftCorridor.build}'s {@code hasPlacedSpider} search
+     * (decompiled from 26.2, cached at
+     * {@code vanilla-src/net/minecraft/world/level/levelgen/structure/structures/MineshaftPieces.java}):
+     * {@code if (this.spiderCorridor && !this.hasPlacedSpider) { int newZ = z - 1 +
+     * random.nextInt(3); ... if (chunkBB.isInside(pos) && this.isInterior(level, 1, 0, newZ,
+     * chunkBB)) { level.setBlock(pos, SPAWNER); spawner.setEntityId(CAVE_SPIDER, random); } }}
+     * called once per section (0..numSections-1) until it succeeds. Approximated the same way as
+     * {@code spiderCorridor}'s own ceiling cobweb strip and {@code hasRails} (see the class
+     * javadoc): a single piece-seeded (not per-chunk-render) choice of section+offset, so the
+     * result doesn't depend on chunk generation/render order — the real per-position gates
+     * ({@code chunkBB.isInside} → this method's own in-bounds check; {@code isInterior} at the
+     * spawner's OWN position, not one above it, unlike most of this corridor's other placement
+     * checks — verified from the decompile, not assumed) are reproduced exactly at the chosen
+     * position.
+     */
+    private void msMaybePlaceSpiderSpawner(MSPiece p, int lz, int minX, int minZ, int maxX, int maxZ, VStructureGen.Canvas canvas) {
+        int[] target = msWorldPos(p, 1, 0, lz);
+        if (target[0] < minX || target[0] > maxX || target[2] < minZ || target[2] > maxZ) return;
+        if (!msIsInterior(target[0], target[1], target[2], minX, minZ, maxX, maxZ)) return;
+        canvas.set(target[0], target[1], target[2], Block.SPAWNER);
+        dev.pointofpressure.minecom.blocks.ClassicSpawners.registerSpawnerOverworld(
+                target[0], target[1], target[2], "minecraft:cave_spider");
     }
 
     /**
@@ -1386,6 +1418,32 @@ public final class VStructureManager {
         if (pieces == null) return null;
         MSPiece room = pieces.get(0);
         return new int[]{pieces.size(), room.minX(), room.minY(), room.minZ(), room.maxX(), room.maxY(), room.maxZ()};
+    }
+
+    /**
+     * Test hook: searches a {@code radius}-chunk window around (chunkX,chunkZ) for the first
+     * {@code spiderCorridor} CORRIDOR piece, fully renders JUST that one piece (real
+     * {@link #placeMineshaftCorridor}, unclipped) into the given canvas, and returns its bounding
+     * box {minX,minY,minZ,maxX,maxY,maxZ} — or null if none is found in the window. Exercises the
+     * real {@link #msMaybePlaceSpiderSpawner} placement end to end (the caller can scan the
+     * returned box for {@code minecraft:spawner}).
+     */
+    public int[] testRenderMineshaftSpiderCorridor(String flavor, int chunkX, int chunkZ, int radius, VStructureGen.Canvas canvas) {
+        boolean mesa = flavor.equals("mesa");
+        for (int dz = -radius; dz <= radius; dz++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                int ccx = chunkX + dx, ccz = chunkZ + dz;
+                if (!placement.isStructureChunk(MINESHAFT_SET, ccx, ccz)) continue;
+                List<MSPiece> pieces = assembleMineshaft(flavor, ccx, ccz);
+                if (pieces == null) continue;
+                for (MSPiece p : pieces) {
+                    if (p.kind() != MSKind.CORRIDOR || !p.spiderCorridor()) continue;
+                    placeMineshaftCorridor(p, mesa, p.minX() - 1, p.minZ() - 1, p.maxX() + 1, p.maxZ() + 1, canvas);
+                    return new int[]{p.minX(), p.minY(), p.minZ(), p.maxX(), p.maxY(), p.maxZ()};
+                }
+            }
+        }
+        return null;
     }
 
     /** Test hook: {kind (0=room,1=corridor,2=crossing,3=stairs), minX, minY, minZ, maxX, maxY, maxZ} for piece index i, or null if out of range. */

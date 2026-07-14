@@ -182,6 +182,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.RespawnAnchor.register(events, overworld);
         dev.pointofpressure.minecom.blocks.TargetBlock.register(events);
         dev.pointofpressure.minecom.blocks.TrialChambers.start(overworld, events);
+        dev.pointofpressure.minecom.blocks.ClassicSpawners.start(events);
         dev.pointofpressure.minecom.blocks.Candle.register(events);
         dev.pointofpressure.minecom.blocks.Cake.register(events);
         dev.pointofpressure.minecom.blocks.Scaffolding.register(events);
@@ -217,12 +218,18 @@ public final class Bootstrap {
             dev.pointofpressure.minecom.mobs.VNaturalSpawner.BiomeAt biomeAt = gen != null
                     ? (x, y, z) -> gen.biomes().biomeAt(x >> 2, y >> 2, z >> 2)
                     : (x, y, z) -> "minecraft:plains";
-            Mobs.startVanillaSpawner(overworld, biomeAt);
-            Mobs.startVanillaSpawner(nether,
+            var overworldRules = Mobs.startVanillaSpawner(overworld, biomeAt);
+            var netherRules = Mobs.startVanillaSpawner(nether,
                     (x, y, z) -> dev.pointofpressure.minecom.worldgen.NetherGen.biomeAt(x, z));
             if (!config.flatWorld()) {
                 Mobs.startVanillaSpawner(end, (x, y, z) -> endGenF.biomeAt(x, z), true); // End: always dark
             }
+            // Classic minecraft:spawner block entities (dungeons/mineshaft/fortress/stronghold)
+            // share the real doMobSpawning-equivalent gate with natural spawning — see
+            // ClassicSpawners' class javadoc — so registration lives in this same block.
+            dev.pointofpressure.minecom.blocks.ClassicSpawners.registerInstance(overworld, overworldRules);
+            dev.pointofpressure.minecom.blocks.ClassicSpawners.registerInstance(nether, netherRules);
+            dev.pointofpressure.minecom.blocks.ClassicSpawners.designateDimensions(overworld, nether);
         }
 
         Pos spawn = config.flatWorld()

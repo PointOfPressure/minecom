@@ -60,6 +60,14 @@ public final class PlayTest {
         sectionFilter = section;
         MinecraftServer server = MinecraftServer.init();
         world = Bootstrap.boot(Bootstrap.Config.playtest());
+        // Classic-spawner registration must be designated before ANY scenario can force-load a
+        // chunk containing a generation-time spawner placement (e.g. scenarioBed's nether
+        // explosion test forces chunk (13,13) — the same fortress cell scenarioNetherFortress
+        // later checks — well before either of those scenarios would otherwise call this): once
+        // a chunk is generated it's cached, so a late designation permanently misses it. Doing
+        // this once, globally, right after boot (matching production Bootstrap's own ordering
+        // intent) removes the per-scenario-call-order fragility a scattered approach had.
+        dev.pointofpressure.minecom.blocks.ClassicSpawners.designateDimensions(world, Bootstrap.netherOf(world));
         Pos spawn = Bootstrap.spawnOf(world);
         Main.registerConnectionFlow(MinecraftServer.getGlobalEventHandler(), world, spawn);
         // real tick loop; port unused by scenarios. Default 0 lets the OS assign a free
@@ -212,6 +220,7 @@ public final class PlayTest {
         scenario("redstone: daylight detector tracks the sun, inverts into a night sensor", PlayTest::scenarioDaylightDetector);
         scenario("difficulty: peaceful nullifies mobs and hunger, easy/hard scale damage, hard calls zombie reinforcements", PlayTest::scenarioDifficulty);
         scenario("trial chambers: the spawner runs a full wave trial and ejects rewards, the vault unlocks once per player with a trial key, wind charges burst, progress survives a save/wipe/reload", PlayTest::scenarioTrialChamber);
+        scenario("classic spawner: player-range activation, spawn bursts, light-gate reuse, nearby-entity cap, XP-only breaking, definition persistence, and a real mineshaft spider-corridor render", PlayTest::scenarioClassicSpawner);
         scenario("boat: sneak dismounts the rider, attacking breaks it and drops the item", PlayTest::scenarioBoatBreakAndDismount);
         scenario("chest boat: sneak-click opens its 27-slot inventory instead of riding, breaking spills contents", PlayTest::scenarioChestBoat);
         scenario("mobs: some zombies spawn wearing armor", PlayTest::scenarioMobEquipment);
@@ -1656,6 +1665,17 @@ public final class PlayTest {
                         && ws != null && ws.getEntityType() == EntityType.WITHER_SKELETON);
         check("blazes spawn from the fortress list (brewing progression)",
                 dev.pointofpressure.minecom.mobs.VNaturalSpawner.testFortressHasBlaze());
+
+        // fortress blaze spawner: real NetherGen generation (a fortress is placed unconditionally
+        // at every FORTRESS_SPACING grid cell, so any cell's chunk is guaranteed to have one)
+        var nether = dev.pointofpressure.minecom.Bootstrap.netherOf(world);
+        int[] pos = dev.pointofpressure.minecom.worldgen.NetherGen.testFortressSpawnerPos(0, 0);
+        nether.loadChunk(pos[0] >> 4, pos[2] >> 4).join();
+        check("nether fortress: the blaze spawner block is placed at the platform center",
+                nether.getBlock(pos[0], pos[1], pos[2]).key().value().equals("spawner"));
+        check("nether fortress: the placed spawner is registered with ClassicSpawners",
+                dev.pointofpressure.minecom.blocks.ClassicSpawners.testHasSpawner(nether, pos[0], pos[1], pos[2]));
+
         clearEntitiesExceptPlayer();
     }
 
@@ -2266,6 +2286,23 @@ public final class PlayTest {
         boolean allLit = true;
         for (int[] c : core) if (!world.getBlock(c[0], c[1], c[2]).compare(Block.END_PORTAL)) allLit = false;
         check("stronghold: portal activates once all 12 eyes are placed", allLit);
+
+        // silverfish spawner: real vanilla places one in the portal room (StrongholdPieces.PortalRoom)
+        boolean sawSpawner = false;
+        int[] spawnerAt = null;
+        for (int x = portalRoom.minX; x <= portalRoom.maxX && !sawSpawner; x++) {
+            for (int y = portalRoom.minY; y <= portalRoom.maxY && !sawSpawner; y++) {
+                for (int z = portalRoom.minZ; z <= portalRoom.maxZ; z++) {
+                    if (world.getBlock(x, y, z).key().value().equals("spawner")) {
+                        sawSpawner = true; spawnerAt = new int[]{x, y, z}; break;
+                    }
+                }
+            }
+        }
+        check("stronghold: the portal room's silverfish spawner block is placed", sawSpawner);
+        check("stronghold: the placed spawner is registered with ClassicSpawners",
+                sawSpawner && dev.pointofpressure.minecom.blocks.ClassicSpawners.testHasSpawner(world, spawnerAt[0], spawnerAt[1], spawnerAt[2]));
+
         clearEntitiesExceptPlayer();
     }
 
@@ -4259,6 +4296,158 @@ public final class PlayTest {
         world.setBlock(152, Y + 1, 150, Block.AIR);
         dev.pointofpressure.minecom.Difficulty.set(savedDifficulty);
         clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Classic minecraft:spawner block entities (BaseSpawner, decompile-verified against 26.2):
+     * player-range activation, a full spawn burst, the reused VNaturalSpawner light-gate blocking
+     * a lit spawner forever, the live nearby-entity cap, XP-only breaking (no item, ever), and
+     * definition persistence. Built underground (well below the flat world's surface) so
+     * VNaturalSpawner's sky-exposure check is unambiguous regardless of any heightmap-update
+     * timing, rather than relying on a surface-level enclosure.
+     */
+    private static void scenarioClassicSpawner() {
+        clearEntitiesExceptPlayer();
+        var savedDifficulty = dev.pointofpressure.minecom.Difficulty.current();
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.NORMAL);
+        var natRules = new dev.pointofpressure.minecom.mobs.VNaturalSpawner(world, (x, y, z) -> "minecraft:plains");
+        dev.pointofpressure.minecom.blocks.ClassicSpawners.registerInstance(world, natRules);
+
+        int by = Y - 10; // well below the flat surface: canSeeSky() is unambiguous here
+        int sx = 200, sz = 200;
+        digRoom(sx, by, sz);
+        world.setBlock(sx, by + 1, sz, Block.SPAWNER);
+        dev.pointofpressure.minecom.blocks.ClassicSpawners.registerSpawnerForTest(
+                world, sx, by + 1, sz, "minecraft:cave_spider", 20, 40);
+        tick(2);
+
+        // requiredPlayerRange (default 16): no player nearby yet
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        tick(15);
+        boolean noneWhileFar = world.getEntities().stream().noneMatch(e -> e.getEntityType() == EntityType.CAVE_SPIDER);
+        check("classic spawner: no spawn activity while no player is within requiredPlayerRange", noneWhileFar);
+
+        player.teleport(new Pos(sx + 0.5, by + 1, sz + 0.5)).join();
+        boolean spawned = waitFor(() -> world.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.CAVE_SPIDER), 8000);
+        check("classic spawner: a player in range triggers a spawn burst (BaseSpawner.serverTick)", spawned);
+        long firstBurst = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.CAVE_SPIDER).count();
+        check("classic spawner: a burst spawns more than one mob (spawnCount default 4, dark+open room)", firstBurst >= 2);
+
+        // maxNearbyEntities (default 6): keep ticking through further bursts and confirm the count settles at the cap, not beyond
+        long capped = 0;
+        for (int i = 0; i < 12; i++) {
+            tick(45);
+            capped = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.CAVE_SPIDER).count();
+            if (capped >= 6) break;
+        }
+        tick(90);
+        long afterMore = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.CAVE_SPIDER).count();
+        check("classic spawner: the live nearby-entity cap (maxNearbyEntities=6) holds the population near the cap ("
+                        + capped + " -> " + afterMore + ")",
+                capped >= 4 && afterMore <= 7);
+        world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.CAVE_SPIDER).forEach(Entity::remove);
+
+        // light-gate reuse: a torch in the room keeps every attempt a soft-fail forever (BaseSpawner
+        // never rerolls on an all-soft-fail burst, so this also proves the no-reroll-on-total-failure path)
+        int lx = sx + 20;
+        digRoom(lx, by, sz);
+        world.setBlock(lx, by + 2, sz, Block.TORCH);
+        world.setBlock(lx, by + 1, sz, Block.SPAWNER);
+        dev.pointofpressure.minecom.blocks.ClassicSpawners.registerSpawnerForTest(
+                world, lx, by + 1, sz, "minecraft:cave_spider", 20, 40);
+        player.teleport(new Pos(lx + 0.5, by + 1, sz + 0.5)).join();
+        tick(220);
+        boolean noneWhileLit = world.getEntities().stream().noneMatch(e -> e.getEntityType() == EntityType.CAVE_SPIDER);
+        check("classic spawner: light (VNaturalSpawner.checkSpawnRules, reused not forked) blocks every attempt", noneWhileLit);
+        clearEntitiesExceptPlayer();
+
+        // breaking: SpawnerBlock.spawnAfterBreak's 15+rand(15)+rand(15) XP, never an item (no loot
+        // table exists for it) -- Experience.orb spawns a physical ExperienceOrb entity (picked up
+        // over time), so verify by summing live orb entities, not Experience.total(player) (same
+        // convention as scenarioMobEquipment's baby-zombie-xp check and the grindstone xp check).
+        player.setGameMode(GameMode.SURVIVAL);
+        player.teleport(new Pos(sx + 0.5, by + 4, sz + 0.5)).join(); // above the room, out of orb pickup range
+        long itemsBefore = world.getEntities().stream().filter(e -> e instanceof ItemEntity).count();
+        breakBlock(new BlockVec(sx, by + 1, sz));
+        int xpGain = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.EXPERIENCE_ORB)
+                .mapToInt(e -> ((net.minestom.server.entity.ExperienceOrb) e).getExperienceCount())
+                .sum();
+        long itemsAfter = world.getEntities().stream().filter(e -> e instanceof ItemEntity).count();
+        check("classic spawner: breaking it awards 15-43 XP (got " + xpGain + ")", xpGain >= 15 && xpGain <= 43);
+        check("classic spawner: breaking it never drops an item, even without Silk Touch", itemsAfter == itemsBefore);
+        check("classic spawner: breaking it removes the definition (stops ticking)",
+                !dev.pointofpressure.minecom.blocks.ClassicSpawners.testHasSpawner(world, sx, by + 1, sz));
+        clearEntitiesExceptPlayer();
+
+        // creative: no XP, matching spawnAfterBreak's real caller passing dropExperience=false there
+        world.setBlock(sx, by + 1, sz, Block.SPAWNER);
+        dev.pointofpressure.minecom.blocks.ClassicSpawners.registerSpawnerForTest(
+                world, sx, by + 1, sz, "minecraft:cave_spider", 20, 40);
+        player.setGameMode(GameMode.CREATIVE);
+        breakBlock(new BlockVec(sx, by + 1, sz));
+        boolean noCreativeXp = world.getEntities().stream()
+                .noneMatch(e -> e.getEntityType() == EntityType.EXPERIENCE_ORB);
+        check("classic spawner: creative-mode breaks award no XP", noCreativeXp);
+        player.setGameMode(GameMode.SURVIVAL);
+        clearEntitiesExceptPlayer();
+
+        // persistence: the definition (not runtime progress) survives a save/wipe/reload
+        var base = java.nio.file.Path.of("target", "playtest-classicspawner-persist");
+        dev.pointofpressure.minecom.Persist.setBaseDirForTest(base, world);
+        dev.pointofpressure.minecom.Persist.save();
+        dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
+        check("classic spawner: wiping the in-memory registry drops the definition",
+                !dev.pointofpressure.minecom.blocks.ClassicSpawners.testHasSpawner(world, lx, by + 1, sz));
+        dev.pointofpressure.minecom.Persist.loadRegions(world);
+        check("classic spawner: reloading restores the definition after a save/wipe/reload",
+                dev.pointofpressure.minecom.blocks.ClassicSpawners.testHasSpawner(world, lx, by + 1, sz));
+
+        // mineshaft integration: real spider-corridor generation + placement + registration, end to end
+        var msGen = new dev.pointofpressure.minecom.worldgen.vanilla.VanillaGen(20260708L);
+        dev.pointofpressure.minecom.worldgen.vanilla.VStructureGen.Canvas msCanvas = new dev.pointofpressure.minecom.worldgen.vanilla.VStructureGen.Canvas() {
+            public Block get(int x, int y, int z) { return world.getBlock(x, y, z); }
+            public void set(int x, int y, int z, Block b) { world.setBlock(x, y, z, b); }
+        };
+        int[] box = msGen.structures().testRenderMineshaftSpiderCorridor("normal", 0, 0, 40, msCanvas);
+        check("mineshaft: a spiderCorridor piece exists and renders within a 40-chunk search radius", box != null);
+        if (box != null) {
+            for (int cx = box[0] >> 4; cx <= box[3] >> 4; cx++) {
+                for (int cz = box[2] >> 4; cz <= box[5] >> 4; cz++) world.loadChunk(cx, cz).join();
+            }
+            boolean sawSpawner = false;
+            int[] spawnerAt = null;
+            for (int x = box[0]; x <= box[3] && !sawSpawner; x++) {
+                for (int y = box[1]; y <= box[4] && !sawSpawner; y++) {
+                    for (int z = box[2]; z <= box[5]; z++) {
+                        if (world.getBlock(x, y, z).key().value().equals("spawner")) {
+                            sawSpawner = true; spawnerAt = new int[]{x, y, z}; break;
+                        }
+                    }
+                }
+            }
+            check("mineshaft: the spiderCorridor's cave_spider spawner block is placed (MineShaftCorridor.build)", sawSpawner);
+            check("mineshaft: the placed spawner is registered with ClassicSpawners",
+                    sawSpawner && dev.pointofpressure.minecom.blocks.ClassicSpawners.testHasSpawner(world, spawnerAt[0], spawnerAt[1], spawnerAt[2]));
+        }
+
+        clearEntitiesExceptPlayer();
+        dev.pointofpressure.minecom.Difficulty.set(savedDifficulty);
+    }
+
+    /** Carves a fully-enclosed 11x11x5 dark room (walls/floor/roof solid, interior air) centered at (cx, by+1, cz) — large enough to contain BaseSpawner's default spawnRange=4 roll. */
+    private static void digRoom(int cx, int by, int cz) {
+        int r = 5;
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                boolean wallXZ = dx == -r || dx == r || dz == -r || dz == r;
+                for (int dy = -1; dy <= 3; dy++) {
+                    boolean wallY = dy == -1 || dy == 3;
+                    world.setBlock(cx + dx, by + 1 + dy, cz + dz, (wallXZ || wallY) ? Block.STONE : Block.CAVE_AIR);
+                }
+            }
+        }
     }
 
     /**

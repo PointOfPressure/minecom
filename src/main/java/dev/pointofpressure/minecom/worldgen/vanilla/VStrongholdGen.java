@@ -32,9 +32,10 @@ import java.util.Map;
  * intersecting chunks) stay internally self-consistent.
  *
  * <p>Established project-wide precedents followed: chest LOOT-TABLE CONTENTS are skipped (the
- * chest block itself is placed) and the portal room's silverfish SPAWNER's mob-type NBT is
- * skipped (the spawner block itself is placed) — matching every other structure's container/
- * spawner handling (see VStructureManager's ocean_ruin/mineshaft javadocs).
+ * chest block itself is placed) — matching every other structure's container handling. The
+ * portal room's silverfish spawner mob-type IS wired ({@code ClassicSpawners}, see
+ * {@link #ppPortalRoom}) — the classic-spawner block-entity system this precedent note used to
+ * defer on now exists.
  */
 public final class VStrongholdGen {
 
@@ -1055,9 +1056,11 @@ public final class VStrongholdGen {
         }
         if (!p.placedSpawner && insideClip(p, clip, 5, 3, 6)) {
             p.placedSpawner = true;
-            // established project-wide precedent: place the SPAWNER block, skip the mob-type NBT
-            // (no live block-entity mob-type API in this project; see javadoc).
+            // real vanilla: level.setBlock(pos, SPAWNER) then spawner.setEntityId(SILVERFISH,
+            // random) — the mob-type API now exists (ClassicSpawners), see class javadoc.
             place(p, sink, clip, Block.SPAWNER, 5, 3, 6);
+            dev.pointofpressure.minecom.blocks.ClassicSpawners.registerSpawnerOverworld(
+                    worldX(p, 5, 6), worldY(p, 3), worldZ(p, 5, 6), "minecraft:silverfish");
         }
     }
 

@@ -406,7 +406,8 @@ public final class VNaturalSpawner {
 
     // ---- per-mob spawn-rule predicates (Monster / Animal checkSpawnRules) ----
 
-    private boolean checkSpawnRules(String type, int x, int y, int z) {
+    /** Reused by {@link dev.pointofpressure.minecom.blocks.ClassicSpawners} for BaseSpawner's identical mob.checkSpawnRules gate. */
+    public boolean checkSpawnRules(String type, int x, int y, int z) {
         if (type.equals("minecraft:strider")) return true;                 // on lava, no grass/light gate
         if (type.equals("minecraft:ocelot")) return skyLightAt(x, y, z) > 8; // jungle, daytime (monster cap but day rule)
         Cat c = TYPE_CATEGORY.getOrDefault(type, null);
@@ -416,7 +417,7 @@ public final class VNaturalSpawner {
     }
 
     /** Monster.checkMonsterSpawnRules: not peaceful (we assume normal) + isDarkEnoughToSpawn. */
-    private boolean checkMonsterSpawnRules(int x, int y, int z) {
+    public boolean checkMonsterSpawnRules(int x, int y, int z) {
         return isDarkEnoughToSpawn(x, y, z);
     }
 
@@ -445,7 +446,8 @@ public final class VNaturalSpawner {
 
     // ---- collision ----
 
-    private boolean noCollision(int x, int y, int z) {
+    /** Reused by {@link dev.pointofpressure.minecom.blocks.ClassicSpawners} for BaseSpawner's identical level.noCollision gate. */
+    public boolean noCollision(int x, int y, int z) {
         // mob AABB spans y..y+1 (most land mobs ~2 blocks tall); require both non-full
         return !isFullCube(instance.getBlock(x, y, z)) && !isFullCube(instance.getBlock(x, y + 1, z));
     }
