@@ -7274,24 +7274,24 @@ public final class PlayTest {
         grindstone.setItemStack(0, cursedSword);
         tick(1);
         check("grindstone previews a disenchant result", !grindstone.getItemStack(2).isAir());
+        int xpBefore = dev.pointofpressure.minecom.survival.Experience.total(player);
         click(grindstone, 2);
         ItemStack cursor = grindstone.getCursorItem(player);
         check("grindstone: taken item lost sharpness but kept vanishing_curse",
                 dev.pointofpressure.minecom.data.Enchants.level(cursor, "sharpness") == 0
                         && dev.pointofpressure.minecom.data.Enchants.level(cursor, "vanishing_curse") == 1);
-        // GrindstoneMenu.onTake spawns a physical ExperienceOrb (ExperienceOrb.award), not an
-        // instant Experience.add — matches Furnaces.java's different (instant) convention only
-        // by coincidence; the grindstone's own orb still needs to be walked over to collect.
-        // Entity#setInstance is async (fire-and-forget here, like every other Experience.orb
-        // call site), so poll tick-counted rather than assuming it lands within a fixed tick(n).
-        boolean orbSpawned = waitFor(() -> world.getEntities().stream()
-                .anyMatch(e -> e.getEntityType() == EntityType.EXPERIENCE_ORB), 2000);
-        int orbXp = world.getEntities().stream()
+        // GrindstoneMenu.onTake spawns a physical ExperienceOrb (ExperienceOrb.award) AT the
+        // player's position — and Minestom 26.2 auto-collects nearby orbs in Player#update,
+        // so the orb can be banked any tick after it lands (Entity#setInstance is async).
+        // The conserved quantity is orb-in-flight XP + the player's total: accept either.
+        boolean refunded = waitFor(() -> world.getEntities().stream()
                 .filter(e -> e.getEntityType() == EntityType.EXPERIENCE_ORB)
                 .mapToInt(e -> ((net.minestom.server.entity.ExperienceOrb) e).getExperienceCount())
-                .sum();
-        check("grindstone: disenchanting a non-curse enchant spawns a real xp orb (got " + orbXp + ")",
-                orbSpawned && orbXp > 0);
+                .sum() > 0
+                || dev.pointofpressure.minecom.survival.Experience.total(player) > xpBefore, 2000);
+        check("grindstone: disenchanting a non-curse enchant refunds real xp (orb or auto-pickup)",
+                refunded);
+        dev.pointofpressure.minecom.survival.Experience.set(player, xpBefore);
         grindstone.setCursorItem(player, ItemStack.AIR);
         player.closeInventory();
         tick(2);
