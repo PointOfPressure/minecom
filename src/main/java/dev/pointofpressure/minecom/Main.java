@@ -27,7 +27,7 @@ public final class Main {
     public static void main(String[] args) {
         if (args.length > 0 && args[0].equals("--selftest")) {
             MinecraftServer.init(); // binds registries so component reads work
-            System.out.println(SelfTest.run());
+            SelfTest.run(); // streams per-check via emit()
             System.exit(0);
         }
         if (args.length > 0 && args[0].equals("--playtest")) {

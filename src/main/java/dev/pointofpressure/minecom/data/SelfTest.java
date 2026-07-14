@@ -16,14 +16,22 @@ public final class SelfTest {
     private static int passed, failed;
     private static final StringBuilder REPORT = new StringBuilder();
 
+    /** Appends to the report AND streams the line immediately — a tail/CI
+     * watcher sees per-check progress instead of one dump at exit. */
+    private static void emit(String s) {
+        REPORT.append(s);
+        System.out.print(s);
+        System.out.flush();
+    }
+
     public static String run() {
         passed = failed = 0;
         REPORT.setLength(0);
         VanillaData.load();
-        REPORT.append("indexed: ").append(Recipes.shapedCount()).append(" shaped, ")
-                .append(Recipes.shapelessCount()).append(" shapeless, ")
-                .append(Recipes.smeltingCount()).append(" smeltable inputs, ")
-                .append(Recipes.campfireCount()).append(" campfire-cookable inputs\n");
+        emit("indexed: " + Recipes.shapedCount() + " shaped, "
+                + Recipes.shapelessCount() + " shapeless, "
+                + Recipes.smeltingCount() + " smeltable inputs, "
+                + Recipes.campfireCount() + " campfire-cookable inputs\n");
 
         ItemStack ironPick = ItemStack.of(Material.IRON_PICKAXE);
         ItemStack shears = ItemStack.of(Material.SHEARS);
@@ -1460,9 +1468,9 @@ public final class SelfTest {
                             ItemStack.of(Material.IRON_PICKAXE), ItemStack.AIR).isAir());
         }
 
-        REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
+        emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
-            REPORT.append("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
+            emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
         }
         return REPORT.toString();
     }
@@ -1491,10 +1499,10 @@ public final class SelfTest {
 
     private static void check(String name, boolean ok) {
         if (ok) passed++; else failed++;
-        REPORT.append(ok ? "PASS " : "FAIL ").append(name).append('\n');
+        emit((ok ? "PASS " : "FAIL ") + name + '\n');
     }
 
     public static void main(String[] args) {
-        System.out.println(run());
+        run(); // emit() has already streamed every line
     }
 }

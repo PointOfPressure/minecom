@@ -273,11 +273,10 @@ public final class PlayTest {
         scenario("nether: terrain generates", PlayTest::scenarioNetherGen);
         scenario("nether: portal ignites + travels + returns", PlayTest::scenarioPortal);
 
-        REPORT.append(passed).append(" passed, ").append(failed).append(" failed\n");
+        emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
-            REPORT.append("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
+            emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
         }
-        System.out.println(REPORT);
         return failed == 0 ? 0 : 1;
     }
 
@@ -358,10 +357,17 @@ public final class PlayTest {
         return condition.getAsBoolean();
     }
 
+    /** Appends to the report AND streams the line immediately — a tail/CI
+     * watcher sees per-check progress instead of one dump at exit. */
+    private static void emit(String s) {
+        REPORT.append(s);
+        System.out.print(s);
+        System.out.flush();
+    }
+
     private static void check(String name, boolean ok) {
         if (ok) passed++; else failed++;
-        REPORT.append(ok ? "PASS " : "FAIL ")
-                .append('[').append(currentScenario).append("] ").append(name).append('\n');
+        emit((ok ? "PASS " : "FAIL ") + '[' + currentScenario + "] " + name + '\n');
     }
 
     /** Minecart: a powered rail accelerates the cart along an east-west track. */
