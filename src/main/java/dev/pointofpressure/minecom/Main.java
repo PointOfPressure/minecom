@@ -1,5 +1,7 @@
 package dev.pointofpressure.minecom;
 
+import dev.pointofpressure.minecom.bench.BenchSetup;
+import dev.pointofpressure.minecom.bench.Metrics;
 import dev.pointofpressure.minecom.data.SelfTest;
 import dev.pointofpressure.minecom.playtest.PlayTest;
 import dev.pointofpressure.minecom.survival.Survival;
@@ -46,6 +48,7 @@ public final class Main {
 
         GlobalEventHandler events = MinecraftServer.getGlobalEventHandler();
         registerConnectionFlow(events, overworld, spawn);
+        BenchSetup.register(events, overworld); // MASTERPLAN §4 P0; no-op unless MINECOM_BENCH_SCENARIO is set
 
         // day/night: advance time manually unless the instance already does
         long before = overworld.getTime();
@@ -67,6 +70,13 @@ public final class Main {
 
         server.start("0.0.0.0", 25565);
         LOGGER.info("Minecom started on :25565 (spawn at {}, biome-correct, survival)", spawn);
+
+        // MASTERPLAN §4 P0: only after a successful bind — registering this
+        // earlier left a bind-failure crash with a live /metrics endpoint
+        // still reporting 20 TPS on a server that never actually started
+        // (the HTTP server's own threads outlive main()'s uncaught exception).
+        int metricsPort = Integer.parseInt(System.getenv().getOrDefault("MINECOM_METRICS_PORT", "9225"));
+        Metrics.register(events, metricsPort);
     }
 
     /** Join/spawn/pickup/drop/ping handlers — shared shape with the playtest harness. */
