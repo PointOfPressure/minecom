@@ -10,7 +10,14 @@ pub fn process_keep_alive_packet(buffer: &mut Buf, bot: &mut Bot, compression: &
 /// Disconnect (login/config/play)
 /// https://minecraft.wiki/w/Java_Edition_protocol/Packets#Disconnect_(login)
 pub fn process_kick(buffer: &mut Buf, bot: &mut Bot, _compression: &mut Compression) {
-    println!("bot was kicked for \"{}\"", buffer.read_sized_string());
+    // the reason is an NBT text component, not a sized string — dump readable
+    // ASCII from the raw payload so the actual reason text is visible
+    let start = buffer.get_reader_index() as usize;
+    let end = buffer.get_writer_index() as usize;
+    let ascii: String = buffer.buffer[start..end].iter()
+        .map(|&b| if (32..127).contains(&b) { b as char } else { '.' })
+        .collect();
+    println!("bot was kicked, reason payload: \"{}\"", ascii);
     bot.kicked = true;
 }
 
@@ -55,7 +62,7 @@ pub fn process_teleport(buffer: &mut Buf, bot: &mut Bot, compression: &mut Compr
 pub fn write_chat_message(message: &str) -> Buf {
     // ClientChatMessagePacket
     let mut buf = Buf::new();
-    buf.write_packet_id(0x08);
+    buf.write_packet_id(0x09);
 
     buf.write_sized_str(message);
 
@@ -75,7 +82,7 @@ pub fn write_chat_message(message: &str) -> Buf {
 pub fn write_animation(off_hand: bool) -> Buf {
     // ClientAnimationPacket
     let mut buf = Buf::new();
-    buf.write_packet_id(0x3C);
+    buf.write_packet_id(0x3F);
     buf.write_var_u32(if off_hand { 1 } else { 0 });
 
     buf
@@ -86,7 +93,7 @@ pub fn write_animation(off_hand: bool) -> Buf {
 pub fn write_entity_action(entity_id: u32, action_id: u32, jump_boost: u32) -> Buf {
     // ClientEntityActionPacket
     let mut buf = Buf::new();
-    buf.write_packet_id(0x29);
+    buf.write_packet_id(0x2A);
 
     buf.write_var_u32(entity_id);
     buf.write_var_u32(action_id);
@@ -100,7 +107,7 @@ pub fn write_entity_action(entity_id: u32, action_id: u32, jump_boost: u32) -> B
 pub fn write_held_slot(slot: u16) -> Buf {
     // ClientHeldItemChangePacket
     let mut buf = Buf::new();
-    buf.write_packet_id(0x34);
+    buf.write_packet_id(0x35);
 
     buf.write_u16(slot);
 
@@ -119,12 +126,24 @@ pub fn write_tele_confirm(id: u32) -> Buf {
     buf
 }
 
+/// Client Tick End — vanilla clients (1.21.2+) send this EVERY tick from the
+/// moment they enter play state. Minestom 26.2's per-connection processing is
+/// paced by client traffic; a bot that sends nothing until teleport-confirm
+/// starves the connection and the server's queued writes (position sync,
+/// chunks, keep-alive, even the kick) never flush — the silent-drop bug.
+pub fn write_tick_end() -> Buf {
+    // ClientTickEndPacket
+    let mut buf = Buf::new();
+    buf.write_packet_id(0x0D);
+    buf
+}
+
 /// Serverbound Keep Alive (play)
 /// https://minecraft.wiki/w/Java_Edition_protocol/Packets#Serverbound_Keep_Alive_(play)
 pub fn write_keep_alive_packet(id: u64) -> Buf {
     // ClientKeepAlivePacket
     let mut buf = Buf::new();
-    buf.write_packet_id(0x1b);
+    buf.write_packet_id(0x1C);
 
     buf.write_u64(id);
 

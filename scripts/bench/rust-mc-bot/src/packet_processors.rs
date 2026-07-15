@@ -68,6 +68,10 @@ pub fn process_decode(
     compression: &mut Compression,
 ) -> Option<()> {
     let packet_id = buffer.read_var_u32().0 as u8;
+    if std::env::var("BOT_TRACE").is_ok() {
+        eprintln!("DISPATCH state={:?} id=0x{:02X} handled={}",
+            bot.state, packet_id, lookup_packet(bot.state, packet_id).is_some());
+    }
     (lookup_packet(bot.state, packet_id)?)(buffer, bot, compression);
     Some(())
 }

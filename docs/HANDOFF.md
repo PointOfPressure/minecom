@@ -14,7 +14,45 @@ of what got escalated and why.
 
 ---
 
-## ESCALATION: rust-mc-bot connections silently die ~25-30s after join (2026-07-15, Sonnet 5) — blocks MASTERPLAN §4 P0's bot-driven scenarios
+## ~~ESCALATION: rust-mc-bot connections silently die ~25-30s after join~~ — DONE (2026-07-15, Fable): protocol fixed, residual limits are the product's own chunk pipeline
+
+Root-cause chain (TCP forensics via `ss -tin`, then send/dispatch tracing —
+both left in the vendored bot behind the `BOT_TRACE=1` env var):
+
+1. **The serverbound Play ID table had drifted too** — the prior session
+   re-derived only the clientbound table. Keep-alive response was 0x1B,
+   which is ClientGenerateStructurePacket at 26.2: the server threw
+   IndexOutOfBounds decoding it and kicked. Fixed by re-deriving from
+   PacketVanilla.CLIENT_PLAY: keep_alive 0x1b→0x1C, chat 0x08→0x09,
+   animation 0x3C→0x3F, entity_action 0x29→0x2A, held_slot 0x34→0x35
+   (teleport_confirm 0x00 and position 0x1E were already right).
+2. **The bot sent nothing until teleport-confirm, and vanilla 1.21.2+
+   clients send client_tick_end EVERY tick.** A fully silent play-state
+   client starves Minestom's per-connection processing: queued writes
+   (position sync, chunks, keep-alive, even the kick) never flush — hence
+   the silent ~25-30s drop with a zombie ESTABLISHED socket. Fixed: bot now
+   sends ClientTickEndPacket (0x0D) every tick from play-state entry.
+3. Kick reasons are NBT text components; the bot printed them as garbage.
+   process_kick now dumps readable ASCII (the mystery '" type t"' was
+   Minestom's `Component.text("Timeout", RED)`).
+
+Verified: 1 bot 90s full behavior (1,643 moves + actions), 15 bots 120s+
+held on the warm production world, keep-alives answered throughout.
+
+**Remaining, NOT protocol bugs — this laptop's real limits**: 10+ bots
+joining a cold world stall 30-40s in spawn chunk-loading (5400rpm HDD +
+the chunk pipeline the chunkgen scenario already measured 7.5-8x slower
+than vanilla), enter play already past the keep-alive deadline, and get
+mass-kicked "Timeout" with MSPT p50 <1ms (the tick thread is NOT the
+bottleneck). Scenario (a)/(b) on this laptop need: pregenerated+warm world
+before the ramp, join pacing (batches of ~5), low view-distance in the
+bench server.properties, and realistic bot targets (~15 warm). The proper
+fix is P1's chunk-pipeline work; the Threadripper (NVMe, cores) moves this
+wall far out regardless.
+
+---
+
+## ORIGINAL ENTRY (for the investigation trail): rust-mc-bot connections silently die ~25-30s after join (2026-07-15, Sonnet 5) — blocks MASTERPLAN §4 P0's bot-driven scenarios
 
 Building the P0 benchmark harness (scripts/bench/). The server side is done
 and verified: `bench/Metrics.java` (Prometheus `/metrics`, MSPT

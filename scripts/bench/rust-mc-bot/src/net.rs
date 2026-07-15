@@ -56,6 +56,9 @@ pub fn process_packet(
 
     // Read new packets
     unbuffer(packet_buf, &mut bot.buffering_buf);
+    if std::env::var("BOT_TRACE").is_ok() {
+        eprintln!("EVENT unbuffered={} bytes", packet_buf.get_writer_index());
+    }
     while read_socket(bot, packet_buf) {
         let len = packet_buf.buffer.len();
 
@@ -85,6 +88,10 @@ pub fn process_packet(
         let tuple = packet_buf.read_var_u32();
         let size = tuple.0 as usize;
         next += tuple.0 + tuple.1;
+        if std::env::var("BOT_TRACE").is_ok() {
+            eprintln!("FRAME size={} next={} ri={} wi={}",
+                size, next, packet_buf.get_reader_index(), packet_buf.get_writer_index());
+        }
 
         // Skip packets of 0 length
         if size == 0 {
@@ -169,6 +176,9 @@ impl Bot {
             return;
         }
         let mut packet = buf;
+        if std::env::var("BOT_TRACE").is_ok() {
+            eprintln!("SEND id=0x{:02X} len={}", packet.buffer[0], packet.get_writer_index());
+        }
         if self.compression_threshold > 0 {
             packet = packet_processors::PacketCompressor::process_write(packet, self, compression)
                 .unwrap();

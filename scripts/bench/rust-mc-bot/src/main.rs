@@ -155,7 +155,7 @@ pub struct Bot {
     pub joined: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProtocolState {
     Status,
     Login,
@@ -286,6 +286,11 @@ pub fn start_bots(count: u32, addrs: Address, name_offset: u32, cpus: u32) {
         let mut to_remove = Vec::new();
 
         for bot in map.values_mut() {
+            // real clients send tick_end every tick from play-state entry;
+            // without it Minestom 26.2 starves the connection (see play.rs)
+            if bot.state == ProtocolState::Play {
+                bot.send_packet(play::write_tick_end(), &mut compression);
+            }
             if SHOULD_MOVE && bot.teleported {
                 bot.x += rand::random::<f64>() * 1.0 - 0.5;
                 bot.z += rand::random::<f64>() * 1.0 - 0.5;
