@@ -14,6 +14,37 @@ of what got escalated and why.
 
 ---
 
+## Timing-fragile check population — NEXT TASK, blocks the next release tag (2026-07-15, Fable review)
+
+v0.21.0 was tagged with **zero fully-green playtest runs on record** (five
+runs, 1-3 FAILs each, all different). A post-tag verdict run on an IDLE
+machine (load 0.15, test-logs/full_playtest_v0210_verdict.log) still failed
+one check — so this is NOT sandbox load, it is a residual population of
+timing-fragile checks, each failing at some base rate. With ~774 checks, a
+fully-green run is currently a coin flip. The v0.21.0 *content* is verified
+(every taming/riding check passed on the idle run; the tag stands), but the
+flake SLO (CONVENTIONS §10) is unenforceable until this class is fixed.
+
+Known fragile checks (from taming_riding_playtest_run*.log + the verdict run):
+- [elder guardian] laser charge duration ~3.5s (FAILED ON IDLE — start here)
+- [classic spawner] burst spawns >1 mob (failed twice across runs)
+- [fire spread] spreads onto air near a flammable neighbor
+- [silverfish] infested-stone ambush (NOT the DIAG-silk check; DIAG never printed)
+- [vanilla-ai] zombie burns under open sun
+- [farming full cycle] hoe-till / seed-plant / bonemeal cluster (one scenario)
+- (riding-jump + carrot-stick checks failed pre-fix in runs 1/3/4; the session
+  fixed both in test code — treat as done, but re-audit their pattern)
+
+Prescription: rewrite each on the grindstone pattern (commit 8a5488f) —
+assert a conserved quantity or state gate, never a wall-clock-adjacent
+measurement window. Root-cause each individually; some may be REAL product
+timing bugs (vanilla-exact durations matter), so check against decompiled
+reference before assuming the test is at fault. New standing rule: **a
+release tag requires one fully green playtest on an idle machine** —
+"environmental" is a hypothesis to test, not a verdict to ship on.
+
+---
+
 ## Taming & mounts landed (2026-07-15, Sonnet 5) — v0.21.0, closes MASTERPLAN §3 Tier 2's L item
 
 Wolf/cat taming, the full horse family (taming-by-riding, saddle, player-steered
