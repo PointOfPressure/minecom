@@ -60,6 +60,12 @@ public final class Survival {
         state(player).exhaustion += amount;
     }
 
+    /** Entity.resetFallDistance: called after a teleport (e.g. an ender pearl landing) so the
+     *  next ground contact doesn't measure fall damage against the pre-teleport height. */
+    public static void resetFallTracking(Player player) {
+        state(player).highestY = Double.NEGATIVE_INFINITY;
+    }
+
     public static void register(GlobalEventHandler events) {
         events.addListener(PlayerTickEvent.class, e -> tick(e.getPlayer()));
         events.addListener(PlayerMoveEvent.class, Survival::move);

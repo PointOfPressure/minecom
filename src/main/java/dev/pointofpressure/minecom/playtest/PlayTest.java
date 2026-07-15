@@ -149,6 +149,7 @@ public final class PlayTest {
         scenario("redstone: dispenser spawn egg + minecart placement", PlayTest::scenarioDispenserBehaviors);
         scenario("redstone: powered rails carry power 8 rails down the line", PlayTest::scenarioPoweredRails);
         scenario("thrown potions: splash scales with distance, lingering leaves a cloud", PlayTest::scenarioThrownPotions);
+        scenario("ender pearl: throw teleports the thrower with armor-bypassing damage, resets fall tracking, and rolls an endermite spawn", PlayTest::scenarioEnderPearl);
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
         scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size), and fire's own scheduled-tick countdown", PlayTest::scenarioPersistence);
@@ -5701,6 +5702,138 @@ public final class PlayTest {
                 t.potion().effect() == net.minestom.server.potion.PotionEffect.POISON), 4000);
         check("a pig walking into the cloud gets the 1/4-duration effect", cloudPoison);
         clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Ender pearls (survival/EnderPearls.java, decompile-verified against EnderpearlItem/
+     * ThrownEnderpearl, 26.2): throwing spawns a real ENDER_PEARL projectile; landing (block
+     * or entity) teleports the thrower to the impact point, keeping their own look direction,
+     * for 5 armor-bypassing damage, resets fall-distance tracking so the new (possibly much
+     * lower) landing spot doesn't retroactively trigger fall damage, and rolls a 5% endermite
+     * spawn (statistical, same sampling convention as scenarioEquipmentDropChance).
+     */
+    private static void scenarioEnderPearl() {
+        clearEntitiesExceptPlayer();
+        int bx = 300, bz = 300;
+        for (int dx = -2; dx <= 6; dx++) {
+            for (int dz = -2; dz <= 2; dz++) world.setBlock(bx + dx, Y, bz + dz, Block.STONE);
+        }
+        player.setGameMode(net.minestom.server.entity.GameMode.SURVIVAL);
+        player.teleport(new Pos(bx + 0.5, Y + 1, bz + 0.5, 30f, 0f)).join();
+        player.setHealth(20);
+        player.setEquipment(EquipmentSlot.CHESTPLATE, ItemStack.of(Material.DIAMOND_CHESTPLATE));
+        player.setItemInMainHand(ItemStack.of(Material.ENDER_PEARL, 3));
+        tick(2);
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+        tick(2);
+        var pearl = world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ENDER_PEARL)
+                .max(java.util.Comparator.comparingInt(net.minestom.server.entity.Entity::getEntityId)).orElse(null);
+        check("throwing an ender pearl spawns a real projectile and consumes one from the stack",
+                pearl != null && countHeld(player, Material.ENDER_PEARL) == 2);
+
+        Pos landing = new Pos(bx + 4.5, Y + 1, bz + 0.5);
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent(
+                pearl, landing, world.getBlock(bx + 4, Y, bz)));
+        tick(2);
+        check("landing teleports the thrower to the impact point (pos=" + player.getPosition() + ")",
+                Math.abs(player.getPosition().x() - landing.x()) < 0.01
+                        && Math.abs(player.getPosition().z() - landing.z()) < 0.01);
+        check("the teleport keeps the player's own look direction instead of resetting it",
+                Math.abs(player.getPosition().yaw() - 30f) < 0.01);
+        check("landing deals 5 damage that bypasses armor (diamond chestplate worn; hp="
+                        + player.getHealth() + ")", Math.abs(player.getHealth() - 15f) < 0.01);
+        check("the spent pearl projectile is removed", pearl.isRemoved());
+        clearEntitiesExceptPlayer();
+
+        // fall-distance reset: arm a high "highest point" the way a real fall would, then land
+        // the pearl far below — without the reset this would wrongly charge fall damage too on
+        // the next ground-contact move.
+        player.setHealth(20);
+        player.teleport(new Pos(bx + 0.5, Y + 1, bz + 0.5, 0f, 0f)).join();
+        tick(2);
+        player.setOnGroundState(false);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerMoveEvent(
+                player, new Pos(bx + 0.5, Y + 40, bz + 0.5), false));
+        tick(1);
+        player.setItemInMainHand(ItemStack.of(Material.ENDER_PEARL, 1));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+        tick(2);
+        var pearl2 = world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ENDER_PEARL)
+                .max(java.util.Comparator.comparingInt(net.minestom.server.entity.Entity::getEntityId)).orElse(null);
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent(
+                pearl2, landing, world.getBlock(bx + 4, Y, bz)));
+        tick(2);
+        float afterTeleportHp = player.getHealth();
+        player.setOnGroundState(true);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerMoveEvent(player, landing, true));
+        tick(1);
+        check("landing resets fall-distance tracking (no extra fall damage on the next ground "
+                        + "contact at the new, lower position; hp stayed " + afterTeleportHp + " -> "
+                        + player.getHealth() + ")",
+                Math.abs(player.getHealth() - afterTeleportHp) < 0.01);
+        clearEntitiesExceptPlayer();
+
+        // hitting an entity lands the same way as hitting a block
+        var zombieTarget = Mobs.spawn("zombie", world, new Pos(bx + 4.5, Y + 1, bz + 1.5));
+        player.setHealth(20);
+        player.teleport(new Pos(bx + 0.5, Y + 1, bz + 0.5, 0f, 0f)).join();
+        tick(2);
+        player.setItemInMainHand(ItemStack.of(Material.ENDER_PEARL, 1));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+        tick(2);
+        var pearl3 = world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ENDER_PEARL)
+                .max(java.util.Comparator.comparingInt(net.minestom.server.entity.Entity::getEntityId)).orElse(null);
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithEntityEvent(
+                pearl3, zombieTarget.getPosition(), zombieTarget));
+        tick(2);
+        check("hitting an entity lands the pearl the same way as hitting a block (teleported to "
+                        + zombieTarget.getPosition() + ", pos=" + player.getPosition() + ")",
+                Math.abs(player.getPosition().x() - zombieTarget.getPosition().x()) < 0.01);
+        clearEntitiesExceptPlayer();
+
+        // creative mode: item isn't consumed
+        player.setGameMode(net.minestom.server.entity.GameMode.CREATIVE);
+        player.setItemInMainHand(ItemStack.of(Material.ENDER_PEARL, 1));
+        int beforeCreative = countHeld(player, Material.ENDER_PEARL);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+        tick(2);
+        check("creative mode doesn't consume the thrown pearl",
+                countHeld(player, Material.ENDER_PEARL) == beforeCreative);
+        player.setGameMode(net.minestom.server.entity.GameMode.SURVIVAL);
+        clearEntitiesExceptPlayer();
+
+        // statistical: ~5% endermite spawn chance per landing
+        int endermites = 0;
+        // 110 trials at the real 5% chance keeps a zero-success run under ~0.4% (0.95^110),
+        // matching scenarioEquipmentDropChance's confidence bar for its own 8.5% roll.
+        int trials = 110;
+        for (int i = 0; i < trials; i++) {
+            player.setHealth(20f); // each landing deals 5 real damage — must survive to be "allowed to teleport"
+            player.teleport(new Pos(bx + 0.5, Y + 1, bz + 0.5, 0f, 0f)).join();
+            player.setItemInMainHand(ItemStack.of(Material.ENDER_PEARL, 1));
+            EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                    player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+            tick(1);
+            var p = world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ENDER_PEARL)
+                    .max(java.util.Comparator.comparingInt(net.minestom.server.entity.Entity::getEntityId)).orElse(null);
+            if (p == null) continue;
+            EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent(
+                    p, new Pos(bx + 0.5, Y + 1, bz + 0.5), world.getBlock(bx, Y, bz)));
+            tick(1);
+        }
+        endermites = (int) world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ENDERMITE).count();
+        check("landing rolls a real endermite spawn roughly 5% of the time (" + endermites + "/" + trials + ")",
+                endermites >= 1 && endermites <= trials * 0.20);
+        for (int dx = -2; dx <= 6; dx++) {
+            for (int dz = -2; dz <= 2; dz++) world.setBlock(bx + dx, Y, bz + dz, Block.AIR);
+        }
+        clearEntitiesExceptPlayer();
+        resetPlayer();
     }
 
     /** Shrieker: a player-caused vibration within 8 blocks shrieks 90gt + Darkness. */

@@ -778,10 +778,25 @@ leftovers.
   (S)
 - Fishing.java — no open-water check? no luck-of-the-sea/lure timing shifts
   (check), no treasure requiring open water. (S)
-- Items: no elytra/firework flight, no ender pearl teleport (verify — thrown
-  pearls?), no eye of ender flight (locatestronghold command instead), no maps,
-  no bundles, no spyglass, no goat horns, no shields BANNER patterns, no
-  totem. (each S-M)
+- Items: no elytra/firework flight, no eye of ender flight (locatestronghold
+  command instead), no maps, no bundles, no spyglass, no goat horns, no
+  shields BANNER patterns, no totem. (each S-M) ~~no ender pearl teleport~~
+  **DONE 2026-07-15 (Sonnet 5, `survival/EnderPearls.java`)** — decompile-
+  verified against EnderpearlItem/ThrownEnderpearl (26.2, freshly decompiled,
+  no cached copy existed before): 1.5-shoot-unit throw, teleport-on-land
+  keeping the thrower's own look direction, 5 armor/knockback-bypassing
+  damage (the bundled `bypasses_armor`/`no_knockback` tags already cover
+  `minecraft:ender_pearl`, no special-casing needed), fall-distance-tracking
+  reset on teleport (a new `Survival.resetFallTracking` — otherwise a pearl
+  thrown from height into a low landing spot would wrongly charge fall
+  damage too on the next ground contact), and the real 5% endermite spawn
+  roll (outside Peaceful). No water-specific gate exists in the decompile at
+  all (contrary to a common player myth) — fluids simply don't block flight.
+  Not modeled: the zero-damage on-hit-entity "hurt" call (animation/
+  invulnerability-timer only, no gameplay effect), the 32 landing particles
+  (client visual), stasis-chamber chunk-ticket behavior (this project's
+  chunk loading has no equivalent to vanilla's per-pearl force-load ticket
+  system), and cross-dimension throws (collapses to a same-instance check).
 
 ## top-level / infra
 

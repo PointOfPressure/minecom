@@ -212,6 +212,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.survival.Bow.register(events);
         dev.pointofpressure.minecom.survival.Crossbow.register(events);
         dev.pointofpressure.minecom.survival.Trident.register(events);
+        dev.pointofpressure.minecom.survival.EnderPearls.register(events);
         dev.pointofpressure.minecom.blocks.Portals.register(events, overworld, nether);
         WeatherCycle.start(overworld);
         dev.pointofpressure.minecom.survival.Snow.start(overworld);
