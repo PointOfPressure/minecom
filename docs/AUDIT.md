@@ -692,11 +692,23 @@ leftovers.
   villager-conversion feature surfaced, not something conversion itself
   introduced — full playtest re-run clean (788/788, then 799/800 with one
   unrelated pre-existing flake — see HANDOFF) after the fix.
-- Raid.java:17 — bounded 3-wave raid started by command/bell proximity; no Bad
-  Omen from patrol captains (no patrols), no wave scaling by difficulty (wave
-  count: Easy 3/Normal 5/Hard 7 — difficulty now exists, S), no raid bar
-  percentage from raider HP, no hero of the village, no ravager riders, no
-  witch/evoker in later waves? (verify wave comps), no bell-ring glowing. (M)
+- ~~Raid.java:17 — bounded 3-wave raid started by command/bell proximity; no
+  wave scaling by difficulty (wave count: Easy 3/Normal 5/Hard 7)~~ **DONE
+  2026-07-15 (Sonnet 5)** — decompile-verified against
+  `net.minecraft.world.entity.raid.Raid` (26.2): wave count now real
+  `getNumGroups` (Easy 3/Normal 5/Hard 7), each wave's composition read from
+  the real per-type `spawnsPerWaveBeforeBonus` tables (Vindicator/Evoker/
+  Pillager/Witch/Ravager, indexed by wave number) plus the real random
+  per-wave bonus-spawn roll (`getPotentialBonusSpawns`), and `Raid.start`
+  now takes a Bad Omen level — above 1 adds one real bonus wave past the
+  last normal one (`shouldSpawnBonusGroup`/`hasBonusWave`), though nothing
+  in this codebase can currently pass anything above the default 1 (no
+  patrol/Bad Omen potion chain exists yet, so that path is real and
+  reachable but presently dormant — same underlying gap as "no Bad Omen
+  from patrol captains" below). Still not modeled: raid bar percentage
+  specifically from raider HP (this project's bar already tracks a coarser
+  alive-count fraction), hero of the village, ravager riders, bell-ring
+  glowing, and the patrol-captain Bad Omen trigger itself. (remaining: M)
 - VNaturalSpawner — solid core; check: no cave/spawner mob costs (charge-based
   spawn potentials for soul sand valley etc.), no per-biome water ambient
   (fish schools), no persistent-after-nametag/tempt rules, wandering trader
@@ -971,4 +983,7 @@ leftovers.
 8. ~~Taming (wolf/cat/horse) + leads/name tags~~ — DONE 2026-07-15 (v0.21.0, see the
    Taming/mounts entry above) — S remaining (wolf/cat/horse breeding, wolf armor)
 9. Splash/lingering/tipped arrows + missing 26.x effects — M
-10. Raid difficulty scaling (wave counts by difficulty, Bad Omen via patrols) — M
+10. ~~Raid difficulty scaling (wave counts by difficulty, Bad Omen via
+    patrols)~~ — DONE 2026-07-15 (v0.23.0, wave counts/composition; the
+    patrol-captain Bad Omen trigger itself remains open, see Raid.java
+    entry above) — M remaining (patrol captains)

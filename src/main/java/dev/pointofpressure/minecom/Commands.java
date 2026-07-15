@@ -236,7 +236,7 @@ public final class Commands {
         }
     }
 
-    /** Starts a bounded raid (3 waves of pillagers/vindicators/evokers) at the nearest village bell, or the player. */
+    /** Starts a raid (waves scale with difficulty — Raid.getNumGroups) at the nearest village bell, or the player. */
     public static final class RaidCmd extends Command {
         public RaidCmd() {
             super("raid");

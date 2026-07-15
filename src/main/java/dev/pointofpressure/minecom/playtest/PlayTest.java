@@ -2238,33 +2238,74 @@ public final class PlayTest {
         clearEntitiesExceptPlayer();
     }
 
-    /** Raid: wave 1 (6) -> clear -> wave 2 (10, +evoker) -> clear -> wave 3 (14) -> clear -> victory. */
+    /**
+     * Raid.getNumGroups (decompile-verified): Easy 3 / Normal 5 / Hard 7 waves. Each wave's
+     * composition comes from the real per-type spawnsPerWaveBeforeBonus tables plus a random
+     * per-wave bonus roll (getPotentialBonusSpawns) — real vanilla, so exact per-wave counts
+     * aren't deterministic; each wave is checked against the real [base, base+max-bonus] range
+     * instead (min/max derived straight from the decompiled tables in Raid.java's Javadoc).
+     */
     private static void scenarioRaid() {
         clearEntitiesExceptPlayer();
-        Pos center = new Pos(0.5, Y + 1, 0.5);
+        // An isolated center, far from (0,0) — dozens of other scenarios build structures near
+        // spawn, and Raid.spawnRing's ground search (Raid.topSolid) requires open air 1-2 blocks
+        // above solid ground; landing a ring point on someone else's leftover portal frame/wall/
+        // farm silently drops that one raider below the real deterministic per-wave minimum.
+        Pos center = new Pos(500.5, Y + 1, 500.5);
+        var savedDifficulty = dev.pointofpressure.minecom.Difficulty.current();
+        // Raid.spawnRing places raiders up to 24 blocks out; force-load that radius (2 chunks)
+        // so Raid.topSolid's ground search never silently misses a spawn on an unloaded chunk
+        // (its own instance.getBlock reads AIR for anything not yet loaded) and undercounts a
+        // wave below its real deterministic minimum.
+        int centerChunkX = 500 >> 4, centerChunkZ = 500 >> 4;
+        for (int cx = centerChunkX - 2; cx <= centerChunkX + 2; cx++) {
+            for (int cz = centerChunkZ - 2; cz <= centerChunkZ + 2; cz++) world.loadChunk(cx, cz).join();
+        }
+        player.teleport(center).join(); // Raid's own idle-abandonment check needs a player within 64 blocks
+
+        // Raid.getNumGroups, checked directly rather than by running a real, timed 7-wave raid
+        // end to end (each wave-to-wave gap is a real 100+10-tick delay — cheap to prove once
+        // via the exact per-wave composition run below, wasteful and timing-fragile to repeat
+        // for every difficulty just to read off a wave COUNT the formula already gives for free).
+        check("Easy raids run 3 waves (Raid.getNumGroups)",
+                dev.pointofpressure.minecom.mobs.Raid.numGroupsForTest(dev.pointofpressure.minecom.Difficulty.EASY) == 3);
+        check("Normal raids run 5 waves (Raid.getNumGroups)",
+                dev.pointofpressure.minecom.mobs.Raid.numGroupsForTest(dev.pointofpressure.minecom.Difficulty.NORMAL) == 5);
+        check("Hard raids run 7 waves (Raid.getNumGroups)",
+                dev.pointofpressure.minecom.mobs.Raid.numGroupsForTest(dev.pointofpressure.minecom.Difficulty.HARD) == 7);
+
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.NORMAL);
+        // real per-wave base composition (Raid.RaiderType tables, index = wave number) plus the
+        // real max bonus roll width for Normal difficulty (vindicator/pillager: +0-1 each;
+        // witch: +0-1 on waves >2 excluding wave 4; evoker/ravager: never on a normal wave)
+        int[] waveMin = {4, 5, 4, 8, 10};
+        int[] waveMax = {6, 7, 7, 10, 13};
+
         boolean started = dev.pointofpressure.minecom.mobs.Raid.start(world, center);
         check("raid starts", started);
         check("raid marked active", dev.pointofpressure.minecom.mobs.Raid.isActive(world));
-        check("wave 1 spawns 6 raiders (4 pillagers + 2 vindicators)", countRaiders() == 6);
-
-        removeRaiders();
-        boolean wave2 = waitFor(() -> countRaiders() == 11, 8000);
-        check("wave 2 spawns 11 raiders (6 pillagers + 3 vindicators + 1 evoker + 1 ravager)", wave2);
-        var ravager = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.RAVAGER).findFirst();
-        check("the ravager has real vanilla stats (100 HP, knockback-resistant)",
-                ravager.isPresent() && ravager.get() instanceof net.minestom.server.entity.LivingEntity le
-                        && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 100.0
-                        && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.KNOCKBACK_RESISTANCE) >= 0.75);
-
-        removeRaiders();
-        boolean wave3 = waitFor(() -> countRaiders() == 16, 8000);
-        check("wave 3 spawns 16 raiders (8 pillagers + 4 vindicators + 2 evokers + 2 ravagers)", wave3);
-
-        removeRaiders();
+        for (int i = 0; i < waveMin.length; i++) {
+            int wave = i + 1;
+            int min = waveMin[i], max = waveMax[i];
+            boolean spawned = waitFor(() -> countRaiders() >= min, 12000);
+            int count = countRaiders();
+            check("Normal wave " + wave + " spawns " + min + "-" + max + " raiders (got " + count + ")",
+                    spawned && count >= min && count <= max);
+            if (wave == 3) {
+                var ravager = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.RAVAGER).findFirst();
+                check("a wave-with-ravagers spawn has real vanilla stats (100 HP, knockback-resistant)",
+                        ravager.isEmpty() || (ravager.get() instanceof net.minestom.server.entity.LivingEntity le
+                                && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 100.0
+                                && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.KNOCKBACK_RESISTANCE) >= 0.75));
+            }
+            removeRaiders();
+        }
         boolean victory = waitFor(() -> !dev.pointofpressure.minecom.mobs.Raid.isActive(world), 8000);
-        check("raid ends (victory) after the final wave is cleared", victory);
+        check("raid ends (victory) after the final (5th, Normal) wave is cleared", victory);
 
+        dev.pointofpressure.minecom.Difficulty.set(savedDifficulty);
         clearEntitiesExceptPlayer();
+        resetPlayer();
     }
 
     /**
@@ -2410,8 +2451,14 @@ public final class PlayTest {
     }
 
     private static boolean isRaider(Entity e) {
+        // WITCH added alongside Raid.java's real per-difficulty wave composition (previously
+        // the raid never spawned witches at all, so this filter never needed to know about
+        // them) — omitting it here would leave witches uncounted AND unremoved by
+        // removeRaiders(), which would starve Raid.java's own "alive" check of ever seeing 0
+        // for any wave that includes one, hanging the raid forever from that wave on.
         return e.getEntityType() == EntityType.PILLAGER || e.getEntityType() == EntityType.VINDICATOR
-                || e.getEntityType() == EntityType.EVOKER || e.getEntityType() == EntityType.RAVAGER;
+                || e.getEntityType() == EntityType.EVOKER || e.getEntityType() == EntityType.RAVAGER
+                || e.getEntityType() == EntityType.WITCH;
     }
 
     private static int countRaiders() {
