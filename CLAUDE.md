@@ -40,7 +40,16 @@
    `vanilla-src/` first — don't re-decompile what's already cached, BUT
    cached files predating the 2026-07-13 26.2 bump are 26.1.2 decompiles:
    re-decompile any class you port worldgen behavior against.
-8. **Bundled vanilla data (`src/main/resources/vanilla/`) is regenerated,
+8. **A release tag requires one fully green playtest run on an idle
+   machine** (check `uptime` first; two consecutive greens after any
+   flake-class fix). "Environmental flakiness" is a hypothesis you test
+   on an idle machine, never a verdict you ship on. A check that fails
+   intermittently is a bug — in the test or the product (verify against
+   decompiled reference before deciding which; v0.21.1's guardian-laser
+   fix was a real parity bug hiding behind "flaky test"). Structural fix
+   patterns: conserved quantities / state gates (commit 8a5488f), never
+   wider tolerances.
+9. **Bundled vanilla data (`src/main/resources/vanilla/`) is regenerated,
    never hand-edited.** `scripts/extract_vanilla_data.py --validate`
    rebuilds all 1,486 jar-derived files from the server jar and proves the
    result (per-file provenance in its docstring). If a data file looks
