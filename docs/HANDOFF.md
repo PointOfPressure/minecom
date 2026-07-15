@@ -14,6 +14,77 @@ of what got escalated and why.
 
 ---
 
+## ESCALATION: rust-mc-bot connections silently die ~25-30s after join (2026-07-15, Sonnet 5) — blocks MASTERPLAN §4 P0's bot-driven scenarios
+
+Building the P0 benchmark harness (scripts/bench/). The server side is done
+and verified: `bench/Metrics.java` (Prometheus `/metrics`, MSPT
+p50/95/99 + TPS + GC + heap via `ServerTickMonitorEvent`), `bench/
+BenchSetup.java` (scenario world setup — bot-spread teleport, a
+double-observer redstone-clock grid, a roofed mob-farm pen, all inert unless
+`MINECOM_BENCH_SCENARIO` is set), both smoke-tested clean. What's blocked is
+the bot-swarm driver, `scripts/bench/rust-mc-bot/` (vendored from
+`github.com/Eoghanmc22/rust-mc-bot` @ `6a190c3a1660...`, see its `VENDOR.md`
+for full detail — this entry is the summary):
+
+- Bots complete the login→play handshake fine (proved early), but a longer
+  soak test (poll minecom's own `/metrics` `players_online` every 10s)
+  shows every connection gets silently dropped by the server around
+  t+25-30s — timing that lines up exactly with Minestom's keep-alive
+  timeout (`KEEP_ALIVE_DELAY` 10s + `KEEP_ALIVE_KICK` 15s).
+- Found and fixed one real bug en route: the vendored bot's Play-state
+  packet ID table was built against an older protocol (772, not minecom's
+  776) and every entry except `cookie_request` had drifted (re-derived the
+  correct IDs by counting positions in Minestom 26.2's own
+  `PacketVanilla.SERVER_PLAY` registry — keep_alive 0x26→0x2C, join_game
+  0x2B→0x31, kick 0x1C→0x20, teleport 0x41→0x48, transfer 0x7A→0x81; Login
+  and Configuration state tables checked the same way and were already
+  correct). This fix is real, necessary, and kept — but the drop still
+  happens after it, unchanged.
+- Debug-instrumenting the Play-state packet dispatch's fallback arm showed
+  only ~5 packets are ever processed over a 40s connection (none repeating,
+  none at the keep-alive ID), i.e. the bot goes idle almost immediately
+  after join rather than streaming normally and getting cut off later. The
+  bot's own disconnect-detection paths (`net.rs::process_packet` — "Peer
+  closed socket", decompression errors) never fire either; from the bot's
+  side the connection just goes silent.
+- Two real fix attempts (protocol version bump; full Play-state ID
+  re-derivation) didn't resolve it, so escalating per rule 3 instead of
+  guessing further. Leading unconfirmed hypothesis: a framing bug specific
+  to compressed Play-state packets (`net.rs` lines ~102-153) that stalls
+  waiting for bytes that never complete a packet under this project's real
+  traffic shape, or an mio edge-triggered re-arm issue — needs either
+  sustained step-through instrumentation (log `next`/reader/writer index
+  every loop iteration) or a packet capture against a known-good client to
+  localize.
+- **Impact**: scenarios (a) N-bots-at-spawn, (b) N-bots-spread-10k-world,
+  and the modest-player-presence variant of (c)/(d) can't yet produce
+  trustworthy numbers. `run_scenario.py`'s bot-swarm sanity check (rule 4/8
+  — "must fail loudly, not report 20 TPS on an empty server") treats a
+  players_online count that doesn't hold at the target as a hard failure,
+  so a run against this bug fails loudly rather than emitting fake numbers
+  — that failure mode is itself expected and correct until this is fixed.
+  (e) chunk-gen throughput needs no bots and is unaffected.
+
+**Session outcome (v0.24.0)**: shipped the harness with this bug open
+rather than block on it. (c) redstone, (d) mobfarm (both bots=0 — the
+world-setup itself doesn't need bots), and (e) chunkgen (vs vanilla 26.2
+*and* Paper 26.2, build 60 downloaded via PaperMC's `fill` API) produced
+real first-run numbers, all in docs/BENCHMARKS.md and their raw JSON
+committed under scripts/bench/results/. (a) spawn was run and confirmed to
+fail loudly exactly as designed (first 20-bot ramp batch held, the second
+batch's target was never reached once the first silently dropped, clean
+nonzero exit + JSON `failure_reason`, zero orphaned processes). (b)
+spread10k's full 10k-chunk pregen wasn't attempted (hours at this laptop's
+~0.5 chunks/sec, and would hit the same bot bug regardless) — its
+pregen→spread-teleport pipeline was smoke-tested at radius=4 instead
+(confirmed sound: reached the same known drop, not a different bug hiding
+behind it). Next session on this: either give the rust-mc-bot investigation
+more sustained time (see the instrumentation approach above), or find/build
+a different bot driver — don't re-attempt the packet-ID angle, that's
+already confirmed correct.
+
+---
+
 ## Tier 2 closer landed (2026-07-15, Sonnet 5) — v0.23.0, closes MASTERPLAN §3 Tier 2 entirely
 
 All four remaining items from the task brief: attack-cooldown model, elytra +

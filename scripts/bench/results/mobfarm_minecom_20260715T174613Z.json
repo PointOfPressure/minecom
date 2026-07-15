@@ -1,0 +1,33 @@
+{
+  "bots_connected": 0,
+  "bots_requested": 0,
+  "commit": "c0cfafc92a46a927ebd2fed30f2390dd601ae305",
+  "description": "Penned hostile-mob density (server-only load; player presence blocked, see HANDOFF)",
+  "duration_seconds": 150,
+  "gc_collections_total": 53.0,
+  "gc_time_ms_total": 445.0,
+  "hardware": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "hostname": "Inspiron-7548",
+    "java_version": "openjdk version \"25.0.3\" 2026-04-21",
+    "logical_cpus": 4,
+    "mem_total_mb": 15904,
+    "os": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39"
+  },
+  "heap_used_bytes": 150584424.0,
+  "jfr_path": null,
+  "max_bots_before_sub20_tps": null,
+  "mspt_p50": 0.963921,
+  "mspt_p95": 2.404235,
+  "mspt_p99": 3.707055,
+  "mspt_source": "minestom ServerTickMonitorEvent (true per-tick)",
+  "packet_bytes_out_proxy": 3934,
+  "packet_bytes_out_source": "proc/pid/io wchar delta proxy (coarse \u2014 see bench_common.proc_io_bytes)",
+  "run_id": "mobfarm_minecom_20260715T174613Z",
+  "scenario": "mobfarm",
+  "server": "minecom",
+  "status": "ok",
+  "tick_count": 3005,
+  "timestamp": "2026-07-15T17:46:13.679268+00:00",
+  "tps": 20.0
+}

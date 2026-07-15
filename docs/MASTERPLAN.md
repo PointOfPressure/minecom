@@ -172,28 +172,42 @@ scoreboards beyond basics, spectator polish, world border, datapack loading
 Nothing in this program is real until it's measured, and the measurement
 itself is a deliverable nobody else has [PERF Top-10 #1].
 
-- **Harness**: committed `scripts/bench/` — rust-mc-bot swarm driver (pin a
-  fork at our protocol version; community forks exist [PERF §5]), spark +
-  JFR capture (`ServerTickMonitorEvent` MSPT stream exists upstream),
-  scenarios: (a) N bots wandering spawn, (b) N bots spread over pregen'd
-  10k-chunk world, (c) redstone-heavy world (doors/farms/clocks), (d) mob
-  farm density test, (e) chunk-gen throughput (chunks/sec, the flamgop
-  speedrun-practice use case [VRI §7]).
-- **Baselines**: same scenarios on vanilla 26.1.2 and Paper (same box, same
-  world seed, same bot script). This yields the honest chart: *minecom with
-  vanilla logic vs vanilla vs Paper* — pre-empting the "empty Minestom"
-  critique with the exact comparison the community said is always dodged.
-- **Instrumentation surface**: per-system tick breakdown (the 38-task
-  consolidation in P1 makes this natural), packet bytes out, GC stats —
-  exposed via JFR events + a /metrics endpoint (Prometheus text format is
-  trivial and hosts love it).
-- **OWNER — hardware**: this laptop (2-core i5-5200U, 5400rpm HDD) cannot
-  produce publishable numbers. Options: a few hours of a rented 8-16 core
-  cloud box per bench round (~£5-15/round); a borrowed desktop; or publish
-  "on a potato" numbers first (honest, quirky, and actually a good story:
-  "full vanilla parity, 20 TPS, N players, on a 2015 laptop") and re-run on
-  real hardware at launch. Recommendation: potato-numbers now, one rented
-  box before anything public.
+- **[LANDED 2026-07-15 — v0.24.0, harness scaffolding + 3/5 scenarios real, 2/5 correctly blocked; see HANDOFF]**
+  **Harness**: committed `scripts/bench/` — `rust-mc-bot` vendored + bumped
+  to protocol 776 (`scripts/bench/rust-mc-bot/VENDOR.md`), `run_scenario.py`
+  + `bench_common.py` orchestrator, scenarios as TOML configs (a) `spawn`,
+  (b) `spread10k`, (c) `redstone`, (d) `mobfarm`, (e) `chunkgen`. One
+  command: `python3 scripts/bench/run_scenario.py <scenario> --server
+  <minecom|vanilla|paper>` → one JSON in `scripts/bench/results/`. (c)/(d)/
+  (e) produced real first-run numbers on this laptop (docs/BENCHMARKS.md);
+  (a)/(b) need the bot swarm, which has an open connection-drop bug
+  (docs/HANDOFF.md, 2026-07-15) — running them correctly **fails loudly**
+  rather than reporting numbers from an unverified population, which is
+  itself the harness-level check this bullet asks for ("must fail loudly").
+  JFR capture wired (`--jfr` flag) but not yet auto-parsed into results
+  (deliberately coarse per this section's own instrumentation-surface
+  bullet — the per-system breakdown is P1's job).
+- **[PARTIAL 2026-07-15]** **Baselines**: `chunkgen` runs against vanilla
+  26.2 and Paper 26.2 (build 60, downloaded via PaperMC's `fill` API) —
+  same box, same seed, real numbers in docs/BENCHMARKS.md (minecom is
+  currently ~7.5-8x slower at raw chunk generation than either, the exact
+  gap P1 item 4 exists to close). The other four scenarios' vanilla/Paper
+  baselines aren't wired yet — needs either a console-driven
+  `players_online` probe (vanilla/Paper have no `/metrics`) or, for
+  redstone/mobfarm, a `BenchSetup.java`-equivalent world-setup mechanism.
+  Threadripper headline numbers (§11.1) not run — not reachable this
+  session.
+- **[LANDED 2026-07-15]** **Instrumentation surface**: `bench/Metrics.java`
+  — Prometheus `/metrics` backed by Minestom's `ServerTickMonitorEvent`
+  (true per-tick MSPT as `quantile="0.5"/"0.95"/"0.99"`), TPS, GC
+  collections/time, heap, uptime; `POST /metrics/reset` scopes a result to
+  one scenario's window. Packet bytes out has no real Netty-layer counter
+  yet (P1 territory) — `/proc/<pid>/io` wchar is the honest coarse stand-in,
+  labelled as such in every result. Per-system tick breakdown is
+  unchanged/deferred to P1 as this section already says.
+- **OWNER — hardware — ANSWERED, see §11.1** (this laptop is deliberately
+  the low-end/regression datapoint, not the headline; a Threadripper run is
+  the headline path once reachable).
 
 ### P1 — Single-thread engine pass (the big free win)
 

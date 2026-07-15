@@ -1,0 +1,22 @@
+{
+  "chunks_per_sec": 3.917179237653001,
+  "commit": "c0cfafc92a46a927ebd2fed30f2390dd601ae305",
+  "description": "Chunk generation throughput (chunks/sec), no bots",
+  "elapsed_ms": 16338,
+  "hardware": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "hostname": "Inspiron-7548",
+    "java_version": "openjdk version \"25.0.3\" 2026-04-21",
+    "logical_cpus": 4,
+    "mem_total_mb": 15904,
+    "os": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39"
+  },
+  "radius": 4,
+  "run_id": "chunkgen_paper_20260715T181710Z",
+  "scenario": "chunkgen",
+  "seed": 20260708,
+  "server": "paper",
+  "status": "ok",
+  "timestamp": "2026-07-15T18:17:10.560969+00:00",
+  "total_chunks": 64
+}
