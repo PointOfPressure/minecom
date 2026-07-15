@@ -31,7 +31,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class VillagerTrades {
 
-    private record Offer(ItemStack input1, ItemStack input2, ItemStack result) {}
+    // package-private: VillagerConversion.discount rewrites a copy for the cured-villager
+    // trade discount (Villager.updateSpecialPrices' reputation slice).
+    record Offer(ItemStack input1, ItemStack input2, ItemStack result) {}
 
     /** Villager profession -> trade table (keyed by name; set on the entity at spawn). */
     public static final net.minestom.server.tag.Tag<String> PROFESSION =
@@ -116,12 +118,12 @@ public final class VillagerTrades {
         events.addListener(PlayerEntityInteractEvent.class, event -> {
             EntityType t = event.getTarget().getEntityType();
             if (t == EntityType.WANDERING_TRADER) {
-                openTrading(event.getPlayer(), "wandering_trader");
+                openTrading(event.getPlayer(), "wandering_trader", null);
                 return;
             }
             if (t != EntityType.VILLAGER) return;
             String prof = event.getTarget().getTag(PROFESSION);
-            openTrading(event.getPlayer(), prof != null ? prof : "farmer");
+            openTrading(event.getPlayer(), prof != null ? prof : "farmer", event.getTarget());
         });
 
         // client picks a trade -> fill the output slot if the player has the inputs
@@ -197,8 +199,9 @@ public final class VillagerTrades {
         return ((long) (x & 0x3FFFFFF) << 38) | ((long) (y & 0xFFF) << 26) | (z & 0x3FFFFFF);
     }
 
-    private static void openTrading(Player player, String profession) {
+    private static void openTrading(Player player, String profession, Entity villagerEntity) {
         List<Offer> offers = TABLES.getOrDefault(profession, TABLES.get("farmer"));
+        if (villagerEntity != null) offers = VillagerConversion.discount(offers, villagerEntity, player);
         Inventory inv = new Inventory(InventoryType.MERCHANT, Component.text(cap(profession)));
         OPEN.put(player.getUuid(), inv);
         OPEN_OFFERS.put(player.getUuid(), offers);

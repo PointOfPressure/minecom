@@ -209,6 +209,7 @@ public final class PlayTest {
         scenario("end: portal travel there and back", PlayTest::scenarioEndPortal);
         scenario("village: villager entity spawns and wanders", PlayTest::scenarioVillager);
         scenario("village: food economy gates breeding — tossed bread is picked up, eaten, and digested by breeding; farmers harvest and share", PlayTest::scenarioVillagerFood);
+        scenario("village: a zombie-family kill converts a villager to a zombie villager (difficulty-scaled), and weakness+golden-apple cures it back with a trade discount", PlayTest::scenarioVillagerConversion);
         scenario("raid: three escalating waves, clearing each advances, clearing all wins", PlayTest::scenarioRaid);
         scenario("stronghold: portal room builds, 12 eyes light the end_portal", PlayTest::scenarioStronghold);
         scenario("end portal frame comparator: signal 15 once it has its eye, 0 otherwise", PlayTest::scenarioEndPortalFrameComparator);
@@ -2744,6 +2745,137 @@ public final class PlayTest {
                 world.setBlock(bx + dx, Y, bz + dz, Block.STONE);
             }
         }
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Villager <-> zombie villager (mobs/VillagerConversion.java, decompile-verified against
+     * Zombie.killedEntity/convertVillagerToZombieVillager, ZombieVillager, and the reputation
+     * slice of Villager/GossipType/GossipContainer, 26.2). Difficulty-scaled conversion on a
+     * zombie-family kill (Hard always, Normal a coinflip — statistical, like the dungeon
+     * spawner's mob-type distribution), profession carried through both directions, the
+     * golden-apple-requires-weakness gate (and that it must be the PLAIN apple, not the
+     * enchanted one), and the cure's trade discount actually reaching a real trade-open.
+     */
+    private static void scenarioVillagerConversion() {
+        clearEntitiesExceptPlayer();
+        dev.pointofpressure.minecom.mobs.VillagerConversion.register(world); // flat worlds don't auto-start it
+        var savedDifficulty = dev.pointofpressure.minecom.Difficulty.current();
+
+        // --- Hard: a zombie-family kill always converts, and the profession tag survives ---
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.HARD);
+        var villager = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(60.5, Y + 1, 60.5));
+        villager.setTag(dev.pointofpressure.minecom.mobs.VillagerTrades.PROFESSION, "librarian");
+        var zombie = Mobs.spawn("zombie", world, new Pos(60.5, Y + 1, 61.5));
+        tick(2);
+        villager.setHealth(0.5f);
+        EventDispatcher.call(new EntityAttackEvent(zombie, villager));
+        tick(2);
+        var zombieVillager = world.getEntities().stream()
+                .filter(en -> en.getEntityType() == EntityType.ZOMBIE_VILLAGER).findFirst().orElse(null);
+        check("on Hard, a zombie kill always converts the villager into a zombie villager instead of it dying",
+                villager.isRemoved() && zombieVillager != null);
+        check("the zombie villager retains the original villager's profession",
+                zombieVillager != null
+                        && "librarian".equals(zombieVillager.getTag(dev.pointofpressure.minecom.mobs.VillagerTrades.PROFESSION)));
+        clearEntitiesExceptPlayer();
+
+        // --- Husk also converts (any Zombie subtype does in real vanilla, not just "zombie") ---
+        var villager2 = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(60.5, Y + 1, 60.5));
+        var husk = Mobs.spawn("husk", world, new Pos(60.5, Y + 1, 61.5));
+        tick(2);
+        villager2.setHealth(0.5f);
+        EventDispatcher.call(new EntityAttackEvent(husk, villager2));
+        tick(2);
+        boolean huskConverted = world.getEntities().stream().anyMatch(en -> en.getEntityType() == EntityType.ZOMBIE_VILLAGER);
+        check("a husk kill converts a villager too (Husk extends Zombie in real vanilla, doesn't override killedEntity)",
+                huskConverted);
+        clearEntitiesExceptPlayer();
+
+        // --- Normal: ~50% (Zombie.killedEntity's nextBoolean coinflip skip) ---
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.NORMAL);
+        int converted = 0;
+        int trials = 60;
+        for (int i = 0; i < trials; i++) {
+            var v = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(60.5 + i, Y + 1, 60.5));
+            var z = Mobs.spawn("zombie", world, new Pos(60.5 + i, Y + 1, 61.5));
+            if (z == null) continue;
+            tick(1);
+            v.setHealth(0.5f);
+            EventDispatcher.call(new EntityAttackEvent(z, v));
+        }
+        tick(2);
+        converted = (int) world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ZOMBIE_VILLAGER).count();
+        check("on Normal, roughly half of zombie kills convert the villager (coinflip skip; " + converted + "/" + trials + ")",
+                converted >= trials * 0.25 && converted <= trials * 0.75);
+        clearEntitiesExceptPlayer();
+
+        // --- Easy: never converts ---
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.EASY);
+        var villagerEasy = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(60.5, Y + 1, 60.5));
+        var zombieEasy = Mobs.spawn("zombie", world, new Pos(60.5, Y + 1, 61.5));
+        tick(2);
+        villagerEasy.setHealth(0.5f);
+        EventDispatcher.call(new EntityAttackEvent(zombieEasy, villagerEasy));
+        tick(2);
+        boolean anyZombieVillagerEasy = world.getEntities().stream().anyMatch(en -> en.getEntityType() == EntityType.ZOMBIE_VILLAGER);
+        // isDead(), not isRemoved(): EntityCreature.kill() only SCHEDULES removal after a
+        // real-time death-animation delay when the death isn't a conversion, so isRemoved()
+        // would need a wall-clock wait here — isDead() flips immediately and is all this
+        // check needs (a converted death instead calls remove() immediately, see
+        // VillagerConversion.tryConvert, which the Hard/Normal checks above already exercise).
+        check("on Easy, a zombie kill never converts the villager (it just dies)",
+                villagerEasy.isDead() && !anyZombieVillagerEasy);
+        clearEntitiesExceptPlayer();
+        dev.pointofpressure.minecom.Difficulty.set(savedDifficulty);
+
+        // --- Curing: weakness gates the golden apple; only the plain apple, not the enchanted one ---
+        var zv = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.zombieVillager(world, new Pos(60.5, Y + 1, 60.5));
+        zv.setTag(dev.pointofpressure.minecom.mobs.VillagerTrades.PROFESSION, "farmer");
+        tick(2);
+        player.setItemInMainHand(ItemStack.of(Material.GOLDEN_APPLE, 2));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, zv, net.minestom.server.entity.PlayerHand.MAIN, zv.getPosition()));
+        check("a golden apple does nothing to a zombie villager without weakness (apple not consumed)",
+                player.getItemInMainHand().amount() == 2 && !zv.hasEffect(net.minestom.server.potion.PotionEffect.STRENGTH));
+
+        zv.addEffect(new net.minestom.server.potion.Potion(net.minestom.server.potion.PotionEffect.WEAKNESS, (byte) 0, 1200));
+        player.setItemInMainHand(ItemStack.of(Material.ENCHANTED_GOLDEN_APPLE, 1));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, zv, net.minestom.server.entity.PlayerHand.MAIN, zv.getPosition()));
+        check("the ENCHANTED golden apple does not cure (real vanilla only checks the plain Items.GOLDEN_APPLE)",
+                player.getItemInMainHand().amount() == 1 && !zv.hasEffect(net.minestom.server.potion.PotionEffect.STRENGTH));
+
+        player.setItemInMainHand(ItemStack.of(Material.GOLDEN_APPLE, 1));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, zv, net.minestom.server.entity.PlayerHand.MAIN, zv.getPosition()));
+        tick(2);
+        check("weakness + a plain golden apple starts the cure (apple consumed, Strength applied, converting flag set)",
+                player.getItemInMainHand().isAir()
+                        && zv.hasEffect(net.minestom.server.potion.PotionEffect.STRENGTH)
+                        && zv.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.zombie.ZombieVillagerMeta zvm
+                        && zvm.isConverting());
+
+        // force the 3600-6000t timer down to the next sweep instead of waiting minutes real-time
+        dev.pointofpressure.minecom.mobs.VillagerConversion.testForceNearComplete(zv);
+        dev.pointofpressure.minecom.mobs.VillagerConversion.testTick(world);
+        var cured = world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.VILLAGER).findFirst().orElse(null);
+        check("the cure completes: a villager reappears (nauseous), the zombie villager is gone",
+                cured != null && !zv.isRemoved()
+                        && cured.hasEffect(net.minestom.server.potion.PotionEffect.NAUSEA));
+        check("the cured villager keeps its profession", cured != null
+                && "farmer".equals(cured.getTag(dev.pointofpressure.minecom.mobs.VillagerTrades.PROFESSION)));
+
+        // --- the cure's reputation reaches a real trade-open as a real price cut ---
+        var freshVillager = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(62.5, Y + 1, 60.5));
+        int baseCost = dev.pointofpressure.minecom.mobs.VillagerConversion.testFirstOfferCost(freshVillager, player, "farmer");
+        int curedCost = cured != null
+                ? dev.pointofpressure.minecom.mobs.VillagerConversion.testFirstOfferCost(cured, player, "farmer") : -1;
+        check("an uncured villager charges the farmer table's real base price (wheat x20)", baseCost == 20);
+        check("the player who cured this villager gets a real price cut on its trades (125 reputation x 0.05 "
+                        + "multiplier = 6 off; " + baseCost + " -> " + curedCost + ")",
+                curedCost == baseCost - 6);
+
         clearEntitiesExceptPlayer();
     }
 

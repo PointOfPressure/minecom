@@ -163,6 +163,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.data.Enchants.register(events, overworld);
         dev.pointofpressure.minecom.mobs.EnderDragonFight.register(events);
         if (!config.flatWorld()) dev.pointofpressure.minecom.mobs.Villagers.register(overworld);
+        if (!config.flatWorld()) dev.pointofpressure.minecom.mobs.VillagerConversion.register(overworld);
         if (!config.flatWorld()) dev.pointofpressure.minecom.worldgen.Strongholds.register(overworld);
         dev.pointofpressure.minecom.worldgen.Strongholds.registerEyeInteraction(events);
         dev.pointofpressure.minecom.mobs.VillagerTrades.register(events);

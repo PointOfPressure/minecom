@@ -118,7 +118,15 @@ public final class Combat {
             double kbResistance = target.getAttributeValue(net.minestom.server.entity.attribute.Attribute.KNOCKBACK_RESISTANCE);
             double scale = Math.max(0.0, 1.0 - kbResistance);
             target.setVelocity(target.getVelocity().add(0, 0.4 * scale * 20, 0));
-        } else if (e.getEntity() instanceof EntityCreature mob && target instanceof Player) {
+        } else if (e.getEntity() instanceof EntityCreature mob) {
+            // Mob.doHurtTarget (decompile-verified): target-type-agnostic in real vanilla —
+            // a zombie hurts a villager exactly the same way it hurts a player. This project's
+            // gate used to require a Player target specifically, which meant NO mob could ever
+            // actually kill another mob (e.g. a zombie could never kill a villager) — a
+            // pre-existing gap surfaced while wiring villager zombie-conversion, since that
+            // whole feature depends on a zombie being able to kill a villager in the first
+            // place. Iron Golem is handled above with its own real formula/knockback and never
+            // reaches here.
             float damage = (float) mob.getAttributeValue(
                     net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE);
             if (damage <= 0) return;
@@ -512,10 +520,16 @@ public final class Combat {
         Instance instance = mob.getInstance();
         if (instance == null) return;
         Pos pos = mob.getPosition();
+        Entity attacker = mob.getLastDamageSource() != null ? mob.getLastDamageSource().getAttacker() : null;
+        // Zombie.killedEntity: a converted villager never runs the rest of death() (no loot,
+        // no equipment drop, no xp) — see VillagerConversion.tryConvert.
+        if (mob.getEntityType() == EntityType.VILLAGER
+                && dev.pointofpressure.minecom.mobs.VillagerConversion.tryConvert(mob, instance, pos, attacker)) {
+            return;
+        }
         ItemStack weapon = ItemStack.AIR;
         Player killer = null;
-        if (mob.getLastDamageSource() != null
-                && mob.getLastDamageSource().getAttacker() instanceof Player p) {
+        if (attacker instanceof Player p) {
             killer = p;
             weapon = killer.getItemInMainHand();
         }

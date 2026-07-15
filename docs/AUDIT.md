@@ -649,13 +649,36 @@ leftovers.
   attribute), no hoglin hunting. Ghast: fireball deflection by hitting it back
   (verify projectileHit handles ghast fireball reflect). (S-M each)
 - Villagers: no sleep/schedules (canBreed sleep-half skipped — noted in
-  VillagerFood), no gossip/reputation (hero of the village, raid discounts),
-  no trade restocking at job site (verify VillagerTrades restock), no
-  profession-specific requestedItems beyond the picks-up tag, no baby villager
-  growth into profession claim delay nuances, no zombie-villager curing
-  (golden apple + weakness), no villager→zombie-villager conversion on zombie
-  kill (Normal 50%/Hard 100% — difficulty hook now exists!). (M; the conversion
-  is S and high-value now)
+  VillagerFood), no trade restocking at job site (verify VillagerTrades
+  restock), no profession-specific requestedItems beyond the picks-up tag, no
+  baby villager growth into profession claim delay nuances. ~~no
+  zombie-villager curing (golden apple + weakness), no villager→zombie-
+  villager conversion on zombie kill~~ **DONE 2026-07-15 (Sonnet 5,
+  `mobs/VillagerConversion.java`)** — decompile-verified against Zombie.
+  killedEntity/convertVillagerToZombieVillager and ZombieVillager (26.2, both
+  re-decompiled fresh): Normal 50%/Hard 100% conversion on any zombie-family
+  kill (Husk/Drowned/ZombieVillager included, not just the base type —
+  killedEntity is inherited, none of them override it), profession carried
+  through both directions, real 3600-6000t cure timer (weakness + golden
+  apple, NOT the enchanted one) with the iron-bars/bed speedup roll. Also
+  ports the narrow slice of gossip/reputation this needs: a cure grants the
+  curing player a real trade discount (floor(reputation*0.05) off the cost
+  side, matching Villager.updateSpecialPrices) — the full gossip ledger
+  (trade/hurt/killed events, decay, transfer, hero-of-the-village) is still
+  not modeled, only the zombie-cure path, since a single cure already
+  saturates both contributing gossip types' real caps (125 reputation is the
+  steady state, not an approximation of it). Session-scoped: conversion
+  timers and cure reputation aren't persisted (restart resets them), same
+  precedent as breeding's IN_LOVE window/warden anger. **Real bug found and
+  fixed en route (Combat.java): mob-vs-mob combat was entirely dead code** —
+  the melee-damage branch required `target instanceof Player`, so no mob
+  could ever actually damage another mob (a zombie could never kill a
+  villager, an iron golem's own branch was the only exception). Real vanilla
+  `Mob.doHurtTarget` is target-type-agnostic; the gate is now just
+  `e.getEntity() instanceof EntityCreature`. This was a pre-existing gap the
+  villager-conversion feature surfaced, not something conversion itself
+  introduced — full playtest re-run clean (788/788, then 799/800 with one
+  unrelated pre-existing flake — see HANDOFF) after the fix.
 - Raid.java:17 — bounded 3-wave raid started by command/bell proximity; no Bad
   Omen from patrol captains (no patrols), no wave scaling by difficulty (wave
   count: Easy 3/Normal 5/Hard 7 — difficulty now exists, S), no raid bar
