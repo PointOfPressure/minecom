@@ -14,34 +14,76 @@ of what got escalated and why.
 
 ---
 
-## Timing-fragile check population — NEXT TASK, blocks the next release tag (2026-07-15, Fable review)
+## Timing-fragile check population — DONE, v0.21.1 (2026-07-15, Sonnet 5)
 
-v0.21.0 was tagged with **zero fully-green playtest runs on record** (five
-runs, 1-3 FAILs each, all different). A post-tag verdict run on an IDLE
-machine (load 0.15, test-logs/full_playtest_v0210_verdict.log) still failed
-one check — so this is NOT sandbox load, it is a residual population of
-timing-fragile checks, each failing at some base rate. With ~774 checks, a
-fully-green run is currently a coin flip. The v0.21.0 *content* is verified
-(every taming/riding check passed on the idle run; the tag stands), but the
-flake SLO (CONVENTIONS §10) is unenforceable until this class is fixed.
+All six named checks root-caused and structurally fixed, plus a re-audit of
+the two already-fixed riding checks. **Two consecutive fully-green playtest
+runs on an idle machine** (test-logs/full_playtest_v0211_run1.log,
+full_playtest_v0211_run2.log — 776/776 both times, load 0.11-1.06, no DIAG
+prints) and a clean selftest (test-logs/selftest_v0211_fixes.log — 228/228).
+Tagged v0.21.1.
 
-Known fragile checks (from taming_riding_playtest_run*.log + the verdict run):
-- [elder guardian] laser charge duration ~3.5s (FAILED ON IDLE — start here)
-- [classic spawner] burst spawns >1 mob (failed twice across runs)
-- [fire spread] spreads onto air near a flammable neighbor
-- [silverfish] infested-stone ambush (NOT the DIAG-silk check; DIAG never printed)
-- [vanilla-ai] zombie burns under open sun
-- [farming full cycle] hoe-till / seed-plant / bonemeal cluster (one scenario)
-- (riding-jump + carrot-stick checks failed pre-fix in runs 1/3/4; the session
-  fixed both in test code — treat as done, but re-audit their pattern)
+- [elder guardian] laser charge duration ~3.5s — **REAL product bug**, not a
+  test/timing issue: decompiled `Guardian$GuardianAttackGoal`/`ElderGuardian`
+  (vanilla-src, re-verified) fire at `attackTime >= getAttackDuration()`
+  (attackTime starts at -10); `VanillaMobs.guardianCore` instead fired at
+  `chargeTicks >= attackDuration + 10`, a spurious extra 10 ticks (0.5s) on
+  every charge for both mobs. Fixed the threshold. Also split the check's
+  single fixed-tick budget into two independently-gated waits (target
+  acquisition, then charge completion) — target acquisition ports vanilla's
+  real unbounded-tail `nextInt(10)==0` roll, and bundling it with the
+  deterministic charge time let an unlucky acquisition roll eat into the
+  charge's own margin.
+- [classic spawner] burst spawns >1 mob — **REAL test-room bug, not a timing
+  race.** `docs/AUDIT.md`'s existing cross-cutting note already establishes
+  `setInstance` registers synchronously once the chunk is loaded (which this
+  room's own `setBlock` calls force) — chased and ruled out first, per that
+  note's own warning against re-blaming it without evidence. Actual cause:
+  `digRoom`'s floor sat exactly on one of `BaseSpawner.attemptSpawn`'s three
+  real y offsets (`rng.nextInt(3)-1` from the spawner), so 1/3 of every
+  burst's attempts hit an automatic `noCollision` fail against solid floor —
+  real vanilla dungeons never hit this because their floor sits well below
+  the spawn range. Fixed by extending the room one level deeper.
+- [fire spread] spreads onto an air block near (not touching) a flammable
+  neighbor — the real per-tick spread roll is a genuine ~0.7%-odds Bernoulli
+  trial; the existing 2000-iteration forced-tick loop (already bumped once
+  from 400) still had a residual ~1-in-700,000 tail. Replaced with
+  `FireSpread.forceSpreadForTest`, a deterministic hook that forces the one
+  RNG roll to succeed while every real gate (air candidate, positive
+  `igniteOddsAround`, rain) stays live — a state-gate test of the
+  detection+placement path instead of a sample of the random timing.
+- [silverfish] infested-stone ambush (NOT the DIAG-silk check) — a residual
+  race that survived an earlier fix (c248e0f already joined `setInstance`
+  and removed the real-time wait): `.join()` only guarantees the future
+  resolved on the calling thread, not that the server tick thread can't run
+  `SilverfishMergeWithStone` (the flat test floor is a valid merge host) in
+  the gap before the check's `world.getEntities()` read. Replaced the
+  live-entity-list sample with an `EntitySpawnEvent` listener — the same
+  idiom the nearby silk-touch diagnostic already uses — which captures the
+  ambush at dispatch time regardless of what happens to the mob a tick later.
+- [vanilla-ai] zombie burns under the open sun — the background
+  `WeatherCycle` task runs continuously all playtest long and rolls a fresh
+  1%-per-100-tick chance to spontaneously start raining whenever
+  `rainTicksLeft` is 0, independent of whatever scenario is running; a stray
+  roll mid-check would silently block sunburn. Fixed by re-pinning clear
+  weather on every poll instead of once at scenario start.
+- [farming full cycle] hoe-till / seed-plant / bonemeal cluster — one root
+  cause cascading through all three (confirmed: 25/25 clean isolated reruns
+  of just this scenario, so it needed full-suite context to trigger).
+  `HoeItem`/`Farming.useOnBlock` only tills when the block above is air;
+  this scenario's own grass-bonemeal setup 40 lines down already knows to
+  clear that block explicitly, but the very first till at the top of the
+  function never did. Fixed by pinning the same precondition there.
+- riding-jump + carrot-stick checks (fixed pre-existing, this entry asked
+  for a re-audit) — confirmed both already conform to the required pattern:
+  jump polls for a peak-over-window instead of one racy sample, and the
+  carrot-stick checks use a deterministic forced-boost helper (fixed 20-tick
+  total instead of the real 140-980 tick range) with the documented margin
+  fix for `Steering.tick`'s cleanup off-by-one. No changes needed.
 
-Prescription: rewrite each on the grindstone pattern (commit 8a5488f) —
-assert a conserved quantity or state gate, never a wall-clock-adjacent
-measurement window. Root-cause each individually; some may be REAL product
-timing bugs (vanilla-exact durations matter), so check against decompiled
-reference before assuming the test is at fault. New standing rule: **a
-release tag requires one fully green playtest on an idle machine** —
-"environmental" is a hypothesis to test, not a verdict to ship on.
+New standing rule (from the prior entry, now proven out): **a release tag
+requires one fully green playtest on an idle machine** — kept for v0.21.1's
+own tag, satisfied twice over.
 
 ---
 
