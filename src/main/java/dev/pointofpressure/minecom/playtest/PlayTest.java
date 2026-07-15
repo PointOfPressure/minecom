@@ -109,6 +109,7 @@ public final class PlayTest {
         scenario("enchant: thorns reflects damage onto the attacker", PlayTest::scenarioThorns);
         scenario("enchant: mending repairs the held item using xp", PlayTest::scenarioMending);
         scenario("combat: sword sweep attack grazes nearby entities; sweeping edge boosts it", PlayTest::scenarioSweepAttack);
+        scenario("combat: attack-cooldown model — charge scales damage quadratically, sprint+full-charge adds knockback, full recharge after the weapon's delay", PlayTest::scenarioAttackCooldown);
         scenario("snow: layers accumulate on exposed ground up to 8, not on liquid", PlayTest::scenarioSnow);
         scenario("drowning: air drains underwater, refills on surfacing, damages when depleted", PlayTest::scenarioBreath);
         scenario("wither skeleton: melee hit inflicts the Wither effect", PlayTest::scenarioWitherSkeletonEffect);
@@ -3471,6 +3472,80 @@ public final class PlayTest {
     }
 
     /**
+     * Attack-cooldown model, decompile-verified against {@code Player.getAttackStrengthScale}/
+     * {@code getCurrentItemAttackStrengthDelay}/{@code baseDamageScaleFactor}: damage scales
+     * with charge (quadratic, 20%-100%), a sprinting full-charge hit adds a real extra
+     * knockback impulse, and charge fully recovers after the weapon's own attack-speed delay.
+     */
+    private static void scenarioAttackCooldown() {
+        clearEntitiesExceptPlayer();
+        world.setTime(14000); // night: no sunburn skew
+        player.teleport(new Pos(44.5, Y + 1, 45.5)).join();
+        player.setItemInMainHand(ItemStack.of(Material.IRON_SWORD));
+        player.setOnGroundState(true);
+        player.setSprinting(false);
+        EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(45.5, Y + 1, 45.5));
+
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
+        zombie.setHealth(20);
+        float before1 = zombie.getHealth();
+        EventDispatcher.call(new EntityAttackEvent(player, zombie));
+        tick(1);
+        float fullChargeDamage = before1 - zombie.getHealth();
+        check("a full-charge iron sword hit deals the real 6 damage (got " + fullChargeDamage + ")",
+                Math.abs(fullChargeDamage - 6f) < 0.01f);
+
+        // swinging again immediately (0 ticks recharged) deals sharply diminished damage —
+        // the quadratic baseDamageScaleFactor, not a linear one
+        zombie.setHealth(20);
+        float before2 = zombie.getHealth();
+        EventDispatcher.call(new EntityAttackEvent(player, zombie));
+        tick(1);
+        float noChargeDamage = before2 - zombie.getHealth();
+        check("re-swinging with (almost) no recharge deals well under half the full-charge damage "
+                        + "(got " + noChargeDamage + ", full=" + fullChargeDamage + ")",
+                noChargeDamage > 0f && noChargeDamage < fullChargeDamage * 0.5f);
+
+        // the iron sword's real attack_speed (4 - 2.4 = 1.6/s) needs ~12.5 ticks to fully recharge
+        zombie.setHealth(20);
+        tick(13);
+        float before3 = zombie.getHealth();
+        EventDispatcher.call(new EntityAttackEvent(player, zombie));
+        tick(1);
+        float rechargedDamage = before3 - zombie.getHealth();
+        check("after the real ~12.5-tick recharge delay, damage returns to full (got "
+                + rechargedDamage + ")", Math.abs(rechargedDamage - 6f) < 0.05f);
+
+        // sprinting + full charge adds a real extra knockback impulse (Player.attack's
+        // knockbackAttack) on top of the base always-on hit knockback
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
+        zombie.setHealth(20);
+        zombie.setVelocity(Vec.ZERO);
+        zombie.teleport(new Pos(45.5, Y + 1, 45.5)).join();
+        player.setSprinting(true);
+        EventDispatcher.call(new EntityAttackEvent(player, zombie));
+        var sprintVel = zombie.getVelocity(); // read before tick(1): AI movement hasn't run yet
+        double sprintKnockback = Math.sqrt(sprintVel.x() * sprintVel.x() + sprintVel.z() * sprintVel.z());
+        tick(1);
+        player.setSprinting(false);
+
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
+        zombie.setHealth(20);
+        zombie.setVelocity(Vec.ZERO);
+        zombie.teleport(new Pos(45.5, Y + 1, 45.5)).join();
+        EventDispatcher.call(new EntityAttackEvent(player, zombie));
+        var normalVel = zombie.getVelocity();
+        double normalKnockback = Math.sqrt(normalVel.x() * normalVel.x() + normalVel.z() * normalVel.z());
+        tick(1);
+        check("a sprinting full-charge hit adds real extra knockback over a standing hit (sprint="
+                + sprintKnockback + ", standing=" + normalKnockback + ")", sprintKnockback > normalKnockback);
+
+        zombie.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
      * Sword sweep: a grounded hit also grazes a nearby entity; Sweeping Edge boosts that.
      * Formula confirmed exactly against decompiled {@code Player.doSweepAttack}:
      * {@code 1.0F + SWEEPING_DAMAGE_RATIO * baseDamage} (SWEEPING_DAMAGE_RATIO =
@@ -3493,6 +3568,9 @@ public final class PlayTest {
         EntityCreature primary = Mobs.spawn("zombie", world, new Pos(50.5, Y + 1, 50.5));
         EntityCreature nearby = Mobs.spawn("cow", world, new Pos(51.5, Y + 1, 50.5));
         player.setItemInMainHand(ItemStack.of(Material.IRON_SWORD));
+        // full-charge attack-cooldown scale is a precondition for sweep to trigger at all
+        // (Player.isSweepAttack requires fullStrengthAttack) and for the exact numbers below.
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
         float nearbyBefore = nearby.getHealth();
         EventDispatcher.call(new EntityAttackEvent(player, primary));
         tick(1);
@@ -3507,6 +3585,7 @@ public final class PlayTest {
         EntityCreature nearby2 = Mobs.spawn("cow", world, new Pos(51.5, Y + 1, 50.5));
         player.setItemInMainHand(dev.pointofpressure.minecom.data.Enchants.with(
                 ItemStack.of(Material.IRON_SWORD), net.minestom.server.item.enchant.Enchantment.SWEEPING_EDGE, 3));
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
         float nearby2Before = nearby2.getHealth();
         EventDispatcher.call(new EntityAttackEvent(player, primary2));
         tick(1);
@@ -3867,6 +3946,10 @@ public final class PlayTest {
             if (slot.isArmor()) zombie.setEquipment(slot, ItemStack.AIR);
         }
         player.setItemInMainHand(ItemStack.of(Material.TRIDENT));
+        // the trident's real -2.9 attack_speed penalty gives it a slow (~18gt) charge-up, well
+        // past the single tick() above — pin full charge so the >=7 threshold below isn't
+        // measuring a half-charged swing instead of the trident's actual damage.
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
         float healthBefore = zombie.getHealth();
         EventDispatcher.call(new net.minestom.server.event.entity.EntityAttackEvent(player, zombie));
         tick(1);
@@ -7209,6 +7292,7 @@ public final class PlayTest {
         sword = dev.pointofpressure.minecom.data.Enchants.with(sword,
                 net.minestom.server.item.enchant.Enchantment.SHARPNESS, 5);
         player.setItemInMainHand(sword);
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
         float before = zombie.getHealth();
         EventDispatcher.call(new EntityAttackEvent(player, zombie));
         tick(1);
@@ -7273,6 +7357,8 @@ public final class PlayTest {
         player.setItemInMainHand(ItemStack.AIR);
         player.setOnGroundState(false);
         player.setVelocity(new net.minestom.server.coordinate.Vec(0, -2, 0));
+        player.setSprinting(false); // Player.canCriticalAttack excludes sprinting hits
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
         float before = zombie.getHealth();
         EventDispatcher.call(new EntityAttackEvent(player, zombie));
         tick(1);
@@ -7428,6 +7514,7 @@ public final class PlayTest {
         world.setTime(14000); // night: no sunburn skew
         EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(40.5, Y + 1, 40.5));
         player.setItemInMainHand(ItemStack.AIR);
+        dev.pointofpressure.minecom.mobs.Combat.resetAttackCharge(player);
         float before = zombie.getHealth();
         EventDispatcher.call(new EntityAttackEvent(player, zombie));
         tick(1);

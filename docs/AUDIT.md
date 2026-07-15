@@ -175,9 +175,22 @@ leftovers.
   system in this codebase at all), sign-waxing (HoneycombItem also
   implements SignApplicator — no sign block-entity/text system exists to
   apply it to), particles/sounds (client-visual).
-- **No attack-cooldown model** (Combat.java:82-86 admits it) — vanilla 1.9+
-  attack charge scales damage 0.2x-1x and gates sweep; minecom always
-  full-strength + sweep on grounded sword hits. (M)
+- ~~No attack-cooldown model~~ **DONE 2026-07-15 (Sonnet 5)** — Combat.java's
+  player melee branch, decompile-verified against `Player.getAttackStrengthScale`/
+  `getCurrentItemAttackStrengthDelay`/`baseDamageScaleFactor`/`canCriticalAttack`/
+  `isSweepAttack` (26.2): a per-player "world age at last swing" tracks the real
+  charge ticker (equivalent to it without a live per-tick counter), weapon
+  attack_speed (`Items.attackSpeed`, new) sets the real recharge delay
+  (20/attack_speed ticks), damage is quadratically scaled by charge
+  (0.2 + scale²×0.8) before enchant flat bonuses are added (those aren't
+  charge-scaled, matching the decompile's exact ordering), crit requires
+  full charge AND not sprinting (previously ungated), sweep requires full
+  charge/non-crit/non-sprint (previously ungated, sweep formula itself
+  already correct), and a sprinting full-charge hit adds a real second,
+  separate knockback impulse (`Player.attack`'s `knockbackAttack`, decompile-
+  verified as a genuinely separate sequential `knockback()` call, not a
+  combined-strength one). Combat.resetAttackCharge exposed for tests that
+  need a deterministic full-charge hit.
 - **No server-enforced mining-speed system** (VanillaMobs elder guardian notes)
   — Mining Fatigue/Haste apply as effects but don't change dig speed
   server-side; Aqua Affinity/Depth Strider abandoned for the same reason. (M/L)

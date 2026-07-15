@@ -53,6 +53,25 @@ public final class Combat {
     private static final Map<Integer, PlayerCredit> LAST_HURT_BY_PLAYER = new ConcurrentHashMap<>();
     private static final int HURT_MEMORY_TICKS = 100;
 
+    /** Player.attackStrengthTicker (decompile-verified): counts ticks since the last swing,
+     *  reset to 0 by Player.onAttack() on every swing and otherwise incrementing every tick
+     *  forever (uncapped — getAttackStrengthScale clamps the ratio, not the counter). Modeled
+     *  here as "world age at last swing" rather than a live per-tick counter: since the ticker
+     *  only ever matters as (currentTick - lastResetTick), the two are equivalent without
+     *  needing a scheduled per-tick task. Missing entry = never swung = treated as fully
+     *  charged (real vanilla's ticker also starts at its Java default of 0, and any weapon's
+     *  delay is well under a fresh entity's tick-1 lifetime in practice; here it's made exact
+     *  by defaulting to "swung long enough ago to already clamp to 1.0"). */
+    private static final Map<Integer, Long> LAST_ATTACK_TICK = new ConcurrentHashMap<>();
+
+    /** Test control: force the next swing to read as fully charged. PlayTest scenarios that
+     *  assert an exact melee-damage number now need this now that charge affects damage —
+     *  same idiom as a scenario explicitly pinning world time or on-ground state before it
+     *  measures something charge/gravity/time-sensitive. */
+    public static void resetAttackCharge(Entity player) {
+        LAST_ATTACK_TICK.remove(player.getEntityId());
+    }
+
     /** EntityTypeTags.REDIRECTABLE_PROJECTILE (decompile-verified): the only entities
      *  Player.deflectProjectile() will redirect instead of taking a normal melee hit. */
     private static final Set<EntityType> REDIRECTABLE_PROJECTILES = Set.of(
@@ -77,21 +96,52 @@ public final class Combat {
         if (e.getEntity() instanceof Player player) {
             if (player.isDead()) return;
             ItemStack weapon = player.getItemInMainHand();
-            float damage = Items.attackDamage(weapon);
-            int sharpness = dev.pointofpressure.minecom.data.Enchants.level(weapon, "sharpness");
-            if (sharpness > 0) damage += 0.5f * sharpness + 0.5f;
-            int impaling = dev.pointofpressure.minecom.data.Enchants.level(weapon, "impaling");
-            if (impaling > 0 && isAquatic(target.getEntityType())) damage += 2.5f * impaling;
-            // vanilla crit: attacking while falling deals 1.5x
-            if (!player.isOnGround() && player.getVelocity().y() < 0) damage *= 1.5f;
+
+            // Player.getAttackStrengthScale(0.5F) (decompile-verified): 0 right after a swing,
+            // ramping linearly back to 1 over getCurrentItemAttackStrengthDelay ticks
+            // (20 / attack_speed attribute — a fast weapon like a dagger-speed axe recovers
+            // slower than a sword, since axes carry a steeper attack_speed penalty).
+            long worldAge = player.getInstance() != null ? player.getInstance().getWorldAge() : 0;
+            long lastAttack = LAST_ATTACK_TICK.getOrDefault(player.getEntityId(), Long.MIN_VALUE / 2);
+            float delay = 20f / Items.attackSpeed(weapon);
+            float attackStrengthScale = Math.max(0f, Math.min(1f, ((worldAge - lastAttack) + 0.5f) / delay));
+            LAST_ATTACK_TICK.put(player.getEntityId(), worldAge);
+            boolean fullStrengthAttack = attackStrengthScale > 0.9f;
+
+            // Player.attack (decompile-verified): the raw weapon/attribute damage (including
+            // Strength/Weakness, which are themselves attribute modifiers on ATTACK_DAMAGE in
+            // real vanilla) is scaled by charge FIRST via baseDamageScaleFactor
+            // (0.2 + scale^2*0.8 — quadratic, so a bare-tap hit still deals 20% damage, not 0);
+            // enchantment flat bonuses (Sharpness/Impaling, ItemStack.getAttackDamageBonus) are
+            // added AFTER that scaling and are NOT further charge-scaled — a weak, uncharged hit
+            // still gets its full Sharpness bonus, only the base weapon number is diminished.
+            float baseDamage = Items.attackDamage(weapon);
             int strength = dev.pointofpressure.minecom.survival.Potions.effectLevel(player,
                     net.minestom.server.potion.PotionEffect.STRENGTH);
-            if (strength > 0) damage += 3 * strength;
+            if (strength > 0) baseDamage += 3 * strength;
             int weakness = dev.pointofpressure.minecom.survival.Potions.effectLevel(player,
                     net.minestom.server.potion.PotionEffect.WEAKNESS);
-            if (weakness > 0) damage = Math.max(0, damage - 4 * weakness);
+            if (weakness > 0) baseDamage = Math.max(0, baseDamage - 4 * weakness);
+            baseDamage *= 0.2f + attackStrengthScale * attackStrengthScale * 0.8f;
+
+            int sharpness = dev.pointofpressure.minecom.data.Enchants.level(weapon, "sharpness");
+            if (sharpness > 0) baseDamage += 0.5f * sharpness + 0.5f;
+            int impaling = dev.pointofpressure.minecom.data.Enchants.level(weapon, "impaling");
+            if (impaling > 0 && isAquatic(target.getEntityType())) baseDamage += 2.5f * impaling;
+
+            // Player.canCriticalAttack (decompile-verified): falling, not sprinting, full charge.
+            boolean falling = !player.isOnGround() && player.getVelocity().y() < 0;
+            boolean criticalAttack = fullStrengthAttack && falling && !player.isSprinting();
+            if (criticalAttack) baseDamage *= 1.5f;
+            float damage = baseDamage;
+
             target.damage(Damage.fromPlayer(player, damage));
-            knockback(target, player.getPosition());
+            // Player.attack's knockbackAttack: sprinting on a full-charge hit adds a real,
+            // separate extra knockback() call (not a bigger single call — vanilla's
+            // LivingEntity.knockback halves existing momentum each call, so two sequential
+            // calls compound rather than just summing their strengths).
+            boolean knockbackAttack = player.isSprinting() && fullStrengthAttack;
+            knockback(target, player.getPosition(), knockbackAttack ? 0.5f : 0f);
             Survival.addExhaustion(player, 0.1f);
             player.setItemInMainHand(Items.damageItem(player, weapon, 1));
             int fireAspect = dev.pointofpressure.minecom.data.Enchants.level(weapon, "fire_aspect");
@@ -105,15 +155,17 @@ public final class Combat {
                         player.getInstance(), target.getPosition().x(), target.getPosition().z());
             }
 
-            // sweep attack: a grounded sword hit also grazes nearby entities (a bounded
-            // simplification — real vanilla additionally gates this on attack-cooldown
-            // timing, which this project doesn't model). Formula confirmed exactly against
-            // decompiled Player.doSweepAttack: `1.0F + SWEEPING_DAMAGE_RATIO * baseDamage`
-            // — the flat "+1" is the real vanilla base sweep constant, not an approximation.
-            if (player.isOnGround() && weapon.material().key().value().endsWith("_sword")) {
+            // Player.isSweepAttack (decompile-verified): full-charge, non-critical, non-sprint
+            // hit, grounded, sword — this project doesn't track the additional real
+            // "not moving faster than 2.5x walk speed" gate (no tracked horizontal-speed state
+            // to check it against), everything else is exact. Formula confirmed against
+            // decompiled Player.doSweepAttack: `(1.0F + SWEEPING_DAMAGE_RATIO * baseDamage) *
+            // attackStrengthScale` — the flat "+1" is the real vanilla base sweep constant.
+            if (fullStrengthAttack && !criticalAttack && !knockbackAttack && player.isOnGround()
+                    && weapon.material().key().value().endsWith("_sword")) {
                 int sweepingEdge = dev.pointofpressure.minecom.data.Enchants.level(weapon, "sweeping_edge");
                 float sweepRatio = sweepingEdge > 0 ? (float) sweepingEdge / (sweepingEdge + 1) : 0f;
-                float sweepDamage = 1f + damage * sweepRatio;
+                float sweepDamage = (1f + damage * sweepRatio) * attackStrengthScale;
                 for (Entity nearby : target.getInstance().getNearbyEntities(target.getPosition(), 2.0)) {
                     if (nearby == target || nearby == player || !(nearby instanceof LivingEntity other) || other.isDead()) continue;
                     other.damage(Damage.fromPlayer(player, sweepDamage));
@@ -419,6 +471,14 @@ public final class Combat {
     }
 
     private static void knockback(LivingEntity target, Pos source) {
+        knockback(target, source, 0f);
+    }
+
+    /** LivingEntity.hurt's always-on 0.4-strength knockback, plus (for a sprinting full-charge
+     *  player hit) a real SECOND, separate knockback() call for Player.attack's causeExtraKnockback
+     *  — decompile-verified as sequential calls, not one combined-strength call, since
+     *  LivingEntity.knockback halves existing momentum on each call before adding the new push. */
+    private static void knockback(LivingEntity target, Pos source, float extra) {
         double dx = target.getPosition().x() - source.x();
         double dz = target.getPosition().z() - source.z();
         double len = Math.sqrt(dx * dx + dz * dz);
@@ -428,6 +488,7 @@ public final class Combat {
             len = Math.sqrt(dx * dx + dz * dz);
         }
         target.takeKnockback(0.4f, -dx / len, -dz / len);
+        if (extra > 0f) target.takeKnockback(extra, -dx / len, -dz / len);
     }
 
     private static final EquipmentSlot[] ARMOR_SLOTS = {

@@ -22,6 +22,14 @@ public final class Items {
         return 1f + (float) attributeTotal(stack, Attribute.ATTACK_DAMAGE);
     }
 
+    /** Player base attack_speed (4.0, Player.createAttributes' unmodified default) plus the
+     *  item's additive attack_speed modifiers (weapons carry a negative one, e.g. -2.4 for
+     *  swords, -3.0 for axes) — feeds Player.getCurrentItemAttackStrengthDelay's
+     *  {@code 20.0 / attackSpeed} tick delay for the attack-cooldown charge model. */
+    public static float attackSpeed(ItemStack stack) {
+        return 4f + (float) attributeTotal(stack, Attribute.ATTACK_SPEED);
+    }
+
     public static double armorPoints(ItemStack stack) {
         return attributeTotal(stack, Attribute.ARMOR);
     }
