@@ -20,6 +20,7 @@ region (26.x layout); minecom/Minestom writes <workdir>/world/region.
 """
 
 import json
+import re
 import struct
 import subprocess
 import threading
@@ -82,21 +83,29 @@ class Server:
     command feedback for hundreds of setblocks would otherwise fill the pipe
     buffer and deadlock the server mid-batch."""
 
-    def __init__(self, workdir, xmx="1024M", jar=JAR, libs=LIBS):
+    def __init__(self, workdir, xmx="1024M", jar=JAR, libs=LIBS, launch_cmd=None):
+        """launch_cmd: override the full java command (list[str]) instead of
+        the default vanilla-bundler `-cp <libs+jar> net.minecraft.server.Main`
+        — e.g. a Paper server jar is self-contained and just wants
+        `-jar paper-*.jar`. Everything downstream (cmd/wait_for/forceload/
+        save_flush/query_gametime) works unchanged since Paper accepts the
+        same console commands as vanilla."""
         self.workdir = Path(workdir)
         self.xmx = xmx
         self.jar = Path(jar)
         self.libs = Path(libs)
+        self.launch_cmd = launch_cmd
         self.proc = None
         self.lines = []
         self.scanned = 0
         self.cond = threading.Condition()
 
     def start(self):
-        self.proc = subprocess.Popen(
+        cmd = self.launch_cmd or (
             ["java", f"-Xmx{self.xmx}", "-cp", _classpath(self.jar, self.libs),
-             "net.minecraft.server.Main", "--nogui"],
-            cwd=self.workdir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+             "net.minecraft.server.Main", "--nogui"])
+        self.proc = subprocess.Popen(
+            cmd, cwd=self.workdir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, bufsize=1)
         threading.Thread(target=self._pump, daemon=True).start()
         self.wait_for("Done (", timeout=300)
@@ -132,6 +141,36 @@ class Server:
     def barrier(self, tag):
         self.cmd(f"say SYNC-{tag}")
         self.wait_for(f"SYNC-{tag}", timeout=120)
+
+    def query_gametime(self, timeout=30):
+        """Current world-age tick counter (advances exactly 1/tick regardless of
+        the doDaylightCycle gamerule) — scripts/bench's cross-server TPS probe
+        (MASTERPLAN §4 P0): sample this before/after a wall-clock interval and
+        divide by elapsed seconds, capped at 20. Works on any vanilla-protocol
+        console (vanilla, Paper); minecom has no console (see HANDOFF's
+        rust-mc-bot escalation entry) so it uses its own /metrics instead."""
+        with self.cond:
+            start_scanned = len(self.lines)
+        self.cmd("time query gametime")
+        deadline = time.time() + timeout
+        with self.cond:
+            scanned = start_scanned
+            while True:
+                while scanned < len(self.lines):
+                    line = self.lines[scanned]
+                    scanned += 1
+                    m = re.search(r"[Tt]ime is (\d+)", line)
+                    if m:
+                        return int(m.group(1))
+                if self.proc.poll() is not None:
+                    raise RuntimeError("server exited waiting for gametime query")
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    raise RuntimeError("timeout waiting for gametime query response")
+                self.cond.wait(min(remaining, 1.0))
+
+    def pid(self):
+        return self.proc.pid
 
     def save_flush(self):
         """Synchronous save-all flush; returns once the save is on disk."""

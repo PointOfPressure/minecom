@@ -1,0 +1,18 @@
+# Scenario (c), MASTERPLAN §4 P0: redstone-heavy world (doors/farms/clocks).
+# bots=0 by default: the spec's "modest player presence" variant is blocked
+# by the rust-mc-bot connection bug (docs/HANDOFF.md, 2026-07-15) — a bots=0
+# run still produces a real, honest number (server-only redstone engine
+# load), just not the player-driven view-distance/chunk-streaming overlay.
+# Bump `bots` once that's fixed.
+name = "redstone"
+mode = "live"
+description = "Grid of double-observer redstone clocks (server-only load; player presence blocked, see HANDOFF)"
+duration_seconds = 150
+bots = 0
+bot_join_batch = 0
+world = "production"
+bench_scenario_env = "redstone"
+bench_extra_env = { MINECOM_BENCH_REDSTONE_COUNT = "400" }
+join_hold_seconds = 0
+join_timeout_seconds = 0
+ramp = false

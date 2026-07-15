@@ -1,0 +1,16 @@
+# Scenario (d), MASTERPLAN §4 P0: mob farm density test.
+# bots=0 by default — same rationale as redstone.toml (rust-mc-bot
+# connection bug, docs/HANDOFF.md 2026-07-15). A bots=0 run still measures
+# real mob-AI/pathfinding tick cost for a penned, persistent hostile crowd.
+name = "mobfarm"
+mode = "live"
+description = "Penned hostile-mob density (server-only load; player presence blocked, see HANDOFF)"
+duration_seconds = 150
+bots = 0
+bot_join_batch = 0
+world = "production"
+bench_scenario_env = "mobfarm"
+bench_extra_env = { MINECOM_BENCH_MOB_COUNT = "150", MINECOM_BENCH_MOB_KIND = "zombie" }
+join_hold_seconds = 0
+join_timeout_seconds = 0
+ramp = false

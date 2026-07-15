@@ -1,0 +1,20 @@
+# Scenario (e), MASTERPLAN §4 P0: chunk generation throughput (chunks/sec),
+# no bots, no live server loop — the flamgop speedrun-practice pregen use
+# case. minecom side uses its existing --genregions mode (Main.java);
+# vanilla side forceloads the same square via console and polls for
+# minecraft:full (scripts/vanilla_oracle.py's technique).
+name = "chunkgen"
+mode = "chunkgen"
+description = "Chunk generation throughput (chunks/sec), no bots"
+# radius=4 -> 64 chunks. Sized for a fair minecom/vanilla/paper comparison
+# on THIS laptop in one session: minecom measured ~0.5 chunks/sec here
+# (5400rpm HDD + the VanillaGen 8-neighbor decoration re-run cost per chunk,
+# see GenRegions.java's class Javadoc); a naive vanilla run at radius=8
+# tripped its own watchdog and, even after fixing that (max-tick-time=-1,
+# tiled forceload), a single 144-chunk tile took >15 minutes here — this
+# laptop's HDD is the bottleneck for repeated whole-world save_flush polls,
+# not either engine's generator. Bump for a rented/Threadripper run
+# (MASTERPLAN §11.1) where per-chunk and per-flush cost are not the
+# bottleneck.
+seed = 20260708
+radius = 4

@@ -1,0 +1,21 @@
+# Scenario (a), MASTERPLAN §4 P0: N bots wandering at the default spawn point.
+# Blocked as of 2026-07-15 by the rust-mc-bot connection bug — see
+# docs/HANDOFF.md's escalation entry. run_scenario.py will fail loudly
+# (not report fake numbers) until that's fixed.
+name = "spawn"
+mode = "live"
+description = "N bots wandering at the default spawn point"
+duration_seconds = 180
+bots = 100
+bot_join_batch = 100
+world = "production"
+bench_scenario_env = "spawn"
+join_hold_seconds = 10
+join_timeout_seconds = 60
+
+# Ramp mode: find max bots before sub-20 TPS by joining in batches instead of
+# all at once (MASTERPLAN §4 P0's "max bots before <20 TPS" result field).
+ramp = true
+ramp_step = 20
+ramp_interval_seconds = 20
+ramp_tps_floor = 19.5
