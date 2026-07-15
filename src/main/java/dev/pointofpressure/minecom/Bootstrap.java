@@ -132,6 +132,13 @@ public final class Bootstrap {
         Survival.register(events);
         Experience.register(events);
         Combat.register(events);
+        // Taming registers after Combat: its owner-defense listeners read Combat's
+        // cancellation/mitigation decisions on the same events (see Taming.register).
+        dev.pointofpressure.minecom.mobs.Taming.register(events);
+        dev.pointofpressure.minecom.mobs.Riding.register(events);
+        dev.pointofpressure.minecom.mobs.NameTags.register(events);
+        dev.pointofpressure.minecom.mobs.Steering.register(events);
+        dev.pointofpressure.minecom.mobs.Leashing.register(events);
         // Redstone registers first: its shears-disarm-tripwire handling cancels the break
         // before BlockRules.onBreak (registered next) would otherwise drop the wire item too.
         dev.pointofpressure.minecom.redstone.Redstone.register(events);
@@ -169,6 +176,7 @@ public final class Bootstrap {
         });
         dev.pointofpressure.minecom.mobs.Breeding.register(events);
         dev.pointofpressure.minecom.mobs.Breeding.start(overworld);
+        dev.pointofpressure.minecom.mobs.Riding.start(overworld);
         dev.pointofpressure.minecom.mobs.Shearing.register(events);
         dev.pointofpressure.minecom.mobs.Bartering.register(events);
         dev.pointofpressure.minecom.blocks.PumpkinCarving.register(events);

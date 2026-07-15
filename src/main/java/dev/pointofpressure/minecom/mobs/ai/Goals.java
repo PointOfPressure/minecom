@@ -117,6 +117,11 @@ public final class Goals {
 
         @Override
         public boolean canUse() {
+            // A mounted horse-family mob is steered by mobs.Riding.tick's direct
+            // velocity writes; letting this goal's own moveTo/pathfinding fire at the
+            // same time would fight the rider for control (no other VBrain-driven mob
+            // is currently rideable, so this is a no-op guard for everything else).
+            if (!brain.mob.getPassengers().isEmpty()) return false;
             if (brain.aggressive || brain.target != null) return false;
             if (brain.random.nextInt(interval) != 0) return false;
             wanted = landPosition();
@@ -527,6 +532,209 @@ public final class Goals {
         @Override
         public void stop() {
             brain.setTarget(null);
+        }
+    }
+
+    // ---------------------------------------------------------------- owner (taming)
+
+    /** SitWhenOrderedToGoal: while ordered to sit, hold MOVE and stay put — priority 2
+     *  outranks LeapAtTarget/MeleeAttack/FollowOwner so a sitting wolf never chases. */
+    public static class SitWhenOrdered extends VGoal {
+        private final VBrain brain;
+
+        public SitWhenOrdered(VBrain brain) {
+            this.brain = brain;
+            setFlags(EnumSet.of(Flag.MOVE));
+        }
+
+        private boolean sitting() {
+            return brain.mob.getEntityMeta()
+                    instanceof net.minestom.server.entity.metadata.animal.tameable.TameableAnimalMeta m
+                    && m.isSitting();
+        }
+
+        @Override
+        public boolean canUse() {
+            return sitting();
+        }
+
+        @Override
+        public void start() {
+            brain.stopNavigation();
+        }
+
+        @Override
+        public void tick() {
+            brain.stopNavigation();
+        }
+    }
+
+    /**
+     * FollowOwnerGoal + TamableAnimal.tryToTeleportToOwner folded together: follow the
+     * tamed mob's owner once farther than startDistance, teleport into a 7x3x7 box
+     * around the owner (skipping the inner 3x3) once past TELEPORT_WHEN_DISTANCE_IS_SQ
+     * (144, i.e. 12 blocks — decompile-verified constant), stop within stopDistance.
+     * Never runs while sitting (mirrors unableToMoveToOwner's isOrderedToSit check).
+     */
+    public static class FollowOwner extends VGoal {
+        private final VBrain brain;
+        private final double speedModifier;
+        private final float startDistance;
+        private final float stopDistance;
+
+        public FollowOwner(VBrain brain, double speedModifier, float startDistance, float stopDistance) {
+            this.brain = brain;
+            this.speedModifier = speedModifier;
+            this.startDistance = startDistance;
+            this.stopDistance = stopDistance;
+            setFlags(EnumSet.of(Flag.MOVE));
+        }
+
+        private Player owner() {
+            return dev.pointofpressure.minecom.mobs.Taming.ownerOf(brain.mob);
+        }
+
+        private boolean sitting() {
+            return brain.mob.getEntityMeta()
+                    instanceof net.minestom.server.entity.metadata.animal.tameable.TameableAnimalMeta m
+                    && m.isSitting();
+        }
+
+        @Override
+        public boolean canUse() {
+            if (sitting()) return false;
+            Player owner = owner();
+            if (owner == null || owner.isDead()) return false;
+            return brain.mob.getPosition().distanceSquared(owner.getPosition()) >= startDistance * startDistance;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            if (sitting()) return false;
+            Player owner = owner();
+            if (owner == null || owner.isDead() || brain.navigationDone()) return false;
+            return brain.mob.getPosition().distanceSquared(owner.getPosition()) > stopDistance * stopDistance;
+        }
+
+        @Override
+        public void start() {
+            Player owner = owner();
+            if (owner != null) brain.moveTo(owner.getPosition(), speedModifier);
+        }
+
+        @Override
+        public void stop() {
+            brain.stopNavigation();
+        }
+
+        @Override
+        public void tick() {
+            Player owner = owner();
+            if (owner == null) return;
+            brain.lookAt(owner);
+            if (brain.mob.getPosition().distanceSquared(owner.getPosition()) >= 144.0) {
+                teleportToOwner(owner);
+            } else if (brain.navigationDone()) {
+                brain.moveTo(owner.getPosition(), speedModifier);
+            }
+        }
+
+        private void teleportToOwner(Player owner) {
+            var instance = brain.mob.getInstance();
+            for (int attempt = 0; attempt < 10; attempt++) {
+                int xd = brain.random.nextInt(7) - 3;
+                int zd = brain.random.nextInt(7) - 3;
+                if (Math.abs(xd) < 2 && Math.abs(zd) < 2) continue;
+                int yd = brain.random.nextInt(3) - 1;
+                int x = owner.getPosition().blockX() + xd;
+                int y = owner.getPosition().blockY() + yd;
+                int z = owner.getPosition().blockZ() + zd;
+                if (!instance.isChunkLoaded(x >> 4, z >> 4)) continue;
+                var floor = instance.getBlock(x, y - 1, z);
+                var at = instance.getBlock(x, y, z);
+                var above = instance.getBlock(x, y + 1, z);
+                if (floor.isSolid() && !floor.isLiquid() && at.isAir() && above.isAir()) {
+                    Pos p = brain.mob.getPosition();
+                    brain.mob.teleport(new Pos(x + 0.5, y, z + 0.5, p.yaw(), p.pitch()));
+                    brain.stopNavigation();
+                    return;
+                }
+            }
+        }
+    }
+
+    /**
+     * RunAroundLikeCrazyGoal: while ridden and untamed, run wild toward a random
+     * nearby point; every ~50 ticks (1-in-50 roll, matching adjustedTickDelay(50))
+     * the rider rolls temper/maxTemper — success tames via Riding.tameRoll, failure
+     * ejects them with +5 temper. Horse-family only (Riding.HORSE_FAMILY gate lives
+     * in the factory that adds this goal, not here).
+     */
+    public static class RunAroundLikeCrazy extends VGoal {
+        private final VBrain brain;
+        private final double speedModifier;
+        private Pos wanted;
+
+        public RunAroundLikeCrazy(VBrain brain, double speedModifier) {
+            this.brain = brain;
+            this.speedModifier = speedModifier;
+            setFlags(EnumSet.of(Flag.MOVE));
+        }
+
+        private boolean tamed() {
+            return brain.mob.getEntityMeta()
+                    instanceof net.minestom.server.entity.metadata.animal.AbstractHorseMeta m && m.isTamed();
+        }
+
+        @Override
+        public boolean canUse() {
+            if (tamed() || brain.mob.getPassengers().isEmpty()) return false;
+            wanted = randomNearbyGround();
+            return wanted != null;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return !tamed() && !brain.navigationDone() && !brain.mob.getPassengers().isEmpty();
+        }
+
+        @Override
+        public void start() {
+            brain.moveTo(wanted, speedModifier);
+        }
+
+        @Override
+        public void stop() {
+            brain.stopNavigation();
+        }
+
+        @Override
+        public void tick() {
+            if (tamed() || brain.random.nextInt(50) != 0) return;
+            Entity passenger = brain.mob.getPassengers().stream().findFirst().orElse(null);
+            if (passenger instanceof Player player) {
+                dev.pointofpressure.minecom.mobs.Riding.tameRoll(brain.mob, player);
+            }
+        }
+
+        private Pos randomNearbyGround() {
+            var instance = brain.mob.getInstance();
+            Pos origin = brain.mob.getPosition();
+            for (int attempt = 0; attempt < 10; attempt++) {
+                int dx = brain.random.nextInt(21) - 10;
+                int dz = brain.random.nextInt(21) - 10;
+                int x = origin.blockX() + dx, z = origin.blockZ() + dz;
+                if (!instance.isChunkLoaded(x >> 4, z >> 4)) continue;
+                int y = origin.blockY();
+                int guard = 0;
+                while (y > -60 && instance.getBlock(x, y - 1, z).isAir() && guard++ < 8) y--;
+                var floor = instance.getBlock(x, y - 1, z);
+                var at = instance.getBlock(x, y, z);
+                if (floor.isSolid() && !floor.isLiquid() && at.isAir()) {
+                    return new Pos(x + 0.5, y, z + 0.5);
+                }
+            }
+            return null;
         }
     }
 

@@ -180,10 +180,14 @@ public final class Mobs {
             case "evoker" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.evoker(instance, pos);
             case "illusioner" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.illusioner(instance, pos);
             case "ravager" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.ravager(instance, pos);
-            case "cow", "pig", "sheep", "chicken", "mooshroom", "rabbit", "goat", "horse",
-                 "donkey", "llama", "turtle", "panda", "polar_bear", "armadillo", "camel", "fox", "frog",
-                 "wolf", "parrot", "zombie_horse", "ocelot" ->
+            case "cow", "pig", "sheep", "chicken", "mooshroom", "rabbit", "goat",
+                 "llama", "turtle", "panda", "polar_bear", "armadillo", "camel", "fox", "frog",
+                 "parrot", "ocelot" ->
                     dev.pointofpressure.minecom.mobs.ai.VanillaMobs.animal(kind, instance, pos);
+            case "wolf" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.wolf(instance, pos);
+            case "cat" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.cat(instance, pos);
+            case "horse", "donkey", "mule", "skeleton_horse", "zombie_horse" ->
+                    dev.pointofpressure.minecom.mobs.ai.VanillaMobs.horseFamily(kind, instance, pos);
             case "squid", "glow_squid", "cod", "salmon", "pufferfish", "tropical_fish", "dolphin", "axolotl", "nautilus" ->
                     dev.pointofpressure.minecom.mobs.ai.VanillaMobs.waterAnimal(kind, instance, pos);
             case "zombified_piglin" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.zombifiedPiglin(instance, pos);

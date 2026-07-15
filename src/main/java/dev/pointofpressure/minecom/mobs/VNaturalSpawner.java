@@ -585,6 +585,13 @@ public final class VNaturalSpawner {
         boolean peaceful = dev.pointofpressure.minecom.Difficulty.isPeaceful();
         for (Entity e : instance.getEntities()) {
             if (!(e instanceof EntityCreature mob) || mob.isDead()) continue;
+            // TamableAnimal / AbstractHorse: a tame pet or mount never despawns and is
+            // never a Peaceful-mode casualty, regardless of category — checked first
+            // since untamed cats have no TYPE_CATEGORY entry at all (they only ever
+            // spawn manually; real vanilla spawns them from villages, which this
+            // project doesn't generate) and would otherwise wrongly fall into the
+            // Cat.MONSTER default below.
+            if (Taming.isTamed(mob) || Riding.isTamed(mob) || NameTags.isPersistent(mob)) continue;
             Cat c = TYPE_CATEGORY.getOrDefault(e.getEntityType().key().asString(), Cat.MONSTER);
             // Mob.checkDespawn: hostiles discard instantly on Peaceful
             if (peaceful && !c.friendly) { mob.remove(); continue; }

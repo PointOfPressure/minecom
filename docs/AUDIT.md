@@ -539,14 +539,94 @@ leftovers.
   ambient-sound and heartbeat cadences are client-driven via WardenMeta
   anger sync only. Sonic boom damage rides DamageType.SONIC_BOOM (armor
   bypass follows the bundled damage-type tags).
+- **Taming/mounts (mobs/Taming.java, mobs/Riding.java, mobs/Steering.java,
+  mobs/Leashing.java, mobs/NameTags.java, 2026-07-15, Sonnet 5)** —
+  MASTERPLAN §3 Tier 2's L item, decompile-verified against TamableAnimal/
+  Wolf/Cat/AbstractHorse/Horse/AbstractChestedHorse/Donkey/Mule/SkeletonHorse/
+  ZombieHorse/Pig/Strider/ItemBasedSteering/Leashable/LeashFenceKnotEntity/
+  NameTagItem (26.2, all freshly re-decompiled for this pass — the cached
+  copies predated the 26.2 bump). Landed in three commits:
+  - **Wolves + cats**: bone/fish taming is a flat 1-in-3 roll per feed (no
+    growing "trust" meter — that's a Bedrock-ism, not real Java behavior),
+    tamed wolves jump 8→40 max health, sit/collar-dye/feed via Minestom's
+    native `WolfMeta`/`CatMeta`/`TameableAnimalMeta` (owner UUID, sitting,
+    tamed all synced natively — no custom tags needed), `mobs.ai.Goals`
+    gained `SitWhenOrdered` + `FollowOwner` (with the real
+    TELEPORT_WHEN_DISTANCE_IS_SQ=144 owner-teleport), and wolf owner-defense
+    (assist the owner's hit, retaliate against a hit the owner takes) is
+    wired as two extra `EntityDamageEvent`/`EntityAttackEvent` listeners in
+    Taming.java registered *after* Combat.java specifically so they see its
+    cancellation decisions, rather than edits inside Combat's dense pipeline.
+    Cats have no combat AI at all (matches vanilla — no HurtByTarget,
+    no owner-defense goals in real Cat.registerGoals).
+  - **Horse family**: taming-by-riding (`Goals.RunAroundLikeCrazy`, the real
+    temper/maxTemper(100) roll every ~50 ticks, +5 temper per failed buck),
+    saddling, donkey/mule chests (a plain `CHEST_3_ROW` cargo hold — Minestom
+    has no horse-menu InventoryType and this project has no custom-slot-click
+    menu framework to build vanilla's real 3x5+2 layout), feeding
+    (wheat/sugar/apple/carrot +3 temper, golden carrot +5, golden apple +10,
+    hay heals 20 with no temper — `AbstractHorse.handleEating` exactly), and
+    player-steered riding (WASD with the real sideways-halved/backward-
+    quartered factors, full-power jump on a tap rather than vanilla's
+    charge-by-holding — no client charge-bar infrastructure exists here, a
+    stated simplification not a silent fake). Horse x donkey breeding
+    (golden carrot/apple love mode) produces a mule with
+    `AbstractHorse.createOffspringAttribute`-exact inherited health/jump/
+    speed, implemented self-contained in Riding.java rather than folded into
+    Breeding.java's generic same-species pairing (a 3rd-species cross needs
+    attribute inheritance Breeding.java has no concept of). Skeleton horses
+    are never player-tameable by riding (matches real
+    SkeletonHorse.mobInteract's unconditional PASS while untamed — they're
+    normally already-tame via the lightning trap, itself still unmodeled,
+    see below).
+  - **Pig/strider saddles**: no taming needed to saddle either. Riding is
+    forward-only, steered purely by where the rider looks (real vanilla
+    `getRiddenInput` is a flat `(0,0,1)` — no strafe, no reverse, no jump),
+    with carrot-on-a-stick / warped-fungus-on-a-stick boosting
+    (`ItemBasedSteering.boost`: 140-980gt window, `1+1.15·sin(t/total·π)`
+    factor, no restacking mid-boost, 1 durability per use).
+  - **Leads**: attach/detach, fence-post `LeashFenceKnotEntity` re-homing
+    (spawned once per block, reused on repeat clicks), and the real
+    LEASH_TOO_FAR_DIST=12 (pull)/MAXIMUM_ALLOWED_LEASHED_DIST=16 (snap,
+    drops a lead) distances as a plain velocity write each tick rather than
+    vanilla's full spring/wrench/angular-momentum rope physics. **Engine
+    gap, not a project simplification**: Minestom's animal entity metadata
+    has no "leash holder" field at all (grep-confirmed against the
+    decompiled Minestom 26.2 sources — only `LeashKnotMeta.IS_LEASH_HOLDER`,
+    a marker on the knot itself), so no client ever renders the tether line
+    to a leashed mob regardless of what this project does server-side.
+  - **Name tags**: the rename step needed zero new code (Anvils.java's
+    generic `DataComponents.CUSTOM_NAME` rename already covers any item,
+    name tags included); applying one sets the custom name, makes it
+    visible, and marks the mob persistent — this project's first
+    "`Mob.setPersistenceRequired()`" equivalent, wired into
+    `VNaturalSpawner.despawnTick` alongside the new tamed-mob persistence
+    check (both must run *before* the peaceful-instant-despawn branch, since
+    untamed cats have no natural-spawn TYPE_CATEGORY entry at all and would
+    otherwise wrongly fall into the Cat.MONSTER default).
+  - Test coverage: 3 new PlayTest scenarios (taming, riding, leashing/name-
+    tags/steering), each covering the probabilistic taming rolls via the
+    established "retry generously, ~30 attempts for a 1-in-3 roll" sampling
+    convention (scenarioEquipmentDropChance's 8.5% roll is the precedent).
+  - Not modeled (all stated above or here, not silently faked): wolf/cat
+    body armor, wolf/cat variant textures and sounds, persistent-anger
+    duration (a provoked wild wolf holds its grudge forever, no 20-39s
+    timer), wolf/cat/donkey-solo breeding (only horse x donkey → mule is
+    wired), horse rearing/eating animation state, foals following their bred
+    mother, strider cold-shaking animation, skeleton-horse lightning trap
+    (AUDIT: still open below), parrot taming (still open below), mob item
+    pickup (still open below).
 - Missing passive/utility mobs: bee (pollination/hive/anger — M-L), cat (village
-  spawning, morning gifts, creeper repel), skeleton_horse (trap exists? no —
-  lightning trap missing), mule, trader_llama (wandering trader spawns alone;
+  spawning, morning gifts, creeper repel — taming/feeding DONE, see above),
+  skeleton_horse (trap exists? no —
+  lightning trap missing), trader_llama (wandering trader spawns alone;
   vanilla brings 2 leashed llamas), allay (item collection), sniffer, tadpole
   (frog lifecycle), snow golem/iron golem BUILDING by players (pumpkin
   placement patterns — golems only spawn via commands/tests). (S-M each)
-- No taming anywhere (wolves/cats/parrots/horses), no horse riding/saddles, no
-  leads, no name tags (despawn suppression), no mob item pickup except
+- ~~No taming anywhere (wolves/cats/parrots/horses), no horse riding/saddles, no
+  leads, no name tags (despawn suppression)~~ — DONE 2026-07-15 for
+  wolves/cats/horses/leads/name tags, see above; parrot taming still open (S).
+  No mob item pickup except
   villagers (zombies canPickUpLoot rolled but unused). (M-L)
 - VanillaMobs.java:656 — phantom bounded to size 0 (6 dmg); vanilla size scales
   with insomnia. Also no insomnia/phantom natural night spawner at all —
@@ -800,6 +880,7 @@ leftovers.
 5. Random-tick engine (crop/grass/fire/copper/sapling) — L
 6. Villager→zombie-villager conversion + curing loop (difficulty hooks ready) — S/M
 7. Mob equipment enchantments + equipment drop chances — S/M
-8. Taming (wolf/cat/horse) + leads/name tags — L
+8. ~~Taming (wolf/cat/horse) + leads/name tags~~ — DONE 2026-07-15 (v0.21.0, see the
+   Taming/mounts entry above) — S remaining (wolf/cat/horse breeding, wolf armor)
 9. Splash/lingering/tipped arrows + missing 26.x effects — M
 10. Raid difficulty scaling (wave counts by difficulty, Bad Omen via patrols) — M

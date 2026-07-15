@@ -156,6 +156,9 @@ public final class PlayTest {
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
         scenario("silverfish: infested-block ambush, silk-touch bypass, wake-up-friends, merge-into-stone", PlayTest::scenarioSilverfish);
+        scenario("taming: wolf bone-taming + health boost + sit/collar/feed + owner-defense, cat fish-taming, despawn persistence", PlayTest::scenarioTaming);
+        scenario("riding: horse taming-by-riding, saddle, player-steered movement + jump, donkey chest cargo, horse x donkey -> mule breeding with attribute inheritance", PlayTest::scenarioRiding);
+        scenario("leads + name tags + pig/strider saddles: attach/detach, fence knot, pull/break distance, name-tag persistence, forward-steered saddle riding with a boost", PlayTest::scenarioLeashingNameTagsSteering);
         scenario("slime sizes: setSize attributes, split-on-death chain, tiny-slime pacifism, magma armor", PlayTest::scenarioSlimeSizes);
         scenario("bubble columns: soul sand grows push-up, item + boat launch, magma flips to drag, revert to water", PlayTest::scenarioBubbleColumns);
         scenario("piston: reorder-at-collision rig (late honey line walks into an earlier-claimed cell)", PlayTest::scenarioPistonReorderCollision);
@@ -7810,5 +7813,460 @@ public final class PlayTest {
         check("killed mobs sometimes drop their worn equipment (8.5%/kill; " + dropped + "/60 kills dropped a helmet)",
                 dropped >= 1);
         clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Wolf + cat taming (mobs/Taming.java, decompile-verified against
+     * Wolf/Cat/TamableAnimal 26.2): bone/fish taming is a flat 1-in-3 roll (retried
+     * up to 30x — (2/3)^30 ~= 5e-6 false-negative odds, same sampling convention as
+     * scenarioEquipmentDropChance's 8.5% roll), tamed wolves jump 8 -&gt; 40 max
+     * health (cats stay at 10 — no such side effect in vanilla), sit toggles on an
+     * empty-hand right-click, feeding heals, collars dye, and a tamed wolf defends
+     * its owner both ways (assists a hit the owner lands, retaliates against a hit
+     * the owner takes) while cats have no combat AI at all in vanilla. Also covers
+     * the despawn-sweep persistence a tame pet gets (VNaturalSpawner.despawnTick).
+     */
+    private static void scenarioTaming() {
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.NORMAL);
+        clearEntitiesExceptPlayer();
+        player.teleport(new Pos(0.5, Y + 1, 0.5, 0f, 0f)).join();
+
+        // ---- wolf: bone taming, health boost, sit toggle, feed, collar ----
+        EntityCreature wolf = Mobs.spawn("wolf", world, new Pos(2.5, Y + 1, 0.5));
+        tick(2);
+        var wolfMeta = (net.minestom.server.entity.metadata.animal.tameable.WolfMeta) wolf.getEntityMeta();
+        check("a freshly spawned wolf starts untamed", !wolfMeta.isTamed());
+        check("a wild wolf starts at 8 health", wolf.getHealth() == 8f);
+
+        boolean tamed = false;
+        for (int i = 0; i < 30 && !tamed; i++) {
+            player.setItemInMainHand(ItemStack.of(Material.BONE));
+            EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                    player, wolf, PlayerHand.MAIN, Vec.ZERO));
+            tick(1);
+            tamed = wolfMeta.isTamed();
+        }
+        check("feeding bones tames a wolf on a 1-in-3 roll (retried up to 30x)", tamed);
+        check("taming sets the player as owner", player.getUuid().equals(wolfMeta.getOwner()));
+        check("taming jumps a wolf's max health from 8 to 40",
+                wolf.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 40.0
+                        && wolf.getHealth() == 40f);
+        check("a freshly tamed wolf starts sitting", wolfMeta.isSitting());
+
+        player.setItemInMainHand(ItemStack.AIR);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, wolf, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("an empty-hand right-click toggles a tamed wolf's sit off", !wolfMeta.isSitting());
+
+        wolf.setHealth(20f);
+        player.setItemInMainHand(ItemStack.of(Material.COOKED_BEEF));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, wolf, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("feeding a hurt tamed wolf heals it (now " + wolf.getHealth() + ")", wolf.getHealth() > 20f);
+
+        player.setItemInMainHand(ItemStack.of(Material.BLUE_DYE));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, wolf, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("dyeing a tamed wolf's collar changes its color",
+                wolfMeta.getCollarColor() == net.minestom.server.color.DyeColor.BLUE);
+        player.setItemInMainHand(ItemStack.AIR);
+
+        // ---- follow owner (unsat) ----
+        wolf.teleport(new Pos(2.5, Y + 1, 0.5)).join();
+        tick(1);
+        Pos beforeFollow = wolf.getPosition();
+        player.teleport(new Pos(30.5, Y + 1, 0.5, 0f, 0f)).join();
+        boolean followed = waitFor(() -> wolf.getPosition().distance(beforeFollow) > 3.0, 6000);
+        check("an unsat tamed wolf follows its distant owner", followed);
+
+        // ---- owner defense: assist on the owner's hit ----
+        EntityCreature target1 = Mobs.spawn("zombie", world, player.getPosition().add(3, 0, 0));
+        tick(1);
+        EventDispatcher.call(new EntityAttackEvent(player, target1));
+        tick(1);
+        var wolfBrain = brainOf(wolf);
+        check("a tamed wolf targets whatever its owner just attacked",
+                wolfBrain != null && wolfBrain.target == target1);
+        target1.remove();
+
+        // ---- owner defense: retaliation when the owner is hurt ----
+        wolfBrain.setTarget(null);
+        EntityCreature target2 = Mobs.spawn("zombie", world, player.getPosition().add(3, 0, 0));
+        tick(1);
+        player.damage(net.minestom.server.entity.damage.Damage.fromEntity(target2, 1f));
+        tick(1);
+        check("a tamed wolf retaliates against whatever hurt its owner", wolfBrain.target == target2);
+        target2.remove();
+
+        // ---- persistence: a tamed pet survives the despawn sweep far from players ----
+        wolf.teleport(new Pos(4000.5, Y + 1, 0.5)).join();
+        tick(1);
+        new dev.pointofpressure.minecom.mobs.VNaturalSpawner(
+                world, (x, y, z) -> "minecraft:plains", false).despawnTick();
+        tick(1);
+        check("a tamed wolf survives the despawn sweep far from every player", !wolf.isRemoved());
+        wolf.remove();
+
+        // ---- cat: fish taming, sit toggle, no combat AI, no health-boost side effect ----
+        EntityCreature cat = Mobs.spawn("cat", world, new Pos(2.5, Y + 1, 0.5));
+        tick(2);
+        var catMeta = (net.minestom.server.entity.metadata.animal.tameable.CatMeta) cat.getEntityMeta();
+        check("a freshly spawned cat starts untamed", !catMeta.isTamed());
+        check("cats have no attack goal (0 attack damage, unlike wolves)",
+                cat.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 0.0);
+
+        boolean catTamed = false;
+        for (int i = 0; i < 30 && !catTamed; i++) {
+            player.setItemInMainHand(ItemStack.of(Material.COD));
+            EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                    player, cat, PlayerHand.MAIN, Vec.ZERO));
+            tick(1);
+            catTamed = catMeta.isTamed();
+        }
+        check("feeding raw fish tames a cat on a 1-in-3 roll (retried up to 30x)", catTamed);
+        check("cat taming does not change its max health (stays 10, unlike wolves)",
+                cat.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 10.0);
+
+        player.setItemInMainHand(ItemStack.AIR);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, cat, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("an empty-hand right-click toggles a tamed cat's sit off", !catMeta.isSitting());
+
+        cat.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Horse-family riding (mobs/Riding.java, decompile-verified against
+     * AbstractHorse/Horse/AbstractChestedHorse/Donkey/Mule 26.2): mounting an
+     * untamed horse with an empty hand always succeeds, taming-by-riding is a
+     * temper/maxTemper roll (forced deterministic here via the same public
+     * Riding.setTemper/tameRoll the RunAroundLikeCrazy goal itself calls — no
+     * separate test-only hook needed), saddling gates riding-with-steering, a
+     * saddled tamed horse is player-steered (forward/strafe + a full-power jump
+     * tap), donkeys with an equipped chest get a cargo inventory, and horse x
+     * donkey breeds a mule with inherited (not copied) health/jump/speed
+     * attributes.
+     */
+    private static void scenarioRiding() {
+        clearEntitiesExceptPlayer();
+        player.teleport(new Pos(0.5, Y + 1, 0.5, 0f, 0f)).join();
+
+        EntityCreature horse = Mobs.spawn("horse", world, new Pos(2.5, Y + 1, 0.5));
+        tick(2);
+        var horseMeta = (net.minestom.server.entity.metadata.animal.AbstractHorseMeta) horse.getEntityMeta();
+        check("a freshly spawned horse starts untamed", !horseMeta.isTamed());
+        double wildHealth = horse.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH);
+        check("a wild horse's max health lands in vanilla's [15,30] roll (got " + wildHealth + ")",
+                wildHealth >= 15.0 && wildHealth <= 30.0);
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, horse, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("an empty-hand right-click mounts an untamed horse", player.getVehicle() == horse);
+
+        dev.pointofpressure.minecom.mobs.Riding.setTemper(horse, 100);
+        dev.pointofpressure.minecom.mobs.Riding.tameRoll(horse, player);
+        tick(1);
+        check("a temper-100 roll always tames (100 never rolls under nextInt(100))", horseMeta.isTamed());
+        check("taming sets the rider as owner",
+                player.getUuid().equals(dev.pointofpressure.minecom.mobs.Riding.ownerOf(horse)));
+        check("taming doesn't eject the rider on success", player.getVehicle() == horse);
+
+        player.refreshInput(false, false, false, false, false, true, false); // sneak dismounts
+        check("sneaking dismounts a ridden horse", waitFor(() -> player.getVehicle() == null, 3000));
+        player.refreshInput(false, false, false, false, false, false, false);
+
+        player.setItemInMainHand(ItemStack.of(Material.SADDLE));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, horse, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("a saddle right-clicked onto a tamed horse equips it",
+                horse.getEquipment(EquipmentSlot.SADDLE).material() == Material.SADDLE);
+        check("the saddle leaves the survival player's hand", player.getItemInMainHand().isAir());
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, horse, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("right-clicking a tamed saddled horse mounts it", player.getVehicle() == horse);
+
+        Pos beforeMove = horse.getPosition();
+        player.refreshInput(true, false, false, false, false, false, false); // hold W
+        tick(30);
+        player.refreshInput(false, false, false, false, false, false, false);
+        double moved = horse.getPosition().distance(beforeMove);
+        check("holding forward steers the mounted horse (moved " + String.format("%.1f", moved) + ")", moved > 1.0);
+
+        // Polled rather than a single tick(1)+read: the mob's own per-tick scheduler
+        // task (mobs.ai.VanillaMobs.horseFamily) and this harness's tick-counting task
+        // aren't ordered relative to each other within a single server tick, so a bare
+        // tick(1) can race the jump impulse. Track the peak instead of one sample.
+        double restingY = horse.getVelocity().y();
+        player.refreshInput(false, false, false, false, true, false, false); // jump
+        double[] peakY = {restingY};
+        boolean jumped = waitFor(() -> {
+            peakY[0] = Math.max(peakY[0], horse.getVelocity().y());
+            return peakY[0] > restingY + 1.0;
+        }, 1000);
+        player.refreshInput(false, false, false, false, false, false, false);
+        check("a jump tap gives the horse upward velocity (resting " + restingY + ", peak " + peakY[0] + ")", jumped);
+
+        player.refreshInput(false, false, false, false, false, true, false);
+        check("sneaking dismounts the tamed rider", waitFor(() -> player.getVehicle() == null, 3000));
+        player.refreshInput(false, false, false, false, false, false, false);
+
+        // ---- donkey: chest cargo ----
+        EntityCreature donkey = Mobs.spawn("donkey", world, new Pos(6.5, Y + 1, 0.5));
+        tick(2);
+        var donkeyMeta = (net.minestom.server.entity.metadata.animal.ChestedHorseMeta) donkey.getEntityMeta();
+        dev.pointofpressure.minecom.mobs.Riding.setTemper(donkey, 100);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, donkey, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        dev.pointofpressure.minecom.mobs.Riding.tameRoll(donkey, player);
+        player.refreshInput(false, false, false, false, false, true, false);
+        waitFor(() -> player.getVehicle() == null, 3000);
+        player.refreshInput(false, false, false, false, false, false, false);
+        check("the donkey tamed too", donkeyMeta.isTamed());
+
+        player.setItemInMainHand(ItemStack.of(Material.CHEST));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, donkey, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("a chest right-clicked onto a tamed donkey equips it", donkeyMeta.isHasChest());
+
+        player.setSneaking(true); // Riding.interact's inventory-open gate reads isSneaking(), not the raw input bit
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, donkey, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("sneak right-clicking a chested tamed donkey opens its cargo inventory",
+                player.getOpenInventory() instanceof Inventory cargoInv
+                        && cargoInv.getInventoryType() == net.minestom.server.inventory.InventoryType.CHEST_3_ROW);
+        player.closeInventory();
+        player.setSneaking(false);
+
+        // ---- breeding: horse x donkey -> mule with inherited attributes ----
+        double horseJump = horse.getAttributeValue(net.minestom.server.entity.attribute.Attribute.JUMP_STRENGTH);
+        double donkeyJump = donkey.getAttributeValue(net.minestom.server.entity.attribute.Attribute.JUMP_STRENGTH);
+        horse.teleport(new Pos(10.5, Y + 1, 0.5)).join();
+        donkey.teleport(new Pos(11.5, Y + 1, 0.5)).join();
+        tick(1);
+        player.setItemInMainHand(ItemStack.of(Material.GOLDEN_CARROT));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, horse, PlayerHand.MAIN, Vec.ZERO));
+        player.setItemInMainHand(ItemStack.of(Material.GOLDEN_CARROT));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, donkey, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        boolean bredMule = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en.getEntityType() == EntityType.MULE), 3000);
+        check("a golden-carrot-fed tamed horse + donkey breed a mule", bredMule);
+        if (bredMule) {
+            EntityCreature mule = (EntityCreature) world.getEntities().stream()
+                    .filter(en -> en.getEntityType() == EntityType.MULE).findFirst().orElseThrow();
+            var muleMeta = (net.minestom.server.entity.metadata.animal.AnimalMeta) mule.getEntityMeta();
+            check("the mule foal is a baby", muleMeta.isBaby());
+            check("the mule foal is already tamed (inherits ownership)",
+                    mule.getEntityMeta() instanceof net.minestom.server.entity.metadata.animal.AbstractHorseMeta mhm && mhm.isTamed());
+            double muleJump = mule.getAttributeValue(net.minestom.server.entity.attribute.Attribute.JUMP_STRENGTH);
+            check("the foal's jump strength is inherited from its parents, not copied wholesale "
+                            + "(parents " + horseJump + "/" + donkeyJump + ", foal " + muleJump + ")",
+                    muleJump >= 0.4 && muleJump <= 1.0);
+            mule.remove();
+        }
+
+        horse.remove();
+        donkey.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Leads + name tags + pig/strider saddles (mobs/Leashing.java, mobs/NameTags.java,
+     * mobs/Steering.java, decompile-verified against Leashable/LeashFenceKnotEntity/
+     * NameTagItem/Pig/Strider/ItemBasedSteering 26.2): lead attach/detach, fence-knot
+     * re-homing, the 12-block pull / 16-block break distances, a named name tag
+     * applying + persisting a mob past the despawn sweep, and pig/strider riding
+     * (saddle needs no taming, forward comes from where the rider looks rather than
+     * WASD, and a carrot-on-a-stick / warped-fungus-on-a-stick boosts speed without
+     * restacking mid-boost).
+     */
+    private static void scenarioLeashingNameTagsSteering() {
+        clearEntitiesExceptPlayer();
+        player.teleport(new Pos(0.5, Y + 1, 0.5, 0f, 0f)).join();
+
+        // ---- lead: attach + detach ----
+        EntityCreature cow = Mobs.spawn("cow", world, new Pos(2.5, Y + 1, 0.5));
+        tick(2);
+        player.setItemInMainHand(ItemStack.of(Material.LEAD));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, cow, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("a lead right-clicked onto an unleashed animal attaches it",
+                dev.pointofpressure.minecom.mobs.Leashing.isLeashed(cow));
+        check("the lead leaves the survival player's hand", player.getItemInMainHand().isAir());
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, cow, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("an empty-hand right-click detaches a leashed animal",
+                !dev.pointofpressure.minecom.mobs.Leashing.isLeashed(cow));
+        boolean leadDropped = waitFor(() -> world.getEntities().stream()
+                .anyMatch(en -> en instanceof ItemEntity ie && ie.getItemStack().material() == Material.LEAD), 2000);
+        check("detaching drops a lead item", leadDropped);
+        world.getEntities().stream().filter(en -> en instanceof ItemEntity).forEach(Entity::remove);
+
+        // ---- lead: fence knot re-homing ----
+        BlockVec fencePos = new BlockVec(6, Y + 1, 0);
+        world.setBlock(fencePos, Block.OAK_FENCE);
+        player.setItemInMainHand(ItemStack.of(Material.LEAD));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, cow, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        player.teleport(new Pos(fencePos.x() + 0.5, Y + 1, fencePos.z() + 0.5, 0f, 0f)).join();
+        interact(fencePos);
+        boolean knotSpawned = world.getEntities().stream().anyMatch(en -> en.getEntityType() == EntityType.LEASH_KNOT);
+        check("right-clicking a fence with a leashed animal nearby spawns a leash knot", knotSpawned);
+        check("the animal stays leashed after re-homing onto the knot",
+                dev.pointofpressure.minecom.mobs.Leashing.isLeashed(cow));
+
+        // ---- lead: pull + break distance ----
+        cow.teleport(new Pos(fencePos.x() + 0.5, Y + 1, fencePos.z() + 0.5)).join();
+        tick(1);
+        cow.teleport(cow.getPosition().add(13, 0, 0)).join(); // past the 12-block pull threshold
+        tick(1);
+        boolean pulled = waitFor(() -> cow.getVelocity().length() > 0.01, 2000);
+        check("a leashed animal past 12 blocks gets pulled toward its holder", pulled);
+
+        cow.teleport(cow.getPosition().add(10, 0, 0)).join(); // well past the 16-block break distance
+        tick(1);
+        check("a leashed animal past 16 blocks snaps free",
+                waitFor(() -> !dev.pointofpressure.minecom.mobs.Leashing.isLeashed(cow), 2000));
+        world.setBlock(fencePos, Block.AIR);
+        world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.LEASH_KNOT
+                || en instanceof ItemEntity).forEach(Entity::remove);
+        cow.remove();
+
+        // ---- name tags: rename via the same CUSTOM_NAME component the anvil writes ----
+        ItemStack namedTag = ItemStack.of(Material.NAME_TAG)
+                .with(b -> b.set(DataComponents.CUSTOM_NAME, net.kyori.adventure.text.Component.text("Rex")));
+        EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(2.5, Y + 1, 0.5));
+        tick(1);
+        player.setItemInMainHand(namedTag);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, zombie, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("a named name tag applies its custom name to the target",
+                "Rex".equals(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(zombie.getCustomName())));
+        check("the target's custom name becomes visible", zombie.isCustomNameVisible());
+        check("naming marks the target persistent",
+                dev.pointofpressure.minecom.mobs.NameTags.isPersistent(zombie));
+        check("the name tag leaves the survival player's hand", player.getItemInMainHand().isAir());
+
+        zombie.teleport(new Pos(4000.5, Y + 1, 0.5)).join();
+        new dev.pointofpressure.minecom.mobs.VNaturalSpawner(
+                world, (x, y, z) -> "minecraft:plains", false).despawnTick();
+        tick(1);
+        check("a named mob survives the despawn sweep far from every player", !zombie.isRemoved());
+        zombie.remove();
+
+        ItemStack unnamedTag = ItemStack.of(Material.NAME_TAG);
+        EntityCreature husk = Mobs.spawn("husk", world, new Pos(2.5, Y + 1, 0.5));
+        tick(1);
+        player.setItemInMainHand(unnamedTag);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, husk, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("an unnamed name tag does nothing",
+                husk.getCustomName() == null && player.getItemInMainHand().material() == Material.NAME_TAG);
+        husk.remove();
+
+        // ---- pig: saddle + forward-only look-steered riding + boost ----
+        EntityCreature pig = Mobs.spawn("pig", world, new Pos(2.5, Y + 1, 0.5, 0f, 0f));
+        tick(2);
+        player.setItemInMainHand(ItemStack.of(Material.SADDLE));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, pig, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("a saddle right-clicked onto a pig equips it (no taming needed)",
+                pig.getEquipment(EquipmentSlot.SADDLE).material() == Material.SADDLE);
+
+        player.setItemInMainHand(ItemStack.AIR);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, pig, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("right-clicking a saddled pig mounts it", player.getVehicle() == pig);
+
+        player.teleport(player.getPosition().withView(0f, 0f)).join();
+        Pos beforePig = pig.getPosition();
+        tick(20);
+        double unboostedMove = pig.getPosition().distance(beforePig);
+        check("a mounted saddled pig walks forward on its own, steered by where the rider looks (moved "
+                + String.format("%.1f", unboostedMove) + ")", unboostedMove > 0.5);
+
+        // Speed check via a deterministic forced boost: the real boost() total is
+        // randomized 140-980 ticks, so a short fixed sampling window can otherwise land
+        // anywhere on the sin ramp-up (including near-zero right after arming) and flake
+        // through no fault of the boost math — Steering.testForceBoost pins a known-short
+        // total purely for this timing-independent comparison (doesn't change production
+        // behavior, same precedent as Riding.setTemper forcing a deterministic tame roll).
+        Pos beforeBoost = pig.getPosition();
+        dev.pointofpressure.minecom.mobs.Steering.testForceBoost(pig, 20);
+        tick(20);
+        double boostedMove = pig.getPosition().distance(beforeBoost);
+        check("a forced boost window moves the pig further than its unboosted pace over an equal window "
+                        + "(unboosted " + String.format("%.2f", unboostedMove) + "/20t, boosted "
+                        + String.format("%.2f", boostedMove) + "/20t)",
+                boostedMove > unboostedMove * 1.2);
+        // Steering.tick's cleanup only fires once ticks > total, i.e. total+2 firings after
+        // arming at ticks=0 (0->1 is the first firing) — a plain tick(20) with total=20
+        // leaves the forced boost still technically active, which would make the very next
+        // real boost() below silently no-op (already-boosting) instead of arming for real.
+        tick(5);
+
+        // No-restack check via the real item-triggered boost (independent of total length).
+        player.setItemInMainHand(ItemStack.of(Material.CARROT_ON_A_STICK));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, pig, PlayerHand.MAIN, Vec.ZERO));
+        ItemStack stickAfterFirstBoost = player.getItemInMainHand();
+        check("a carrot-on-a-stick right-click while riding damages the stick by 1 (armed the boost)",
+                !java.util.Objects.equals(stickAfterFirstBoost.get(DataComponents.DAMAGE),
+                        ItemStack.of(Material.CARROT_ON_A_STICK).get(DataComponents.DAMAGE)));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, pig, PlayerHand.MAIN, Vec.ZERO));
+        check("boosting again mid-boost doesn't restack (no second durability hit)",
+                java.util.Objects.equals(player.getItemInMainHand().get(DataComponents.DAMAGE),
+                        stickAfterFirstBoost.get(DataComponents.DAMAGE)));
+
+        player.refreshInput(false, false, false, false, false, true, false);
+        check("sneaking dismounts a ridden pig", waitFor(() -> player.getVehicle() == null, 3000));
+        player.refreshInput(false, false, false, false, false, false, false);
+        pig.remove();
+
+        // ---- strider: saddle + mount (lighter check, same steering machinery) ----
+        EntityCreature strider = Mobs.spawn("strider", world, new Pos(2.5, Y + 1, 0.5));
+        tick(2);
+        player.setItemInMainHand(ItemStack.of(Material.SADDLE));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, strider, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        player.setItemInMainHand(ItemStack.AIR);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, strider, PlayerHand.MAIN, Vec.ZERO));
+        tick(1);
+        check("a saddled strider can be mounted the same way as a pig", player.getVehicle() == strider);
+        player.refreshInput(false, false, false, false, false, true, false);
+        check("sneaking dismounts a ridden strider", waitFor(() -> player.getVehicle() == null, 3000));
+        player.refreshInput(false, false, false, false, false, false, false);
+        strider.remove();
+
+        clearEntitiesExceptPlayer();
+        resetPlayer();
     }
 }

@@ -848,10 +848,15 @@ public final class VanillaMobs {
         brain.addGoal(8, new Goals.RandomLookAround(brain));
         mob.scheduler().buildTask(() -> {
             if (mob.isDead() || mob.getInstance() == null) return;
+            if (!mob.getPassengers().isEmpty()) return; // ridden: Steering.tick owns velocity
             if (brain.random.nextInt(6) != 0) return;
             double a = brain.random.nextDouble() * Math.PI * 2;
             mob.setVelocity(new Vec(Math.cos(a) * 1.0, 0, Math.sin(a) * 1.0));
         }).repeat(TaskSchedule.tick(10)).schedule();
+        mob.scheduler().buildTask(() -> {
+            if (mob.isDead() || mob.getInstance() == null) return;
+            dev.pointofpressure.minecom.mobs.Steering.tick(mob);
+        }).repeat(TaskSchedule.tick(1)).schedule();
         mob.setInstance(instance, pos);
         return mob;
     }
@@ -1656,10 +1661,6 @@ public final class VanillaMobs {
             Map.entry("rabbit", new AnimalSpec(EntityType.RABBIT, 3, 0.3, 2.2, 1.0,
                     Set.of(Material.CARROT, Material.GOLDEN_CARROT, Material.DANDELION))),
             Map.entry("goat", new AnimalSpec(EntityType.GOAT, 10, 0.2, 2.0, 1.25, Set.of(Material.WHEAT))),
-            Map.entry("horse", new AnimalSpec(EntityType.HORSE, 15, 0.2, 1.2, 1.0,
-                    Set.of(Material.WHEAT, Material.APPLE, Material.GOLDEN_CARROT, Material.GOLDEN_APPLE, Material.SUGAR))),
-            Map.entry("donkey", new AnimalSpec(EntityType.DONKEY, 15, 0.2, 1.2, 1.0,
-                    Set.of(Material.WHEAT, Material.APPLE, Material.GOLDEN_CARROT, Material.GOLDEN_APPLE, Material.SUGAR))),
             Map.entry("llama", new AnimalSpec(EntityType.LLAMA, 22, 0.2, 1.2, 1.0, Set.of(Material.WHEAT, Material.HAY_BLOCK))),
             Map.entry("turtle", new AnimalSpec(EntityType.TURTLE, 30, 0.1, 1.2, 1.1, Set.of(Material.SEAGRASS))),
             Map.entry("panda", new AnimalSpec(EntityType.PANDA, 20, 0.15, 2.0, 1.0, Set.of(Material.BAMBOO))),
@@ -1668,11 +1669,8 @@ public final class VanillaMobs {
             Map.entry("camel", new AnimalSpec(EntityType.CAMEL, 32, 0.09, 1.2, 1.0, Set.of(Material.CACTUS))),
             Map.entry("fox", new AnimalSpec(EntityType.FOX, 10, 0.3, 2.2, 1.1, Set.of(Material.SWEET_BERRIES, Material.GLOW_BERRIES))),
             Map.entry("frog", new AnimalSpec(EntityType.FROG, 10, 0.1, 1.5, 1.0, Set.of(Material.SLIME_BALL))),
-            Map.entry("wolf", new AnimalSpec(EntityType.WOLF, 8, 0.3, 1.5, 1.0,
-                    Set.of(Material.BEEF, Material.MUTTON, Material.CHICKEN, Material.RABBIT))),
             Map.entry("parrot", new AnimalSpec(EntityType.PARROT, 6, 0.4, 1.5, 1.0,
                     Set.of(Material.WHEAT_SEEDS, Material.MELON_SEEDS, Material.PUMPKIN_SEEDS, Material.BEETROOT_SEEDS))),
-            Map.entry("zombie_horse", new AnimalSpec(EntityType.ZOMBIE_HORSE, 15, 0.2, 1.2, 1.0, Set.of())),
             Map.entry("ocelot", new AnimalSpec(EntityType.OCELOT, 10, 0.3, 2.0, 1.0, Set.of(Material.COD, Material.SALMON))));
 
     /** Animal.registerGoals shape: panic 1, tempt 4, stroll 6, look 7, random look 8. */
@@ -1692,7 +1690,141 @@ public final class VanillaMobs {
             String biome = instance.getBiome(pos.blockX(), pos.blockY(), pos.blockZ()).name();
             sheepMeta.setColor(dev.pointofpressure.minecom.mobs.Shearing.randomColor(biome, ThreadLocalRandom.current()));
         }
+        if (spec.type() == EntityType.PIG) {
+            mob.scheduler().buildTask(() -> {
+                if (mob.isRemoved() || mob.isDead()) return;
+                dev.pointofpressure.minecom.mobs.Steering.tick(mob);
+            }).repeat(TaskSchedule.tick(1)).schedule();
+        }
         return mob;
+    }
+
+    /**
+     * Wolf.registerGoals, trimmed to what {@code mobs.ai} + {@code mobs.Taming} model:
+     * leap+melee vs. a HurtByTarget/owner-defense target (Taming.ownerHurt/ownerAttacked
+     * set the target directly), FollowOwner, SitWhenOrdered outranking both so a sitting
+     * wolf never chases. Wild wolves never hunt players or prey (Wolf's
+     * NonTameRandomTargetGoal rabbit/sheep-hunting and NearestAttackableTargetGoal(Player,
+     * isAngryAt) are skipped — this project has no persistent-anger timer, so a wild wolf
+     * only ever retaliates against whatever hit it, via the shared Goals.HurtByTarget).
+     * 8 HP / 0.3 speed / 4 attack wild, 40 HP once tamed (Taming.tryTame).
+     */
+    public static EntityCreature wolf(Instance instance, Pos pos) {
+        EntityCreature mob = new EntityCreature(EntityType.WOLF);
+        VBrain brain = brain(mob, 0.3, 16, 4.0, 8, 0);
+        brain.addGoal(1, new Goals.Panic(brain, 1.5));
+        brain.addGoal(2, new Goals.SitWhenOrdered(brain));
+        brain.addGoal(4, new Goals.LeapAtTarget(brain, 0.4f));
+        brain.addGoal(5, new Goals.MeleeAttack(brain, 1.0, true));
+        brain.addGoal(6, new Goals.FollowOwner(brain, 1.0, 10.0f, 2.0f));
+        brain.addGoal(8, new Goals.WaterAvoidingRandomStroll(brain, 1.0));
+        brain.addGoal(10, new Goals.LookAtPlayer(brain, 8));
+        brain.addGoal(10, new Goals.RandomLookAround(brain));
+        brain.addTargetGoal(3, new Goals.HurtByTarget(brain, true));
+        mob.setInstance(instance, pos);
+        return mob;
+    }
+
+    /**
+     * Cat.registerGoals, trimmed the same way: cats have no combat goals at all in
+     * vanilla (only rabbit/turtle prey-hunting while wild, both skipped — see the
+     * wolf factory's note on why prey-hunting isn't modeled). SitWhenOrdered still
+     * outranks FollowOwner so sitting holds.
+     */
+    public static EntityCreature cat(Instance instance, Pos pos) {
+        EntityCreature mob = new EntityCreature(EntityType.CAT);
+        VBrain brain = brain(mob, 0.3, 16, 0, 10, 0);
+        brain.addGoal(1, new Goals.Panic(brain, 1.5));
+        brain.addGoal(2, new Goals.SitWhenOrdered(brain));
+        brain.addGoal(6, new Goals.FollowOwner(brain, 1.0, 10.0f, 5.0f));
+        brain.addGoal(11, new Goals.WaterAvoidingRandomStroll(brain, 0.8));
+        brain.addGoal(12, new Goals.LookAtPlayer(brain, 10));
+        mob.setInstance(instance, pos);
+        return mob;
+    }
+
+    /**
+     * AbstractHorse.registerGoals + each species' randomizeAttributes, decompile-
+     * verified per class (Horse/AbstractChestedHorse/SkeletonHorse/ZombieHorse):
+     * health/speed/jump-strength are independently rolled per spawn using each
+     * species' own formula (donkey/mule don't randomize speed/jump — chested types
+     * stay flat at createBaseChestedHorseAttributes' 0.175/0.5). Goals trimmed to
+     * what {@code mobs.Riding} models: RunAroundLikeCrazy (taming-by-riding), Panic,
+     * wander/look — no BreedGoal/FollowParentGoal (breeding is Breeding.java's
+     * generic pairing, extended separately for horse-family crosses), no
+     * RandomStandGoal (rearing animation, a client visual). Riding.tick runs off
+     * each mob's own 1-tick scheduler task, same shape as HappyGhastMob.
+     */
+    public static EntityCreature horseFamily(String kind, Instance instance, Pos pos) {
+        EntityType type = switch (kind) {
+            case "horse" -> EntityType.HORSE;
+            case "donkey" -> EntityType.DONKEY;
+            case "mule" -> EntityType.MULE;
+            case "skeleton_horse" -> EntityType.SKELETON_HORSE;
+            case "zombie_horse" -> EntityType.ZOMBIE_HORSE;
+            default -> null;
+        };
+        if (type == null) return null;
+        ThreadLocalRandom r = ThreadLocalRandom.current();
+        float health;
+        double speed, jump;
+        switch (kind) {
+            case "horse" -> {
+                health = 15 + r.nextInt(8) + r.nextInt(9);
+                speed = horseSpeed(r);
+                jump = horseJump(r);
+            }
+            case "donkey", "mule" -> {
+                health = 15 + r.nextInt(8) + r.nextInt(9);
+                speed = 0.175;
+                jump = 0.5;
+            }
+            case "skeleton_horse" -> {
+                health = 15;
+                speed = 0.2;
+                jump = horseJump(r);
+            }
+            default -> { // zombie_horse
+                health = 25;
+                speed = zombieHorseSpeed(r);
+                jump = zombieHorseJump(r);
+            }
+        }
+        EntityCreature mob = new EntityCreature(type);
+        VBrain brain = brain(mob, speed, 16, 0, health, 0);
+        mob.getAttribute(Attribute.JUMP_STRENGTH).setBaseValue(jump);
+        brain.addGoal(1, new Goals.RunAroundLikeCrazy(brain, 1.2));
+        brain.addGoal(2, new Goals.Panic(brain, 1.2));
+        brain.addGoal(6, new Goals.WaterAvoidingRandomStroll(brain, 0.7));
+        brain.addGoal(7, new Goals.LookAtPlayer(brain, 6));
+        brain.addGoal(8, new Goals.RandomLookAround(brain));
+        mob.setInstance(instance, pos);
+        mob.scheduler().buildTask(() -> {
+            if (mob.isRemoved() || mob.isDead()) return;
+            dev.pointofpressure.minecom.mobs.Riding.tick(mob);
+        }).repeat(TaskSchedule.tick(1)).schedule();
+        return mob;
+    }
+
+    /** AbstractHorse.generateSpeed(p) = (0.45+3p)*0.25, p uniform per call -> [0.1125, 0.3375]. */
+    private static double horseSpeed(ThreadLocalRandom r) {
+        return (0.45 + r.nextDouble() * 0.3 + r.nextDouble() * 0.3 + r.nextDouble() * 0.3) * 0.25;
+    }
+
+    /** AbstractHorse.generateJumpStrength(p) = 0.4+3*0.2p -> [0.4, 1.0]. */
+    private static double horseJump(ThreadLocalRandom r) {
+        return 0.4 + r.nextDouble() * 0.2 + r.nextDouble() * 0.2 + r.nextDouble() * 0.2;
+    }
+
+    /** ZombieHorse.generateZombieHorseJumpStrength -> [0.5, 0.7]. */
+    private static double zombieHorseJump(ThreadLocalRandom r) {
+        return 0.5 + r.nextDouble() * 0.06666666666666667 + r.nextDouble() * 0.06666666666666667
+                + r.nextDouble() * 0.06666666666666667;
+    }
+
+    /** ZombieHorse.generateZombieHorseSpeed -> [9,12]/42.16. */
+    private static double zombieHorseSpeed(ThreadLocalRandom r) {
+        return (9.0 + r.nextDouble() + r.nextDouble() + r.nextDouble()) / 42.16;
     }
 
     // ---------------------------------------------------------------- water mobs
