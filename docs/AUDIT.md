@@ -641,9 +641,27 @@ leftovers.
   wolves/cats/horses/leads/name tags, see above; parrot taming still open (S).
   No mob item pickup except
   villagers (zombies canPickUpLoot rolled but unused). (M-L)
-- VanillaMobs.java:656 — phantom bounded to size 0 (6 dmg); vanilla size scales
-  with insomnia. Also no insomnia/phantom natural night spawner at all —
-  phantoms only via test/summon. (M)
+- ~~VanillaMobs.java:656 — phantom bounded to size 0 (6 dmg); vanilla size
+  scales with insomnia. Also no insomnia/phantom natural night spawner at
+  all — phantoms only via test/summon~~ **DONE 2026-07-15 (Sonnet 5,
+  `mobs/PhantomSpawning.java`, new file)** — decompile-verified against
+  `PhantomSpawner`/`Phantom` (26.2): a per-world 60-119s countdown checks
+  every non-spectator player at/above sea level with a clear sky view,
+  rolls the real regional-difficulty gate (`DifficultyInstance.isHarderThan`,
+  already ported as `Difficulty.effectiveAt`), then the real insomnia roll
+  against a per-player "ticks since rest" counter (this project has no
+  general player-stats system, so it's tracked ad hoc, reset by
+  `Beds.interact` on a successful sleep) — mathematically impossible before
+  72000 ticks awake. On a pass, 1 to (difficulty ordinal + 1) phantoms spawn
+  20-34 blocks up. **The size-scales-with-insomnia part of this note was
+  stale**: this decompile shows `Phantom.finalizeSpawn` unconditionally
+  resets size to 0 on every natural spawn — real vanilla no longer scales
+  phantom size at all (an older-version behavior), so the existing
+  size-0-only (6 damage) mob stats already matched real vanilla and needed
+  no change. Not modeled: Nether/End phantom spawning (this spawner only
+  runs on the overworld — `.start(overworld)`, matching WeatherCycle/Snow/
+  Lightning's existing precedent) and the `SPAWN_PHANTOMS` gamerule (no
+  gamerule store in this project, same established precedent elsewhere).
 - VanillaMobs.java:868 — iron golem: no village-population auto-spawn (vanilla
   panic-based golem summoning); no flower offering; no crack stages/repair with
   iron ingot. (M)

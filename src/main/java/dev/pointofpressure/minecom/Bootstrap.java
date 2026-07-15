@@ -218,6 +218,7 @@ public final class Bootstrap {
         WeatherCycle.start(overworld);
         dev.pointofpressure.minecom.survival.Snow.start(overworld);
         dev.pointofpressure.minecom.survival.Lightning.start(overworld);
+        dev.pointofpressure.minecom.mobs.PhantomSpawning.start(overworld);
         dev.pointofpressure.minecom.survival.Breath.start(overworld);
 
         if (config.persistence()) {

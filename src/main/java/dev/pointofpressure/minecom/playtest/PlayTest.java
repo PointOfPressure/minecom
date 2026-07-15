@@ -259,6 +259,7 @@ public final class PlayTest {
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
         scenario("nether: fortress mobs (blaze + wither skeleton) spawn on nether brick", PlayTest::scenarioNetherFortress);
         scenario("phantom: circles above the target then dives in for a melee strike", PlayTest::scenarioPhantom);
+        scenario("phantom spawner: insomnia + darkness + altitude/sky + difficulty gate a natural spawn", PlayTest::scenarioPhantomSpawning);
         scenario("pillager: visibly charges its crossbow before firing, unlike a skeleton's bow rhythm", PlayTest::scenarioPillager);
         scenario("guardian: charges a laser beam at a target in continuous line of sight, then fires", PlayTest::scenarioGuardian);
         scenario("elder guardian: tougher stats, faster laser charge than base guardian", PlayTest::scenarioElderGuardian);
@@ -1704,6 +1705,78 @@ public final class PlayTest {
         boolean attacked = waitFor(() -> player.getHealth() < healthBefore, 15000);
         check("a circling phantom eventually dives and strikes the player", attacked);
         if (phantom != null) phantom.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * PhantomSpawner (decompile-verified): insomnia (Stats.TIME_SINCE_REST) gates whether a
+     * spawn attempt can ever succeed at all, layered under difficulty, darkness, and
+     * altitude/sky-visibility gates. Test hooks (PhantomSpawning.setTicksSinceRestForTest/
+     * forceAttemptForTest/tickForTest) drive the private per-tick logic directly rather than
+     * waiting out the real 60-119s countdown or the real insomnia ramp (an in-game hour+).
+     */
+    private static void scenarioPhantomSpawning() {
+        clearEntitiesExceptPlayer();
+        var savedDifficulty = dev.pointofpressure.minecom.Difficulty.current();
+        dev.pointofpressure.minecom.Difficulty.set(dev.pointofpressure.minecom.Difficulty.HARD);
+        // real vanilla gates phantom spawns on the player being at/above sea level (62) with a
+        // clear view of the sky — an isolated, otherwise-untouched column well above this flat
+        // test world's y=40 floor, away from anything other scenarios build near spawn.
+        player.teleport(new Pos(200.5, 70, 200.5)).join();
+        player.setGameMode(GameMode.SURVIVAL);
+        world.setTime(18000); // midnight
+        tick(2);
+
+        // insomnia=0 (just "slept"): the roll is mathematically impossible (nextInt(1) is
+        // always 0, never >=72000), so repeated forced attempts must never spawn anything.
+        dev.pointofpressure.minecom.mobs.PhantomSpawning.resetTicksSinceRest(player);
+        for (int i = 0; i < 20; i++) {
+            dev.pointofpressure.minecom.mobs.PhantomSpawning.forceAttemptForTest();
+            dev.pointofpressure.minecom.mobs.PhantomSpawning.tickForTest(world);
+        }
+        long spawnedWithNoInsomnia = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.PHANTOM).count();
+        check("a just-rested player (0 ticks since rest) never spawns a phantom, even forced repeatedly (got "
+                + spawnedWithNoInsomnia + ")", spawnedWithNoInsomnia == 0);
+
+        // daytime: even with huge insomnia forced, the darkness gate alone should block it.
+        dev.pointofpressure.minecom.mobs.PhantomSpawning.setTicksSinceRestForTest(player, 50_000_000);
+        world.setTime(6000); // midday
+        tick(2);
+        for (int i = 0; i < 20; i++) {
+            dev.pointofpressure.minecom.mobs.PhantomSpawning.forceAttemptForTest();
+            dev.pointofpressure.minecom.mobs.PhantomSpawning.tickForTest(world);
+        }
+        long spawnedInDaylight = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.PHANTOM).count();
+        check("huge insomnia still can't spawn a phantom in broad daylight (darkness gate, got "
+                + spawnedInDaylight + ")", spawnedInDaylight == 0);
+
+        // night + huge insomnia + Hard difficulty (maximizes the isHarderThan roll's odds):
+        // a real spawn attempt should eventually succeed within a handful of tries.
+        world.setTime(18000);
+        tick(2);
+        int attempts;
+        for (attempts = 0; attempts < 30; attempts++) {
+            dev.pointofpressure.minecom.mobs.PhantomSpawning.forceAttemptForTest();
+            dev.pointofpressure.minecom.mobs.PhantomSpawning.tickForTest(world);
+            if (world.getEntities().stream().anyMatch(e -> e.getEntityType() == EntityType.PHANTOM)) break;
+        }
+        long spawnedAtNight = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.PHANTOM).count();
+        check("insomnia + darkness + Hard difficulty lets a phantom spawn above the player within "
+                + (attempts + 1) + " attempts (got " + spawnedAtNight + ")", spawnedAtNight > 0);
+        check("a natural-spawn phantom group is 1-4 on Hard (getPhantomSize stays 0, 6 damage — real "
+                + "vanilla no longer scales size with insomnia; got " + spawnedAtNight + ")",
+                spawnedAtNight >= 1 && spawnedAtNight <= 4);
+        world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.PHANTOM)
+                .forEach(e -> {
+                    if (e instanceof net.minestom.server.entity.LivingEntity le) {
+                        check("spawned phantom keeps real vanilla base stats (6 attack damage, got "
+                                + le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) + ")",
+                                le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 6.0);
+                    }
+                });
+
+        dev.pointofpressure.minecom.Difficulty.set(savedDifficulty);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

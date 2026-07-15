@@ -14,6 +14,109 @@ of what got escalated and why.
 
 ---
 
+## Tier 2 closer landed (2026-07-15, Sonnet 5) — v0.23.0, closes MASTERPLAN §3 Tier 2 entirely
+
+All four remaining items from the task brief: attack-cooldown model, elytra +
+firework flight, raid difficulty/Bad Omen scaling, phantom natural spawner.
+One landable commit each, in the order given.
+
+- **Attack-cooldown model** (Combat.java's player melee branch) —
+  decompile-verified against `Player.getAttackStrengthScale`/
+  `getCurrentItemAttackStrengthDelay`/`baseDamageScaleFactor`/
+  `canCriticalAttack`/`isSweepAttack` (26.2). A per-player "world age at last
+  swing" map stands in for the real live per-tick charge ticker (equivalent
+  without needing a scheduled task); `Items.attackSpeed` (new) reads the
+  weapon's real attack_speed component to get the real recharge delay
+  (20/attack_speed ticks — an axe recovers slower than a sword). Damage is
+  scaled quadratically by charge (0.2 + scale²×0.8) *before* enchant flat
+  bonuses are added (matching the decompile's exact order — a bare-tap hit
+  still gets full Sharpness), crit now requires full charge AND not
+  sprinting (previously ungated), sweep requires full charge/non-crit/
+  non-sprint (previously ungated — the sweep formula itself was already
+  exact), and a sprinting full-charge hit adds a real *second*, separate
+  knockback impulse (decompile shows two sequential `knockback()` calls,
+  not one combined-strength call — the halving-momentum formula makes that
+  distinction real). `Combat.resetAttackCharge` exposed for tests that need
+  a deterministic full-charge hit — several existing scenarios
+  (sweep/sharpness/crit/potions/trident) needed exactly that once charge
+  started affecting their previously-flat damage assumptions.
+- **Elytra + firework flight** (`survival/Elytra.java`, new file) —
+  decompile-verified against `LivingEntity.canGlide`/`updateFallFlying`/
+  `checkFallDistanceAccumulation` and `FireworkRocketEntity`/
+  `FireworkRocketItem` (26.2, freshly decompiled). Minestom's raw
+  `ClientEntityActionPacket` handler sets `flyingWithElytra` unconditionally
+  with none of vanilla's real gating (no equipment/ground/Levitation check
+  at all) — this project's own listener re-validates it both at deploy and
+  every tick after. Durability wears 1/20 ticks of gliding; a firework
+  rocket used while gliding applies the real per-tick boost-toward-look
+  impulse for the rocket's real lifetime; fall distance is capped the same
+  way real vanilla's is (translated into this project's peak-height fall
+  tracking as capping the tracked peak to at most 1 block above the
+  current position whenever not in a fast vertical drop). Not modeled:
+  exploding-firework damage from a star-carrying rocket detonating while
+  attached (this project doesn't track the "attached but not boosting"
+  tail state — a plain flight-duration rocket, the actual point of
+  boosting, never carries stars anyway), and the glide flight path itself
+  (this project targets real vanilla clients, which already run that
+  physics locally and just report position).
+- **Raid difficulty/Bad Omen scaling** (Raid.java) — decompile-verified
+  against `net.minecraft.world.entity.raid.Raid` (26.2). Wave count is now
+  the real `getNumGroups` (Easy 3/Normal 5/Hard 7, previously a flat 3 for
+  everyone); composition is read from the real per-type
+  `spawnsPerWaveBeforeBonus` tables (Vindicator/Evoker/Pillager/Witch/
+  Ravager) plus the real random per-wave bonus roll
+  (`getPotentialBonusSpawns`); `Raid.start` takes a Bad Omen level — above 1
+  adds a real bonus wave past the last normal one, though nothing in this
+  codebase can currently pass anything above the default 1 (no patrol/Bad
+  Omen potion chain exists), so that path is real and reachable but
+  presently dormant.
+- **Phantom natural spawner** (`mobs/PhantomSpawning.java`, new file) —
+  decompile-verified against `PhantomSpawner`/`Phantom` (26.2). A per-world
+  60-119s countdown checks every non-spectator player at/above sea level
+  with a clear sky view, rolls the real regional-difficulty gate (already
+  ported as `Difficulty.effectiveAt`), then a real insomnia roll against a
+  per-player "ticks since rest" counter (this project has no general
+  player-stats system, tracked ad hoc, reset by `Beds.interact` on a
+  successful sleep) — mathematically impossible before 72000 ticks awake.
+  **A stale AUDIT.md assumption corrected en route**: the note claiming
+  phantom size scales with insomnia was from an older vanilla version —
+  this decompile shows `Phantom.finalizeSpawn` unconditionally resets size
+  to 0 on every natural spawn, so the existing size-0-only (6 damage) mob
+  stats already matched real vanilla and needed no change.
+- **Test-writing pitfall worth flagging**: `PlayTest.isRaider`/
+  `countRaiders`/`removeRaiders` predate real witch spawning in raids (the
+  old 3-wave raid never spawned one) and didn't know about `WITCH` at all.
+  Once Raid.java started spawning real witches from wave 4 on, that gap
+  meant witches were invisible to `countRaiders()` (silently failing a
+  wave's minimum-count assertion) *and* never removed by `removeRaiders()`
+  — which starves Raid.java's own internal "alive" check of ever seeing 0
+  for a witch-bearing wave, hanging the raid forever from that wave on.
+  Symptom looked exactly like a Raid.java bug (wave count going to 0 and
+  never recovering); root cause was the test harness's raider-type filter
+  being incomplete. Also moved the raid test's center away from (0,0) —
+  dozens of other scenarios build structures within the raid's 16-24 block
+  spawn-ring radius of world spawn, and landing a ring point on someone
+  else's leftover structure silently drops that one raider below its real
+  deterministic minimum.
+- **Verification**: 3 new PlayTest scenarios (attack-cooldown model — 5
+  checks; elytra — 8 checks; phantom spawner — 5 checks), rewrote
+  `scenarioRaid` for the new difficulty/composition model. SelfTest
+  228/228. **Two consecutive fully-green PlayTest runs on an idle machine**
+  (`test-logs/full_playtest_tier2closer_run5.log`,
+  `full_playtest_tier2closer_run6.log` — 824/824 both times, load 0.24-0.9)
+  per rule 8, after the witch-filter and raid-center structural fixes
+  above. Three earlier same-day runs (run1-4) caught and fixed: an elytra
+  test relying on velocity persisting unmodified across a 14-tick loop
+  (gravity/other systems can touch it — now re-asserted every iteration),
+  and the raid issues described above. One pre-existing, unrelated flake
+  observed once (`[crossbow] piercing level 1 hits both the near and far
+  target`, a real-time `waitFor` on projectile physics, same class as the
+  previously-logged trident/elder-guardian/enderman flakes) — did not
+  reproduce in either of the two final green runs, logged per rule 3
+  rather than chased further.
+
+---
+
 ## Tier 2 batch landed (2026-07-15, Sonnet 5) — v0.22.0, closes MASTERPLAN §3 Tier 2's remaining three items
 
 Villager zombie-conversion/curing, ender pearls, and the mob-equipment-drop

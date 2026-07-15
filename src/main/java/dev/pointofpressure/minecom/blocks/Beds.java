@@ -71,6 +71,9 @@ public final class Beds {
             instance.setWeather(Weather.CLEAR);
             instance.getPlayers().forEach(p ->
                     p.sendMessage(Component.text("You slept through the night.", NamedTextColor.GRAY)));
+            // Stats.TIME_SINCE_REST resets only for the player who actually slept, not
+            // everyone else the night-skip message goes out to.
+            dev.pointofpressure.minecom.mobs.PhantomSpawning.resetTicksSinceRest(player);
         } else {
             player.sendMessage(Component.text("Respawn point set. You can only sleep at night.",
                     NamedTextColor.GRAY));
