@@ -802,7 +802,31 @@ leftovers.
   (S)
 - Fishing.java — no open-water check? no luck-of-the-sea/lure timing shifts
   (check), no treasure requiring open water. (S)
-- Items: no elytra/firework flight, no eye of ender flight (locatestronghold
+- Items: ~~no elytra/firework flight~~ **DONE 2026-07-15 (Sonnet 5,
+  `survival/Elytra.java`, new file)** — decompile-verified against
+  `LivingEntity.canGlide`/`updateFallFlying`/`checkFallDistanceAccumulation`
+  and `FireworkRocketEntity`/`FireworkRocketItem` (26.2, freshly decompiled):
+  Minestom's raw `ClientEntityActionPacket` handler sets `flyingWithElytra`
+  unconditionally with none of vanilla's real gating, so this project's own
+  listener re-validates it both at deploy time and every tick after
+  (airborne, not riding, no Levitation, an unbroken chestplate-slot item
+  with the real `minecraft:glider` component); durability wears 1 every 20
+  ticks of gliding; using a firework rocket while gliding applies the real
+  per-tick boost-toward-look-direction impulse for the rocket's real
+  lifetime (10×flightDuration + two small random rolls); fall distance caps
+  the same way real vanilla's does (`checkFallDistanceAccumulation`, capped
+  to <=1 whenever not in a fast vertical drop — translated into this
+  project's peak-height fall tracking as capping the tracked peak to at
+  most 1 block above the current position). Not modeled: exploding-firework
+  damage when a star-carrying rocket detonates while attached (this project
+  doesn't track the "attached but no longer boosting" tail state real
+  vanilla keeps until the rocket's own timer runs out — a plain
+  flight-duration-only rocket, the actual point of boosting, never carries
+  stars anyway), the client-side glide flight path itself (pitch-to-speed
+  conversion/lift/drag — this project targets real vanilla clients, which
+  already run that physics locally and just report position, so only the
+  parts a client can't authoritatively decide were modeled server-side).
+  no eye of ender flight (locatestronghold
   command instead), no maps, no bundles, no spyglass, no goat horns, no
   shields BANNER patterns, no totem. (each S-M) ~~no ender pearl teleport~~
   **DONE 2026-07-15 (Sonnet 5, `survival/EnderPearls.java`)** — decompile-

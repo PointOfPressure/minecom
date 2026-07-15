@@ -227,7 +227,17 @@ public final class Survival {
             return;
         }
         if (!p.isOnGround()) {
-            s.highestY = Math.max(s.highestY, to.y());
+            if (p.isFlyingWithElytra() && p.getVelocity().y() > -0.5) {
+                // LivingEntity.checkFallDistanceAccumulation (decompile-verified): fallDistance
+                // is force-capped to <=1 every tick the entity isn't in a fast vertical drop,
+                // which is why a normal elytra glide never racks up enough fall distance to hurt
+                // on landing. Translated into this project's peak-height tracking as capping the
+                // peak to at most 1 block above the current position; a steep dive (vertical
+                // speed <= -0.5) skips the cap and accumulates normally, same as real vanilla.
+                s.highestY = Math.min(s.highestY, to.y() + 1);
+            } else {
+                s.highestY = Math.max(s.highestY, to.y());
+            }
         } else {
             if (s.highestY > to.y() + 3.001) {
                 float damage = (float) Math.floor(s.highestY - to.y() - 3);

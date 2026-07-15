@@ -106,6 +106,7 @@ public final class PlayTest {
         scenario("mob drops + xp orbs", PlayTest::scenarioMobDrops);
         scenario("mob xp: baby zombie 2.5x, blaze/husk now drop xp", PlayTest::scenarioMobXpCoverage);
         scenario("enchant: feather falling + fire/blast/projectile protection", PlayTest::scenarioProtections);
+        scenario("elytra: deploy gating, durability wear, firework boost, fall-distance capping while gliding", PlayTest::scenarioElytra);
         scenario("enchant: thorns reflects damage onto the attacker", PlayTest::scenarioThorns);
         scenario("enchant: mending repairs the held item using xp", PlayTest::scenarioMending);
         scenario("combat: sword sweep attack grazes nearby entities; sweeping edge boosts it", PlayTest::scenarioSweepAttack);
@@ -3421,6 +3422,104 @@ public final class PlayTest {
         check("fire protection IV reduces fire-tagged damage specifically (" + unprotected + " -> " + protectedDmg + ")",
                 protectedDmg < unprotected);
         resetPlayer();
+    }
+
+    /**
+     * Elytra + firework flight, decompile-verified against {@code LivingEntity.canGlide}/
+     * {@code updateFallFlying}/{@code checkFallDistanceAccumulation} and
+     * {@code FireworkRocketEntity}/{@code FireworkRocketItem}: deploy gating (Minestom's raw
+     * packet handler sets {@code flyingWithElytra} unconditionally with none of vanilla's real
+     * conditions), durability wear every 20 ticks, the firework boost impulse, and fall-distance
+     * capping while gliding shallowly.
+     */
+    private static void scenarioElytra() {
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+        int x = 260, z = 260;
+
+        // deploy gating: Minestom sets the flag true before this project's own listener runs
+        player.teleport(new Pos(x + 0.5, 90, z + 0.5)).join();
+        player.setOnGroundState(false);
+        player.setEquipment(EquipmentSlot.CHESTPLATE, ItemStack.AIR);
+        player.setFlyingWithElytra(true);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerStartFlyingWithElytraEvent(player));
+        check("starting elytra flight without one equipped is reverted", !player.isFlyingWithElytra());
+
+        player.setOnGroundState(true);
+        player.setEquipment(EquipmentSlot.CHESTPLATE, ItemStack.of(Material.ELYTRA));
+        player.setFlyingWithElytra(true);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerStartFlyingWithElytraEvent(player));
+        check("starting elytra flight while standing on the ground is reverted", !player.isFlyingWithElytra());
+
+        player.setOnGroundState(false);
+        player.setFlyingWithElytra(true);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerStartFlyingWithElytraEvent(player));
+        check("a real elytra equipped, airborne, sticks", player.isFlyingWithElytra());
+
+        // durability wear: every 20 ticks of gliding costs 1 durability (LivingEntity.updateFallFlying)
+        tick(25);
+        Integer wornDamage = player.getEquipment(EquipmentSlot.CHESTPLATE).get(DataComponents.DAMAGE);
+        check("gliding wears elytra durability over time (25 ticks, got damage=" + wornDamage + ")",
+                wornDamage != null && wornDamage >= 1);
+
+        // firework boost: velocity nudges toward the look direction
+        player.setVelocity(Vec.ZERO);
+        player.setItemInMainHand(ItemStack.of(Material.FIREWORK_ROCKET));
+        double speedBefore = player.getVelocity().length();
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+        tick(1);
+        double speedAfter = player.getVelocity().length();
+        check("using a firework rocket while gliding boosts velocity (before=" + speedBefore
+                + ", after=" + speedAfter + ")", speedAfter > speedBefore);
+        check("the firework rocket is consumed", player.getItemInMainHand().isAir());
+
+        // fall-distance capping: a shallow glide "chases" the descent every tick, so leveling
+        // out after a real drop forgives it entirely by landing time (checkFallDistanceAccumulation)
+        player.setFlyingWithElytra(false);
+        resetPlayer();
+        player.teleport(new Pos(x + 0.5, Y + 31, z + 0.5)).join();
+        player.setOnGroundState(false);
+        float beforeGlideFall = player.getHealth();
+        player.setVelocity(new Vec(0, -1.0, 0));
+        EventDispatcher.call(new PlayerMoveEvent(player, new Pos(x + 0.5, Y + 30, z + 0.5), false));
+        tick(1);
+
+        player.setEquipment(EquipmentSlot.CHESTPLATE, ItemStack.of(Material.ELYTRA));
+        player.setFlyingWithElytra(true);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerStartFlyingWithElytraEvent(player));
+        for (double y = 29; y > 2; y -= 2) {
+            // re-asserted every iteration: this loop stands in for many real ticks of a
+            // leveled-out glide, each of which reports the same shallow descent rate.
+            player.setVelocity(new Vec(0, -0.2, 0));
+            EventDispatcher.call(new PlayerMoveEvent(player, new Pos(x + 0.5, Y + y, z + 0.5), false));
+            tick(1);
+        }
+        player.setOnGroundState(true);
+        player.setFlyingWithElytra(false);
+        EventDispatcher.call(new PlayerMoveEvent(player, new Pos(x + 0.5, Y + 1, z + 0.5), true));
+        tick(1);
+        float glideFallDamage = beforeGlideFall - player.getHealth();
+        check("leveling out on an elytra glide caps fall distance so a 30-block drop doesn't hurt "
+                + "(got " + glideFallDamage + ")", glideFallDamage == 0f);
+
+        // contrast: the same drop without ever gliding still hurts (sanity check the harness)
+        resetPlayer();
+        player.teleport(new Pos(x + 0.5, Y + 31, z + 0.5)).join();
+        player.setOnGroundState(false);
+        float beforePlainFall = player.getHealth();
+        player.setVelocity(new Vec(0, -1.0, 0));
+        EventDispatcher.call(new PlayerMoveEvent(player, new Pos(x + 0.5, Y + 30, z + 0.5), false));
+        tick(1);
+        player.setOnGroundState(true);
+        EventDispatcher.call(new PlayerMoveEvent(player, new Pos(x + 0.5, Y + 1, z + 0.5), true));
+        tick(1);
+        float plainFallDamage = beforePlainFall - player.getHealth();
+        check("the same drop without gliding at all still deals real fall damage (got "
+                + plainFallDamage + ")", plainFallDamage > 0f);
+
+        resetPlayer();
+        clearEntitiesExceptPlayer();
     }
 
     /** Thorns III on a full diamond set (0.15*level chance per piece per hit) reflects damage. */
