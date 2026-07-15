@@ -167,6 +167,32 @@ public final class FireSpread {
         return POSITIONS.containsKey(Containers.posKey(pos));
     }
 
+    /**
+     * Playtest hook: force ONE spread attempt from {@code firePos} onto {@code candidate}, as if
+     * the per-tick RNG roll ({@code rng.nextInt(rate) <= odds} in {@link #tickFire}) had
+     * succeeded — every other real gate still applies untouched (candidate must be air with a
+     * positive {@link #igniteOddsAround}, and not near rain). The roll itself is one Bernoulli
+     * trial with single-digit-percent odds per real tick (age-dependent, ~0.7% for a lone
+     * two-away neighbor), so a forced-tick loop bounded at any fixed iteration count is still a
+     * race that can fail extremely rarely — this isolates the deterministic detection+placement
+     * logic the check actually exists to catch a regression in (a near-but-not-touching
+     * flammable neighbor must be found and ignited) from FireBlock's inherently probabilistic
+     * timing, matching CONVENTIONS.md's "state gate, not a timing window" rule. Returns false if
+     * the candidate isn't currently spread-eligible (no positive ignite odds, or rained out) —
+     * true only after actually placing the fire.
+     */
+    public static boolean forceSpreadForTest(Point firePos, Point candidate) {
+        Block fireBlock = instance.getBlock(firePos);
+        if (!fireBlock.key().value().equals("fire")) return false;
+        int age = age(fireBlock);
+        if (igniteOddsAround(candidate) <= 0) return false;
+        boolean raining = dev.pointofpressure.minecom.survival.WeatherCycle.isRaining(instance);
+        if (raining && isNearRain(candidate)) return false;
+        int spreadAge = Math.min(15, age + ThreadLocalRandom.current().nextInt(5) / 4);
+        placeFire(candidate, spreadAge);
+        return true;
+    }
+
     private static void untrack(String key) {
         POSITIONS.remove(key);
         COUNTDOWN.remove(key);

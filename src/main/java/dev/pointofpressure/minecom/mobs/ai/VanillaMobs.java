@@ -1092,7 +1092,7 @@ public final class VanillaMobs {
             }
             brain.lookAt(target);
             brain.stopNavigation();
-            if (++chargeTicks[0] >= attackDuration + 10) {
+            if (++chargeTicks[0] >= attackDuration) {
                 // GuardianAttackGoal.stop-fire: 1.0 base, +2 on Hard, +2 for elders
                 float laser = 1f;
                 if (dev.pointofpressure.minecom.Difficulty.current() == dev.pointofpressure.minecom.Difficulty.HARD) laser += 2f;

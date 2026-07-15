@@ -691,19 +691,16 @@ public final class PlayTest {
         rs(59, Y + 3, z, Block.OAK_PLANKS);
         rs(61, Y + 2, z, Block.OAK_PLANKS);
         dev.pointofpressure.minecom.blocks.FireSpread.track(new Vec(59, Y + 2, z));
-        boolean spread = false;
-        // only one candidate air position per forced tick ever has a flammable neighbor here
-        // (60,Y+2,z, next to the plank at 61), so this is a much rarer per-attempt roll than
-        // it looks — 400 iterations occasionally wasn't enough (~1/15 in full-suite runs);
-        // 2000 pushes the tail-miss probability to negligible without touching the odds
-        // formula itself (this is a synchronous forced-tick sample count, not a real-time wait).
-        for (int i = 0; i < 2000 && !spread; i++) {
-            dev.pointofpressure.minecom.blocks.FireSpread.forceTick(world, new Vec(59, Y + 2, z));
-            spread = "fire".equals(blockKey(60, Y + 2, z));
-            if ("air".equals(blockKey(59, Y + 2, z))) rs(59, Y + 2, z, Block.FIRE);
-            if (!"oak_planks".equals(blockKey(59, Y + 3, z))) rs(59, Y + 3, z, Block.OAK_PLANKS);
-            if (!"oak_planks".equals(blockKey(61, Y + 2, z))) rs(61, Y + 2, z, Block.OAK_PLANKS);
-        }
+        // The real per-tick spread roll (rng.nextInt(rate) <= odds) is a genuine Bernoulli trial
+        // with single-digit-percent odds for a lone two-away neighbor — no bounded forced-tick
+        // sample count can be more than "extremely unlikely" to miss it (this used to be a
+        // 2000-iteration loop chasing exactly that tail down; see HANDOFF.md). forceSpreadForTest
+        // forces that one RNG roll to succeed while leaving every real gate (air candidate,
+        // positive igniteOddsAround, rain) untouched, so this is a deterministic state-gate check
+        // of the detection+placement path, not a sample of the random timing.
+        boolean spread = dev.pointofpressure.minecom.blocks.FireSpread.forceSpreadForTest(
+                new Vec(59, Y + 2, z), new Vec(60, Y + 2, z))
+                && "fire".equals(blockKey(60, Y + 2, z));
         check("fire spreads onto an air block near (not touching) a flammable neighbor", spread);
         rs(59, Y + 1, z, Block.AIR);
         rs(59, Y + 2, z, Block.AIR);
@@ -1726,7 +1723,19 @@ public final class PlayTest {
         resetPlayer();
     }
 
-    /** Guardian: charges a laser beam at a target held in continuous line of sight, then fires. */
+    /**
+     * Guardian: charges a laser beam at a target held in continuous line of sight, then fires.
+     * Split into two independently-gated waits rather than one fixed timing budget: target
+     * acquisition ({@code NearestAttackablePlayer}, ported from vanilla's real
+     * {@code TargetGoal.canUse}) only rolls a 1-in-10 chance per tick, so its tail is unbounded
+     * in principle even though it resolves in a handful of ticks on average — bundling that
+     * RNG with the (now-fixed, see chargeTicks[0] >= attackDuration in VanillaMobs.guardianCore)
+     * deterministic 90-tick charge into one combined wall/tick budget meant an unlucky
+     * acquisition roll could eat into the charge's own margin and time out on a correct guardian.
+     * Gating on the state transition (target acquired) first, generously, then measuring the
+     * charge on its own generous-but-bounded window means only an actually-broken charge can
+     * fail the second wait.
+     */
     private static void scenarioGuardian() {
         clearEntitiesExceptPlayer();
         player.teleport(new Pos(0.5, Y + 1, 3.5)).join();
@@ -1735,7 +1744,11 @@ public final class PlayTest {
                 guardian instanceof net.minestom.server.entity.LivingEntity le
                         && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 30.0
                         && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 6.0);
+        boolean acquired = waitFor(() -> brainOf(guardian) != null && brainOf(guardian).target == player, 10000);
+        check("a guardian in range acquires the player as a target", acquired);
         float healthBefore = player.getHealth();
+        // GuardianAttackGoal.getAttackDuration()=80, attackTime from -10: 90 ticks (~4.5s) to
+        // fire. 8000ms/160 ticks gives ~70 ticks of margin for the rare LOS-reset tick.
         boolean beamHit = waitFor(() -> player.getHealth() < healthBefore, 8000);
         check("a guardian with continuous line of sight charges and fires its laser (~4.5s)", beamHit);
         if (guardian != null) guardian.remove();
@@ -1743,7 +1756,11 @@ public final class PlayTest {
         resetPlayer();
     }
 
-    /** Elder Guardian: tougher stats than base Guardian, faster laser charge (~3.5s vs ~4.5s). */
+    /**
+     * Elder Guardian: tougher stats than base Guardian, faster laser charge (~3.5s vs ~4.5s).
+     * See {@link #scenarioGuardian} for why target acquisition and charge completion are gated
+     * separately instead of sharing one fixed budget.
+     */
     private static void scenarioElderGuardian() {
         clearEntitiesExceptPlayer();
         player.teleport(new Pos(0.5, Y + 1, 3.5)).join();
@@ -1752,7 +1769,11 @@ public final class PlayTest {
                 elder instanceof net.minestom.server.entity.LivingEntity le
                         && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 80.0
                         && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 8.0);
+        boolean acquired = waitFor(() -> brainOf(elder) != null && brainOf(elder).target == player, 10000);
+        check("an elder guardian in range acquires the player as a target", acquired);
         float healthBefore = player.getHealth();
+        // ElderGuardian.getAttackDuration()=60, attackTime from -10: 70 ticks (~3.5s) to fire.
+        // 6000ms/120 ticks gives ~50 ticks of margin for the rare LOS-reset tick.
         boolean beamHit = waitFor(() -> player.getHealth() < healthBefore, 6000);
         check("an elder guardian with continuous line of sight charges and fires its faster laser (~3.5s)", beamHit);
         if (elder != null) elder.remove();
@@ -3948,6 +3969,15 @@ public final class PlayTest {
     private static void scenarioFarming() {
         BlockVec ground = new BlockVec(15, Y, -15);
         world.setBlock(ground, Block.GRASS_BLOCK);
+        // HoeItem only tills when the block directly above is air (Farming.useOnBlock) — this
+        // scenario's own grass-bonemeal setup further down (world.setBlock(..., Y + 1, ..., AIR))
+        // already pins that precondition explicitly instead of assuming a fresh coordinate starts
+        // clear; this earliest till in the function was missing the same pin, so any residual
+        // non-air block left at this position by whatever ran earlier in a full-suite run (this
+        // coordinate is otherwise untouched by this scenario in isolation — 25/25 clean reruns of
+        // just "farming full cycle" confirm the till logic itself is correct) silently no-ops the
+        // till and cascades into both the seed-planting and bone-meal checks right after it.
+        world.setBlock(15, Y + 1, -15, Block.AIR);
         useItemOnBlock(ItemStack.of(Material.WOODEN_HOE), ground, BlockFace.TOP);
         check("hoe tills grass to farmland", world.getBlock(ground).key().value().equals("farmland"));
         useItemOnBlock(ItemStack.of(Material.WHEAT_SEEDS), ground, BlockFace.TOP);
@@ -4341,6 +4371,11 @@ public final class PlayTest {
         boolean spawned = waitFor(() -> world.getEntities().stream()
                 .anyMatch(e -> e.getEntityType() == EntityType.CAVE_SPIDER), 8000);
         check("classic spawner: a player in range triggers a spawn burst (BaseSpawner.serverTick)", spawned);
+        // AUDIT.md's cross-cutting note: setInstance's registration continuation runs inline
+        // (synchronous) whenever the target chunk is already loaded, and this room's own setBlock
+        // calls above force exactly that -- so this is NOT the async-registration class of flake
+        // (already mis-blamed for two other, unrelated bugs per that note). A direct sample right
+        // after detection is fine; digRoom is the real fix (see its javadoc).
         long firstBurst = world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.CAVE_SPIDER).count();
         check("classic spawner: a burst spawns more than one mob (spawnCount default 4, dark+open room)", firstBurst >= 2);
 
@@ -4552,13 +4587,24 @@ public final class PlayTest {
     }
 
     /** Carves a fully-enclosed 11x11x5 dark room (walls/floor/roof solid, interior air) centered at (cx, by+1, cz) — large enough to contain BaseSpawner's default spawnRange=4 roll. */
+    /**
+     * Dug room around a spawner placed at {@code (cx, by+1, cz)} — dy range is one deeper than
+     * the strict minimum (-2..3, not -1..3) so ALL THREE of BaseSpawner.attemptSpawn's real y
+     * offsets (rng.nextInt(3)-1 relative to the spawner, i.e. dy -1/0/+1 from it) land in open
+     * cave_air, not the wall. A -1..3 room (floor one block below the spawner) put the wall
+     * exactly at the spawner's own y-1 offset, silently discarding 1/3 of every burst's attempts
+     * to an automatic noCollision fail (VNaturalSpawner.noCollision requires both y and y+1 non-
+     * full) that real vanilla dungeons never hit (their floor sits well below the spawn range) —
+     * root cause of the classic-spawner burst-size check's flake, not a timing race (see
+     * scenarioClassicSpawner and AUDIT.md's setInstance/.join() note).
+     */
     private static void digRoom(int cx, int by, int cz) {
         int r = 5;
         for (int dx = -r; dx <= r; dx++) {
             for (int dz = -r; dz <= r; dz++) {
                 boolean wallXZ = dx == -r || dx == r || dz == -r || dz == r;
-                for (int dy = -1; dy <= 3; dy++) {
-                    boolean wallY = dy == -1 || dy == 3;
+                for (int dy = -2; dy <= 3; dy++) {
+                    boolean wallY = dy == -2 || dy == 3;
                     world.setBlock(cx + dx, by + 1 + dy, cz + dz, (wallXZ || wallY) ? Block.STONE : Block.CAVE_AIR);
                 }
             }
@@ -6184,15 +6230,27 @@ public final class PlayTest {
         rs(52, Y + 1, z, Block.INFESTED_STONE);
         long itemsBefore = world.getEntities().stream()
                 .filter(e -> e instanceof ItemEntity).count();
+        // c248e0f already joined VanillaMobs.silverfish's setInstance future and switched this to
+        // an immediate (no-wait) check, closing the real-time-wait window that used to expose the
+        // fresh spawn to its own SilverfishMergeWithStone goal (the flat test floor is itself a
+        // valid merge host). That leaves one further-out race: .join() only guarantees the future
+        // resolved on THIS thread, not that the server tick thread can't run the mob's own
+        // scheduler task (and roll a same-tick merge) in the gap between join() returning and this
+        // check's world.getEntities() read. A live-entity-list sample can't tell "never spawned"
+        // apart from "spawned and already merged away" — an EntitySpawnEvent listener can, the
+        // same state-gate idiom the silk-touch diagnostic below already uses for exactly this
+        // reason: it captures the ambush the instant it's dispatched, independent of whatever the
+        // mob's goals do to it afterward.
+        var ambushSpawned = new java.util.concurrent.atomic.AtomicBoolean(false);
+        var ambushListener = net.minestom.server.event.EventListener.of(
+                net.minestom.server.event.entity.EntitySpawnEvent.class,
+                ev -> {
+                    if (ev.getEntity().getEntityType() == EntityType.SILVERFISH) ambushSpawned.set(true);
+                });
+        MinecraftServer.getGlobalEventHandler().addListener(ambushListener);
         breakBlock(new BlockVec(52, Y + 1, z));
-        // InfestedBlocks.spawnInfestation runs synchronously inside the break event, so no wait
-        // is needed here — a waitFor(..., 3000) window used to expose the freshly-spawned
-        // silverfish to its own SilverfishMergeWithStone goal (a per-tick roll that treats the
-        // flat test world's own solid floor as a valid merge target — same blind spot as the
-        // merge-into-stone determinism fix), letting it occasionally vanish before this check
-        // ever ran. Checking immediately closes that window instead of widening it further.
-        check("mining infested stone without silk touch springs a silverfish ambush",
-                world.getEntities().stream().anyMatch(e -> e.getEntityType() == EntityType.SILVERFISH));
+        MinecraftServer.getGlobalEventHandler().removeListener(ambushListener);
+        check("mining infested stone without silk touch springs a silverfish ambush", ambushSpawned.get());
         tick(5);
         check("the infested block drops no item without silk touch",
                 world.getEntities().stream().filter(e -> e instanceof ItemEntity).count() == itemsBefore);
@@ -7606,7 +7664,18 @@ public final class PlayTest {
         EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(40.5, Y + 1, 40.5));
         tick(2);
         float before = zombie.getHealth();
-        boolean burning = waitFor(() -> zombie.getHealth() < before, 4000);
+        // WeatherCycle.start runs continuously for the whole playtest, independent of whatever
+        // scenario is currently executing, and rolls a fresh 1%-per-100-tick chance to spontaneously
+        // start raining any time rainTicksLeft is 0 (WeatherCycle.java) — a real, if rare, chance for
+        // an unrelated background system to flip `wet` true mid-window and race this check's own
+        // "stays clear" assumption, set only once at the top of the scenario. Re-pinning clear
+        // weather on every poll (well inside that 100-tick cadence) keeps the precondition this
+        // check actually cares about — direct daylight, no other confound — invariant for its
+        // whole duration instead of sampling it once and hoping it holds.
+        boolean burning = waitFor(() -> {
+            dev.pointofpressure.minecom.survival.WeatherCycle.setRaining(world, false);
+            return zombie.getHealth() < before;
+        }, 4000);
         check("zombie burns under the open sun", burning);
         clearEntitiesExceptPlayer();
 
