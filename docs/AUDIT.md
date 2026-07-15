@@ -696,9 +696,20 @@ leftovers.
   v0.18.0 — data/minecraft/enchantment_provider/*.json, incl. raid/** — but
   the EnchantmentsByCost/EnchantmentsByCostWithDifficulty/SingleEnchantment
   provider TYPES from vanilla-src/net/minecraft/world/item/enchantment/
-  providers/ still need porting, decompiled but unused); worn-equipment
-  **drop chances** on death (8.5% per filled slot, +looting) — mobs never
-  drop their armor/weapons. (S)
+  providers/ still need porting, decompiled but unused). ~~worn-equipment
+  drop chances on death — mobs never drop their armor/weapons~~ **this note
+  was stale — actually landed long before this audit entry was last touched
+  (`dropEquipment`, 8.5% base + looting bonus, since commit 807f5ab); the
+  only real gap was killedByPlayer being too narrow (only the LITERAL final
+  hit, not real vanilla's 100-tick memory window / tamed-wolf-owner credit)
+  — DONE 2026-07-15 (Sonnet 5): Combat.java now tracks a per-mob
+  `LAST_HURT_BY_PLAYER` credit (decompile-verified against
+  LivingEntity.resolvePlayerResponsibleForDamage) so a mob hit by a player
+  (or that player's tamed wolf) still drops gear if something else finishes
+  it off within 100 ticks. Still open: mob spawn-equipment enchantments
+  above, and the "preserve" guaranteed-drop path (skeleton pumpkin heads
+  etc. — no factory in this codebase sets it, isPreserved() always false).
+  (S)
 - Breeding.java — only same-species pair+item; no baby growth acceleration by
   feeding, no love-mode particles timing nuances, no per-animal breeding items
   beyond spec sets (mostly right), horses/llamas can't breed (no taming). (S)
@@ -916,8 +927,10 @@ leftovers.
    2026-07-14 (v0.18.0); smithing table (netherite + trims) still open — S
 4. Persistence of containers/mobs across restarts — L
 5. Random-tick engine (crop/grass/fire/copper/sapling) — L
-6. Villager→zombie-villager conversion + curing loop (difficulty hooks ready) — S/M
-7. Mob equipment enchantments + equipment drop chances — S/M
+6. ~~Villager→zombie-villager conversion + curing loop~~ — DONE 2026-07-15 (v0.22.0,
+   `mobs/VillagerConversion.java`, see the mobs/ section above)
+7. ~~Mob equipment drop chances~~ — DONE 2026-07-15 (v0.22.0, killedByPlayer memory
+   window, see Combat.java entry above); mob spawn-equipment enchantments still open — M
 8. ~~Taming (wolf/cat/horse) + leads/name tags~~ — DONE 2026-07-15 (v0.21.0, see the
    Taming/mounts entry above) — S remaining (wolf/cat/horse breeding, wolf armor)
 9. Splash/lingering/tipped arrows + missing 26.x effects — M

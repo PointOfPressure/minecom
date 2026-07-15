@@ -141,10 +141,12 @@ Ordered by (player impact × unlock value), sizes from AUDIT:
    closed by v0.20.0's MonsterRoomFeature port (region-diff rose to
    99.3613%).
 
-**Tier 2 — visible-daily survival gaps:** taming (wolf/cat/horse + saddles,
-leads, name tags) L; villager zombie-conversion/curing S/M; elytra+firework
-flight M; ender pearls S; mob equipment drops S; attack-cooldown model M;
-raid scaling S; phantom spawner S.
+**Tier 2 — visible-daily survival gaps:** ~~taming (wolf/cat/horse + saddles,
+leads, name tags)~~ DONE v0.21.0; ~~villager zombie-conversion/curing~~ DONE
+v0.22.0; ~~mob equipment drops~~ DONE v0.22.0 (killedByPlayer memory window —
+the base drop-chance mechanic already existed); ~~ender pearls~~ DONE v0.22.0;
+elytra+firework flight M; attack-cooldown model M; raid scaling S; phantom
+spawner S.
 
 **Tier 3 — the long tail** from the inventory list (bees, allay, maps,
 beacons*, conduits*, armor stands, signs, banners…). *Beacons/conduits are

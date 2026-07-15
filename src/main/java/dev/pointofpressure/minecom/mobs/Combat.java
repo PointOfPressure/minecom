@@ -30,6 +30,8 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Melee/projectile combat with vanilla weapon damage values, knockback,
@@ -39,6 +41,17 @@ public final class Combat {
     private Combat() {}
 
     private static final Random RANDOM = new Random();
+
+    /** LivingEntity.resolvePlayerResponsibleForDamage's 100-tick memory window
+     *  (decompile-verified): a mob hit by a player, or by that player's tamed wolf, still
+     *  counts as "killed by a player" for equipment drops even if the actual killing blow
+     *  came from something else in between (fire, fall, a different mob) — as long as the
+     *  death happens within 100 ticks of that hit. Keyed by the mob's entity id (session-
+     *  scoped like Steering.BOOST_TICKS' identical shape; cleared on death, otherwise a
+     *  harmless residual entry for a mob that's hit but never dies). */
+    private record PlayerCredit(UUID player, long expiresAtTick) {}
+    private static final Map<Integer, PlayerCredit> LAST_HURT_BY_PLAYER = new ConcurrentHashMap<>();
+    private static final int HURT_MEMORY_TICKS = 100;
 
     /** EntityTypeTags.REDIRECTABLE_PROJECTILE (decompile-verified): the only entities
      *  Player.deflectProjectile() will redirect instead of taking a normal melee hit. */
@@ -427,6 +440,13 @@ public final class Combat {
                 && e.getDamage().getAttacker() instanceof net.minestom.server.entity.LivingEntity attacker) {
             dev.pointofpressure.minecom.mobs.ai.VanillaMobs.notifyHurt(mob, attacker);
         }
+        if (e.getEntity() instanceof EntityCreature mob && mob.getInstance() != null) {
+            UUID credited = creditedPlayer(e.getDamage().getAttacker());
+            if (credited != null) {
+                LAST_HURT_BY_PLAYER.put(mob.getEntityId(),
+                        new PlayerCredit(credited, mob.getInstance().getWorldAge() + HURT_MEMORY_TICKS));
+            }
+        }
         if (!(e.getEntity() instanceof Player player)) return;
         String typeId = e.getDamage().getType().key().asString();
 
@@ -541,7 +561,10 @@ public final class Combat {
             item.setInstance(instance, pos.add(0, 0.5, 0));
             item.setVelocity(new Vec(RANDOM.nextDouble() - 0.5, 2, RANDOM.nextDouble() - 0.5));
         }
-        if (killer != null) dropEquipment(mob, instance, pos, weapon);
+        PlayerCredit credit = LAST_HURT_BY_PLAYER.remove(mob.getEntityId());
+        boolean killedByPlayer = killer != null
+                || (credit != null && instance.getWorldAge() <= credit.expiresAtTick());
+        if (killedByPlayer) dropEquipment(mob, instance, pos, weapon);
         boolean baby = mob.getEntityMeta() instanceof net.minestom.server.entity.metadata.monster.zombie.ZombieMeta zm && zm.isBaby();
         int xp = slimeSize != null ? slimeSize : Experience.mobXp(mob.getEntityType(), baby);
         if (xp > 0) Experience.orb(instance, pos, xp);
@@ -555,9 +578,12 @@ public final class Combat {
     /**
      * Mob.dropCustomDeathLoot's equipment-drop pass (decompile-verified against
      * Mob.class): every worn/held slot independently rolls DropChances.DEFAULT_EQUIPMENT_
-     * DROP_CHANCE (8.5%), only when killed by a player (the "preserve" guaranteed-drop
-     * path — skeleton pumpkin heads etc. — isn't modeled by any factory in this codebase,
-     * so isPreserved() is always false here). The killer's Looting level raises the chance
+     * DROP_CHANCE (8.5%), gated on killedByPlayer at the call site (death()) — real vanilla's
+     * lastHurtByPlayerMemoryTime > 0, i.e. hit by a player or that player's tamed wolf within
+     * the last 100 ticks, not merely "the literal killing blow was a player's" (the "preserve"
+     * guaranteed-drop path — skeleton pumpkin heads etc. — isn't modeled by any factory in
+     * this codebase, so isPreserved() is always false here). The killer's Looting level raises
+     * the chance
      * additively per data/minecraft/enchantment/looting.json's equipment_drops effect
      * (base 0.01, +0.01 per level above 1 — i.e. flat +1%/level, max level 3), which is
      * the one concrete case pulled out of the otherwise-unported generic enchantment-
@@ -588,6 +614,19 @@ public final class Combat {
             item.setVelocity(new Vec(RANDOM.nextDouble() - 0.5, 2, RANDOM.nextDouble() - 0.5));
             mob.setEquipment(slot, ItemStack.AIR);
         }
+    }
+
+    /** LivingEntity.resolvePlayerResponsibleForDamage: a direct player hit, or a tamed wolf's
+     *  hit credited to its owner (real vanilla's other branch — an untamed/ownerless wolf's
+     *  hit credits nobody, same as here). */
+    private static UUID creditedPlayer(Entity damager) {
+        if (damager instanceof Player p) return p.getUuid();
+        if (damager instanceof EntityCreature wolf && wolf.getEntityType() == EntityType.WOLF
+                && wolf.getEntityMeta() instanceof net.minestom.server.entity.metadata.animal.tameable.WolfMeta wm
+                && wm.isTamed() && wm.getOwner() != null) {
+            return wm.getOwner();
+        }
+        return null;
     }
 
 }

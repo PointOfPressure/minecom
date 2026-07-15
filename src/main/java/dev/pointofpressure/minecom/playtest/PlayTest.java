@@ -125,6 +125,7 @@ public final class PlayTest {
         scenario("bed sleep skips night", PlayTest::scenarioBed);
         scenario("death drops + respawn", PlayTest::scenarioDeath);
         scenario("combat: killed mobs sometimes drop their worn equipment", PlayTest::scenarioEquipmentDropChance);
+        scenario("combat: a tamed wolf's kill credits its owner, and a player's hit still credits a kill finished by something else within 100 ticks (but not after)", PlayTest::scenarioEquipmentDropCredit);
         scenario("redstone: lever-wire-lamp + decay", PlayTest::scenarioRedstoneBasic);
         scenario("trapped chest: opening/closing directly powers redstone, still comparator-readable for fullness", PlayTest::scenarioTrappedChest);
         scenario("double chest: placing a matching chest alongside merges into one shared 54-slot inventory", PlayTest::scenarioDoubleChest);
@@ -8146,6 +8147,96 @@ public final class PlayTest {
                 .count();
         check("killed mobs sometimes drop their worn equipment (8.5%/kill; " + dropped + "/60 kills dropped a helmet)",
                 dropped >= 1);
+        clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * killedByPlayer (Combat.java, decompile-verified against LivingEntity.
+     * resolvePlayerResponsibleForDamage/dropAllDeathLoot): equipment drops are credited to
+     * "killed by a player" if a player (or that player's tamed wolf) hit the mob within the
+     * last 100 ticks, not only if the literal killing blow was a player's. Three cases: a
+     * tamed wolf's own kill credits its owner directly; a player's non-lethal hit followed
+     * shortly by an unrelated death (fire) still credits the player; the same setup past the
+     * 100-tick window does not.
+     */
+    private static void scenarioEquipmentDropCredit() {
+        clearEntitiesExceptPlayer();
+
+        // A: a tamed wolf's own kill credits its owner
+        int wolfCredited = 0;
+        for (int i = 0; i < 60; i++) {
+            var wolf = new EntityCreature(EntityType.WOLF);
+            if (wolf.getEntityMeta() instanceof net.minestom.server.entity.metadata.animal.tameable.WolfMeta wm) {
+                wm.setTamed(true);
+                wm.setOwner(player.getUuid());
+            }
+            wolf.setInstance(world, new Pos(70 + i % 10, Y + 1, 70 + i / 10));
+            EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(70 + i % 10, Y + 1, 71 + i / 10));
+            if (zombie == null) continue;
+            zombie.setEquipment(EquipmentSlot.HELMET, ItemStack.of(Material.IRON_HELMET));
+            zombie.setHealth(0.5f);
+            tick(1);
+            EventDispatcher.call(new EntityAttackEvent(wolf, zombie));
+        }
+        tick(3);
+        long wolfDrops = world.getEntities().stream()
+                .filter(e -> e instanceof ItemEntity ie && ie.getItemStack().material() == Material.IRON_HELMET)
+                .count();
+        check("a tamed wolf's own kill credits its owner for equipment drops (8.5%/kill; "
+                + wolfDrops + "/60)", wolfDrops >= 1);
+        clearEntitiesExceptPlayer();
+
+        // B: player hits (survives), dies from an unrelated source (fire) well within 100
+        // ticks -> still credited
+        player.setItemInMainHand(ItemStack.of(Material.DIAMOND_SWORD));
+        player.setOnGroundState(true); // no falling crit (1.5x) — the poke must never be lethal
+        // 4-block grid spacing (not 1): a grounded sword hit also sweeps every OTHER living
+        // entity within 2 blocks (Combat.attack's sweep-attack branch) — packed 1 apart, each
+        // new poke would chip 1 flat sweep damage into every already-hit zombie still nearby,
+        // eventually finishing one off via a genuine direct player kill and contaminating the
+        // "should only die from fire" premise below.
+        java.util.List<EntityCreature> hitThenBurned = new java.util.ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(70 + (i % 10) * 4, Y + 1, 70 + (i / 10) * 4));
+            if (zombie == null) continue;
+            zombie.setEquipment(EquipmentSlot.HELMET, ItemStack.of(Material.IRON_HELMET));
+            zombie.setHealth(15f); // comfortably survives one diamond-sword poke (7, or 10.5 crit)
+            EventDispatcher.call(new EntityAttackEvent(player, zombie));
+            hitThenBurned.add(zombie);
+        }
+        tick(5); // well under the 100-tick memory window
+        for (EntityCreature zombie : hitThenBurned) {
+            zombie.damage(net.minestom.server.entity.damage.DamageType.ON_FIRE, 20f);
+        }
+        tick(3);
+        long creditedDrops = world.getEntities().stream()
+                .filter(e -> e instanceof ItemEntity ie && ie.getItemStack().material() == Material.IRON_HELMET)
+                .count();
+        check("a player's non-lethal hit still credits a kill finished by fire shortly after "
+                + "(8.5%/kill; " + creditedDrops + "/60)", creditedDrops >= 1);
+        clearEntitiesExceptPlayer();
+
+        // C: same setup, but past the 100-tick memory window -> no credit, no drops at all
+        player.setOnGroundState(true); // no falling crit (1.5x) — the poke must never be lethal
+        java.util.List<EntityCreature> hitThenExpired = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(70 + (i % 10) * 4, Y + 1, 70 + (i / 10) * 4));
+            if (zombie == null) continue;
+            zombie.setEquipment(EquipmentSlot.HELMET, ItemStack.of(Material.IRON_HELMET));
+            zombie.setHealth(15f); // comfortably survives one diamond-sword poke (7, or 10.5 crit)
+            EventDispatcher.call(new EntityAttackEvent(player, zombie));
+            hitThenExpired.add(zombie);
+        }
+        tick(110); // past the 100-tick memory window (shared wait for the whole batch)
+        for (EntityCreature zombie : hitThenExpired) {
+            zombie.damage(net.minestom.server.entity.damage.DamageType.ON_FIRE, 20f);
+        }
+        tick(3);
+        long expiredDrops = world.getEntities().stream()
+                .filter(e -> e instanceof ItemEntity ie && ie.getItemStack().material() == Material.IRON_HELMET)
+                .count();
+        check("the credit expires after 100 ticks — a kill finished by fire that long after the "
+                + "player's hit drops nothing (" + expiredDrops + "/40)", expiredDrops == 0);
         clearEntitiesExceptPlayer();
     }
 

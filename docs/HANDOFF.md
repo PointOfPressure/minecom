@@ -14,6 +14,114 @@ of what got escalated and why.
 
 ---
 
+## Tier 2 batch landed (2026-07-15, Sonnet 5) — v0.22.0, closes MASTERPLAN §3 Tier 2's remaining three items
+
+Villager zombie-conversion/curing, ender pearls, and the mob-equipment-drop
+killedByPlayer refinement — all three from the task brief, plus one real
+pre-existing bug found and fixed en route. Landed as separate commits per
+item as instructed.
+
+- **Villager zombie conversion + curing** (`mobs/VillagerConversion.java`,
+  new file) — decompile-verified against `Zombie.killedEntity`/
+  `convertVillagerToZombieVillager`, `ZombieVillager` (`mobInteract`/
+  `startConverting`/`getConversionProgress`/`finishConversion`), and the
+  reputation slice of `Villager.onReputationEventFrom`/`updateSpecialPrices`
+  + `GossipType`/`GossipContainer` (all 26.2, freshly re-decompiled — the
+  cached copies predated the 2026-07-13 26.2 bump, per rule 7). Difficulty-
+  scaled conversion on any zombie-family kill (Zombie/Husk/Drowned/
+  ZombieVillager — killedEntity is inherited, not overridden, by the other
+  three), profession carried through both directions (this project's trades
+  are keyed entirely off the profession tag, so nothing else needs copying),
+  real 3600-6000t cure timer with the iron-bars/bed speedup roll, and a
+  narrow, deliberately-scoped slice of the gossip/reputation system: curing
+  grants the curing player a real trade discount (a single cure saturates
+  both contributing gossip types' real caps at 125 reputation, so this is
+  modeled as the constant it converges to rather than porting the full
+  ledger — decay/transfer/other event types stay unmodeled, tracked in
+  AUDIT.md). Session-scoped: conversion timers and cure reputation aren't
+  persisted (matches the existing precedent for breeding's IN_LOVE window,
+  warden anger).
+- **Real bug found and fixed en route (Combat.java): mob-vs-mob combat was
+  entirely dead code.** The melee-damage branch required
+  `target instanceof Player`, meaning NO mob could ever actually damage
+  another mob — a zombie could never kill a villager, which is a
+  prerequisite for the entire conversion feature to matter at all. Real
+  vanilla's `Mob.doHurtTarget` is target-type-agnostic (a zombie hurts a
+  villager exactly like it hurts a player); the gate is now just
+  `e.getEntity() instanceof EntityCreature` (Iron Golem keeps its own
+  earlier, more specific branch with its real variable-damage formula).
+  This was a pre-existing gap the villager-conversion work surfaced, not
+  something introduced by it — full playtest re-run clean after the fix
+  (788/788 in isolation from the villager work, then two more full-suite
+  runs below).
+- **Ender pearls** (`survival/EnderPearls.java`, new file) — decompile-
+  verified against `EnderpearlItem`/`ThrownEnderpearl` (26.2, freshly
+  decompiled, no cached copy existed before this pass). 1.5-shoot-unit
+  throw (this project's established 32/3 conversion, same idiom as
+  `ThrownPotions`), lands on the first block or entity touched (no
+  water-specific gate exists in the decompile — fluids simply don't block
+  flight, contrary to a common player myth), teleports the thrower keeping
+  their own look direction, 5 armor/knockback-bypassing damage (the bundled
+  `bypasses_armor`/`no_knockback` tags already cover `minecraft:ender_pearl`
+  — no special-casing needed, the existing generic mitigation pipeline just
+  reads them), a new `Survival.resetFallTracking` call so the landing spot's
+  height doesn't retroactively charge fall damage on the next ground
+  contact, and the real 5% endermite spawn roll (outside Peaceful). Not
+  modeled: the zero-damage on-hit-entity "hurt" call (animation/
+  invulnerability-timer only), the 32 landing particles (client visual),
+  stasis-chamber chunk-ticket behavior (not scoped in AUDIT.md — this
+  project's chunk loading has no equivalent to vanilla's per-pearl
+  force-load ticket system), and cross-dimension throws (collapses to a
+  same-instance check, since a projectile's instance can't change mid-flight
+  here the way a portal crossing could in real vanilla).
+- **Mob equipment drop killedByPlayer refinement** (Combat.java) — the base
+  drop mechanic (8.5% base chance + looting bonus, durability randomization)
+  turned out to already exist (commit 807f5ab, well before this session);
+  AUDIT.md's "mobs never drop their armor/weapons" line was stale and is
+  now corrected. The one real gap: the killer gate only checked the
+  LITERAL final damage source, not real vanilla's
+  `lastHurtByPlayerMemoryTime` (a 100-tick memory window, decompile-verified
+  against `LivingEntity.resolvePlayerResponsibleForDamage`, that also
+  credits a player's tamed wolf). Now a mob hit by a player (or that
+  player's tamed wolf) still drops gear if something else — fire, fall, a
+  different mob — finishes it off within 100 ticks. Looting-bonus
+  attribution is unchanged (still reads only the literal final hit's
+  weapon, matching vanilla's own split between the two).
+- **Test-writing pitfalls worth flagging for whoever next writes a
+  multi-mob-kill PlayTest scenario**: (1) a grounded sword hit also sweeps
+  every OTHER living entity within 2 blocks for a flat 1 damage
+  (`Combat.attack`'s sweep branch) — a tightly-packed test grid (1 block
+  apart) will cross-contaminate "this mob should only die from X" premises
+  by finishing off an ALREADY-hit neighboring mob via genuine direct player
+  damage; fixed by spacing test mobs 4+ blocks apart. (2) a falling-crit hit
+  (`!isOnGround() && velocity.y()<0`, 1.5x) can make a supposedly-non-lethal
+  test hit lethal if the player's on-ground state is ambient/left over from
+  an earlier section; fixed by explicitly calling
+  `player.setOnGroundState(true)` before the hit rather than assuming it.
+  Both surfaced as a **statistically real but code-correct 0-or-1-in-40/60**
+  false-positive-drop rate in the mob-equipment-drop-credit scenario before
+  being root-caused (never masked by widening the tolerance — see rule 8).
+- **Escalation, logged not chased**: `[enderman] an arrow fired at an
+  enderman is consumed on contact` failed once in a full-suite run
+  (799/800) but passed 3/3 in isolation immediately after, and in a second
+  full-suite run (800/800). It's a real-time `waitFor` on actual projectile
+  physics in a file this session never touched (`scenarioEndermanProjectileDodge`,
+  unrelated to Combat.java's melee/EntityDamageEvent paths this session
+  edited) — same class of pre-existing physics-measurement flake HANDOFF has
+  documented before (trident riptide, elder guardian laser). Not armed with
+  a DIAG hook (that idiom is reserved for the untouched silk one per
+  standing instructions); logging the single occurrence here per rule 3
+  rather than guessing further.
+- **Verification**: 3 new PlayTest scenarios (villager conversion/curing —
+  12 checks; ender pearl — 9 checks; equipment-drop credit — 3 checks),
+  each independently reran 5-6× clean after their respective root-causes
+  were fixed. Full suites: **SelfTest 228/228**; **PlayTest 800/800** twice
+  (one run at load ~1.2-1.4, one on a genuinely idle machine — `uptime`
+  0.08 — per rule 8), plus an earlier 799/800 run with the one
+  unrelated/non-reproducing enderman flake above. No known-red checks.
+
+---
+
 ## Timing-fragile check population — DONE, v0.21.1 (2026-07-15, Sonnet 5)
 
 All six named checks root-caused and structurally fixed, plus a re-audit of
