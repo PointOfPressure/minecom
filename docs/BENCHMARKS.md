@@ -108,21 +108,30 @@ regress `--selftest`/`--playtest`):
    timeout as first suspected). Mitigated with
    `-Dminestom.packet-queue-size=20000` in `bench_common.launch_minecom`.
 
-**Still blocked after all of the above: (a) spawn and (b) spread10k
-against minecom.** Every one of the six fixes above was real, verified,
-and individually confirmed to change the failure's *shape* — but a further
-issue remains after all of them: connections reliably die a fixed number
-of events into their lifetime (~10 identical position-resync/teleport
-events, independent of join-burst timing — an isolated single-batch,
-no-ramp, full-duration test hit the same wall), and `spread10k` shows a
-related-but-distinct symptom (later-joining batches never complete their
-spawn-teleport at all, `players_online` reads 0 despite the earliest
-batch's own log showing ongoing activity). Root cause not found despite
-sustained effort across many isolating tests this session (packet-level,
-config-level, and code-level fixes all applied and verified). Escalated to
-`docs/HANDOFF.md` per rule 3 rather than continued half-correct attempts —
-this is exactly the harness's designed behavior
-("a run that can't hold population still fails loudly").
+**RESOLVED 2026-07-16 (Fable, HANDOFF entry has the full story): (a) spawn
+and (b) spread10k now produce real numbers against minecom.** The residual
+deaths were two more layers: (i) the bot moved illegally (no gravity/
+collision) — the "~10 identical resyncs" were vanilla-parity `moved
+wrongly!` corrections, confirmed by running the same bot against real
+vanilla 26.2 (decayed 15→1 with vanilla naming every kick: moved wrongly,
+Flying is not enabled, Kicked for spamming); bots now hover legally
+(allow-flight=true, climb to anchor+40, wander clamped ±24 blocks, no
+chat). (ii) After that, minecom-only mass deaths at a fixed server uptime:
+jstack + TCP Recv-Q forensics showed **worldgen executing on the
+virtual-thread carrier pool** — roaming mobs dragged the chunk frontier
+past the pregenerated area and 4 concurrent generations starved every
+connection's read loop (healthy tick thread, mass "Timeout" kick). Fixed
+for the harness with geometry (pregen ⊇ forceload ⊇ wander+view+mob-roam;
+pregen worlds cached by (seed,radius)) and carrier headroom
+(`-Djdk.virtualThreadScheduler.parallelism=8`); flagged for P1 as
+MASTERPLAN §5.0 (generation must move to a bounded dedicated executor).
+
+**First real bot-driven numbers (this laptop)**:
+- **(a) spawn**: 15/15 bots, 150 s, **20.0 TPS flat**, MSPT p50 2.9 /
+  p95 3.9 / p99 8.5 ms (`spawn_minecom_20260716T153405Z.json`)
+- **(b) spread10k** (spread radius 6, laptop-scaled): 15/15 bots, 180 s,
+  **20.0 TPS**, MSPT p50 5.5 / p95 9.7 / p99 20.1 ms
+  (`spread10k_minecom_20260716T160330Z.json`)
 
 - **(c) redstone** and **(d) mobfarm** ran with `bots = 0` (server-only
   load — the world setup itself, redstone clocks / mob pen, doesn't need

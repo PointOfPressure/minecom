@@ -14,7 +14,59 @@ of what got escalated and why.
 
 ---
 
-## ESCALATION: minecom bot-scenario connections still die mid-run after six real fixes (2026-07-16, Fable) — blocks MASTERPLAN §4 P0's spawn/spread10k numbers against minecom
+## ~~ESCALATION: minecom bot-scenario connections still die mid-run after six real fixes~~ — DONE (2026-07-16, Fable): all five P0 scenarios now produce real numbers against minecom
+
+Resolution, in the order the layers came off (full evidence in this session's
+scratch logs; the durable artifacts are the code/config changes + results
+JSON committed with this entry):
+
+1. **Discriminator first**: the same bot against REAL vanilla 26.2 decayed
+   15 -> 1 in 3 minutes — vanilla's log named everything the silent minecom
+   deaths couldn't: `moved wrongly!` corrections (the "~10 identical
+   position-resyncs" signature — the bot has no gravity/collision, so
+   servers keep snapping it back), `Flying is not enabled` fly-kicks
+   (fixed-y walking = floating), and `Kicked for spamming` (legacy chat
+   packets). Minecom was faithfully behaving LIKE vanilla — the resync
+   loop was vanilla-parity movement correction, not a minecom bug.
+2. **Bot made legal instead of physical**: bench servers set
+   `allow-flight=true`; bots climb 1 block/tick to anchor_y+40 and wander
+   clamped to ±24 blocks of their anchor (never a collision, never a cold
+   chunk, never a fly-kick); chat action replaced with arm-swing. Also
+   fixed the bot's teleport reader to the true 26.2 layout (id, pos,
+   delta 3xf64, yaw/pitch, flags INT — was skipping delta and reading
+   flags as one byte, benign only while delta=Vec.ZERO). Verified: 15
+   bots, 180s, real vanilla, zero drops.
+3. **The remaining minecom-only mass death (all connections at the same
+   server uptime, gauge honest, MSPT p50 <1ms)**: TCP forensics showed
+   server-side Recv-Q backing up — the server stopped READING everyone
+   while still writing. jstack mid-stall: all four virtual-thread carriers
+   were executing **minecom worldgen** (VNoise/VDensity) — roaming mobs
+   (restored + natural spawns) dragged the chunk frontier past the
+   pregenerated area, live generation ran on the carrier pool, and on 4
+   logical CPUs it starved every connection's read loop -> keep-alive
+   answers unseen -> mass "Timeout" kick (which itself couldn't flush:
+   zombie ESTABLISHED sockets, empty server log).
+4. **Fixes**: scenario geometry now guarantees pregen ⊇ forceload ⊇
+   (wander + view + mob-roam margin) — spawn pregen 14/forceload 6,
+   spread10k pregen 14/spread 6; forceloadSquare bounds made inclusive;
+   pregen worlds cached under ~/minecom-bench/pregen-cache/ keyed by
+   (seed, radius) (~30 min once, file-copy per run after);
+   `-Djdk.virtualThreadScheduler.parallelism=8` gives carrier headroom.
+
+**Results (this laptop, i7-5500U 2c/4t, 5400rpm HDD)**: spawn 15/15 bots,
+150s, 20.0 TPS flat, MSPT p50 2.9/p95 3.9/p99 8.5 ms; spread10k 15/15,
+180s, 20.0 TPS, p50 5.5/p95 9.7/p99 20.1 ms. All five P0 scenarios real.
+
+**Architecture flag for P1 (MASTERPLAN §5)**: worldgen sharing the
+virtual-thread carrier pool couples generation bursts to NETWORK READ
+starvation. Real players exploring fresh terrain on a low-core host hit a
+milder version of this today. P1's chunk-pipeline rebuild must move
+generation to a bounded dedicated executor — speeding it up alone doesn't
+fix the coupling.
+
+---
+
+## ORIGINAL 2026-07-16 ENTRY (investigation trail): minecom bot-scenario connections still die mid-run after six real fixes (2026-07-16, Sonnet 5) — blocks MASTERPLAN §4 P0's spawn/spread10k numbers against minecom
 
 Picked up the "Remaining" section of the entry below (harness ergonomics +
 running (a)/(b) to real numbers). Landed all of the harness ergonomics

@@ -307,6 +307,16 @@ second harness (azalea bots) before publishing anything.
 
 ## 5. Architecture & maintainability
 
+0. **Worldgen must come off the virtual-thread carrier pool (found
+   2026-07-16, P0 read-stall investigation — see HANDOFF)**: chunk
+   generation currently executes on the same carriers as every
+   connection's read loop, so a generation burst (mobs dragging the chunk
+   frontier, players exploring) starves network reads globally on low-core
+   hosts — observed as a total-server mass "Timeout" kick with a healthy
+   tick thread. P1's chunk-pipeline rebuild must give generation a bounded
+   dedicated executor; making generation faster does not remove the
+   coupling. This is also a design input for P2: region threads must never
+   share their execution substrate with the network layer.
 1. **Unification pass** (blocked on §2, unchanged scope from CONVENTIONS
    §11): naming/lifecycle/map-idiom convergence, Bootstrap imports, god-class
    splits. PlayTest.java is 7,348 lines — split *by section* along the
