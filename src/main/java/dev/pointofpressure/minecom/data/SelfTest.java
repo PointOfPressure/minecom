@@ -1493,6 +1493,12 @@ public final class SelfTest {
                         net.minestom.server.potion.PotionEffect.SPEED,
                         net.minestom.server.potion.PotionEffect.HASTE, 4));
 
+        // Conduit power radius (ConduitBlockEntity.applyEffects): size/7*16.
+        check("conduit: power radius is size/7*16 across the frame range (16->32, 42->96)",
+                dev.pointofpressure.minecom.blocks.Conduits.effectRange(16) == 32
+                        && dev.pointofpressure.minecom.blocks.Conduits.effectRange(36) == 80
+                        && dev.pointofpressure.minecom.blocks.Conduits.effectRange(42) == 96);
+
         emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
             emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");

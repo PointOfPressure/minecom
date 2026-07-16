@@ -258,6 +258,15 @@ leftovers.
   10-blocks/tick incremental beamSections walk), no beam colour sections or
   CONSTRUCT_BEACON advancement, the set-beacon packet maps PotionType->effect
   by key.
+- Conduits landed 2026-07-16 (Opus, Tier 3 batch 1 — `blocks/Conduits.java`,
+  ported from ConduitBlockEntity): updateShape 3x3x3 water gate + radius-2
+  prismarine-family frame count, activation (>=16) and hunting (>=42),
+  size/7*16 power radius, gameTime%40 Conduit Power to in-water/rain players
+  in range, and the 4-magic-damage pulse to a random hostile mob in water
+  within 8 blocks. Simplified: no nautilus/attack particles, destroy target
+  re-selected each cadence (not persisted across ticks), "in water or rain"
+  treats rain as raining + sky access, hostile set is an explicit monster
+  enumeration (the vanilla Enemy interface).
 - Redstone.java `containerSignal` — **expanded 2026-07-11 (Fable)**: added
   copper bulb (LIT=15), crafter (filled+locked slots), sculk sensors (last
   vibration frequency while active). Still missing: beehive honey level (no

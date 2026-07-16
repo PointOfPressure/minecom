@@ -202,6 +202,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.ItemFrames.register(events);
         dev.pointofpressure.minecom.blocks.ArmorStands.register(events);
         dev.pointofpressure.minecom.blocks.Beacons.register(events, overworld);
+        dev.pointofpressure.minecom.blocks.Conduits.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Cauldrons.register(events);
         dev.pointofpressure.minecom.blocks.Bells.register(events);
         dev.pointofpressure.minecom.blocks.ShulkerBoxes.register(events);

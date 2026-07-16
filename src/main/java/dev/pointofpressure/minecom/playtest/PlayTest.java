@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 844;
+    private static final int EXPECTED_CHECK_COUNT = 853;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -254,6 +254,7 @@ public final class PlayTest {
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
         scenario("armor stand: place/consume, held-item equip + swap, bare-hand take, NBT flags, marker ignores interaction, two-hit break drops item + gear", PlayTest::scenarioArmorStand);
         scenario("beacon: pyramid levels 1-4, beam needs clear sky (glass passes), menu validates + consumes payment, effects apply in range at the right amp", PlayTest::scenarioBeacon);
+        scenario("conduit: 3x3x3 water gate + radius-2 prismarine ring gate activation (16) and hunting (42), power radius size/7*16, in-water power, hostile pulse", PlayTest::scenarioConduit);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -1143,6 +1144,106 @@ public final class PlayTest {
 
         world.setBlock(new BlockVec(bx, by + 3, bz), Block.AIR);
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Conduit (ConduitBlockEntity decompile): the 3x3x3 must be water, then the radius-2
+     * prismarine-family ring counts toward activation (>=16) and hunting (>=42); the conduit
+     * power radius is size/7*16; an active conduit grants Conduit Power to in-water players and a
+     * hunting one deals 4 magic damage to a hostile mob in water within 8 blocks.
+     */
+    private static void scenarioConduit() {
+        clearEntitiesExceptPlayer();
+        int cx = 120, cz = 120, cy = Y + 12;
+        BlockVec conduit = new BlockVec(cx, cy, cz);
+        // conduit itself is waterlogged (its own cell counts as water)
+        world.setBlock(conduit, Block.CONDUIT.withProperty("waterlogged", "true"));
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dz = -1; dz <= 1; dz++)
+                    if (dx != 0 || dy != 0 || dz != 0)
+                        world.setBlock(new BlockVec(cx + dx, cy + dy, cz + dz), Block.WATER);
+        // fill every radius-2 frame-ring position with a prismarine-family block (mixed)
+        java.util.List<BlockVec> ring = new java.util.ArrayList<>();
+        Block[] fam = {Block.PRISMARINE, Block.PRISMARINE_BRICKS, Block.SEA_LANTERN, Block.DARK_PRISMARINE};
+        int fi = 0;
+        for (int ox = -2; ox <= 2; ox++)
+            for (int oy = -2; oy <= 2; oy++)
+                for (int oz = -2; oz <= 2; oz++) {
+                    int ax = Math.abs(ox), ay = Math.abs(oy), az = Math.abs(oz);
+                    if ((ax > 1 || ay > 1 || az > 1)
+                            && (ox == 0 && (ay == 2 || az == 2)
+                            || oy == 0 && (ax == 2 || az == 2)
+                            || oz == 0 && (ax == 2 || ay == 2))) {
+                        BlockVec p = new BlockVec(cx + ox, cy + oy, cz + oz);
+                        ring.add(p);
+                        world.setBlock(p, fam[fi++ % fam.length]);
+                    }
+                }
+        dev.pointofpressure.minecom.blocks.Conduits.track(conduit);
+        dev.pointofpressure.minecom.blocks.Conduits.recompute(conduit);
+        check("a full prismarine-family frame counts 42 blocks (mixed family accepted)",
+                dev.pointofpressure.minecom.blocks.Conduits.frameSize(conduit) == 42);
+        check("a full frame is active and hunting",
+                dev.pointofpressure.minecom.blocks.Conduits.isActive(conduit)
+                        && dev.pointofpressure.minecom.blocks.Conduits.isHunting(conduit));
+
+        // drop the frame below the kill size but above the active size
+        for (int i = 0; i < 6; i++) world.setBlock(ring.get(i), Block.WATER);
+        dev.pointofpressure.minecom.blocks.Conduits.recompute(conduit);
+        int partial = dev.pointofpressure.minecom.blocks.Conduits.frameSize(conduit);
+        check("a partial frame (36 blocks) is active but not hunting", partial == 36
+                && dev.pointofpressure.minecom.blocks.Conduits.isActive(conduit)
+                && !dev.pointofpressure.minecom.blocks.Conduits.isHunting(conduit));
+        check("the conduit power radius follows size/7*16 (36 -> 80)",
+                dev.pointofpressure.minecom.blocks.Conduits.effectRange(36) == 80);
+
+        // strip below the active threshold -> inactive
+        for (int i = 6; i < 30 && i < ring.size(); i++) world.setBlock(ring.get(i), Block.WATER);
+        dev.pointofpressure.minecom.blocks.Conduits.recompute(conduit);
+        check("a frame below 16 blocks is inactive",
+                !dev.pointofpressure.minecom.blocks.Conduits.isActive(conduit));
+
+        // rebuild the full frame, then break the water gate
+        fi = 0;
+        for (BlockVec p : ring) world.setBlock(p, fam[fi++ % fam.length]);
+        world.setBlock(new BlockVec(cx + 1, cy, cz), Block.STONE); // an inner cell no longer water
+        dev.pointofpressure.minecom.blocks.Conduits.recompute(conduit);
+        check("a non-water block inside the 3x3x3 fails the water gate (size 0, inactive)",
+                dev.pointofpressure.minecom.blocks.Conduits.frameSize(conduit) == 0
+                        && !dev.pointofpressure.minecom.blocks.Conduits.isActive(conduit));
+        world.setBlock(new BlockVec(cx + 1, cy, cz), Block.WATER);
+        dev.pointofpressure.minecom.blocks.Conduits.recompute(conduit);
+
+        // conduit power reaches an in-water player, but not a dry one
+        player.clearEffects();
+        player.teleport(new Pos(cx + 0.5, cy, cz + 0.5)).join(); // standing in the conduit's water
+        dev.pointofpressure.minecom.blocks.Conduits.applyEffects(conduit);
+        check("an in-water player within range gains Conduit Power",
+                dev.pointofpressure.minecom.survival.Potions.effectLevel(player,
+                        net.minestom.server.potion.PotionEffect.CONDUIT_POWER) > 0);
+        player.clearEffects();
+        player.teleport(new Pos(cx + 5.5, cy + 3, cz + 0.5)).join(); // dry air above the frame
+        dev.pointofpressure.minecom.blocks.Conduits.applyEffects(conduit);
+        check("a dry player (not in water or rain) gains no Conduit Power",
+                dev.pointofpressure.minecom.survival.Potions.effectLevel(player,
+                        net.minestom.server.potion.PotionEffect.CONDUIT_POWER) == 0);
+
+        // hunting frame damages a hostile mob standing in the water
+        var drowned = Mobs.spawn("drowned", world, new Pos(cx + 0.5, cy, cz + 1.5));
+        tick(2);
+        float hpBefore = drowned == null ? 0 : drowned.getHealth();
+        net.minestom.server.entity.LivingEntity hit =
+                dev.pointofpressure.minecom.blocks.Conduits.attackTarget(conduit);
+        check("a hunting conduit damages a hostile mob in its water (4 magic damage)",
+                drowned != null && hit == drowned && drowned.getHealth() < hpBefore);
+
+        clearEntitiesExceptPlayer();
+        for (int y = cy - 2; y <= cy + 2; y++)
+            for (int x = cx - 2; x <= cx + 2; x++)
+                for (int z = cz - 2; z <= cz + 2; z++)
+                    world.setBlock(new BlockVec(x, y, z), Block.AIR);
         resetPlayer();
     }
 
