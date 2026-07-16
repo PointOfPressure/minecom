@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 822;
+    private static final int EXPECTED_CHECK_COUNT = 832;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -252,6 +252,7 @@ public final class PlayTest {
         scenario("structure loot: chest/barrel/dispenser roll a real vanilla loot table on first open, not before, not twice; barrel lid blockstate toggles open/close", PlayTest::scenarioStructureLoot);
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
+        scenario("armor stand: place/consume, held-item equip + swap, bare-hand take, NBT flags, marker ignores interaction, two-hit break drops item + gear", PlayTest::scenarioArmorStand);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -929,6 +930,110 @@ public final class PlayTest {
         rs(70, Y + 1, 67, Block.AIR);
         world.setBlock(support, Block.AIR);
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Armor stand (ArmorStand / ArmorStandItem decompile): placing off a non-DOWN face spawns
+     * the entity and consumes one item; a held-item click equips the item's natural slot and a
+     * bare-hand click at the right height takes it back; the Invisible/Small/NoBasePlate/Marker
+     * flags parse off the placement item's NBT; a marker ignores interaction; and two quick
+     * attacks break it, popping the armor_stand item plus every equipped stack.
+     */
+    private static void scenarioArmorStand() {
+        clearEntitiesExceptPlayer();
+        player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
+        BlockVec support = new BlockVec(5, Y, 5);
+        world.setBlock(support, Block.STONE);
+        useItemOnBlock(ItemStack.of(Material.ARMOR_STAND, 3), support, BlockFace.TOP);
+        tick(2);
+        net.minestom.server.entity.LivingEntity stand = (net.minestom.server.entity.LivingEntity)
+                world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ARMOR_STAND)
+                        .findFirst().orElse(null);
+        check("using an armor_stand item on a block's top face spawns an armor stand entity", stand != null);
+        check("placing an armor stand consumes exactly one item (had 3, now 2)",
+                player.getItemInMainHand().amount() == 2);
+
+        // equip: a held chestplate goes into the chest slot and leaves the hand
+        player.setItemInMainHand(ItemStack.of(Material.DIAMOND_CHESTPLATE));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, stand, net.minestom.server.entity.PlayerHand.MAIN, new Vec(0, 1.2, 0)));
+        check("right-clicking with a chestplate equips the stand's chest slot and empties the hand",
+                stand.getEquipment(EquipmentSlot.CHESTPLATE).material() == Material.DIAMOND_CHESTPLATE
+                        && player.getItemInMainHand().isAir());
+
+        // swap: a second chestplate replaces the first, returning the old one to the player
+        player.getInventory().clear();
+        player.setItemInMainHand(ItemStack.of(Material.NETHERITE_CHESTPLATE));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, stand, net.minestom.server.entity.PlayerHand.MAIN, new Vec(0, 1.2, 0)));
+        check("right-clicking with another chestplate swaps it in and returns the old one",
+                stand.getEquipment(EquipmentSlot.CHESTPLATE).material() == Material.NETHERITE_CHESTPLATE
+                        && playerHasItem(Material.DIAMOND_CHESTPLATE));
+
+        // bare-hand click at chest height takes the equipped item back out
+        player.getInventory().clear();
+        player.setItemInMainHand(ItemStack.AIR);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, stand, net.minestom.server.entity.PlayerHand.MAIN, new Vec(0, 1.2, 0)));
+        check("a bare-hand click at chest height takes the chestplate back off the stand",
+                stand.getEquipment(EquipmentSlot.CHESTPLATE).isAir() && playerHasItem(Material.NETHERITE_CHESTPLATE));
+
+        // flags parsed off the placement item's NBT
+        clearEntitiesExceptPlayer();
+        ItemStack flagged = ItemStack.of(Material.ARMOR_STAND)
+                .withTag(net.minestom.server.tag.Tag.Boolean("Invisible"), true)
+                .withTag(net.minestom.server.tag.Tag.Boolean("Small"), true)
+                .withTag(net.minestom.server.tag.Tag.Boolean("NoBasePlate"), true)
+                .withTag(net.minestom.server.tag.Tag.Boolean("Marker"), true);
+        world.setBlock(support, Block.STONE);
+        useItemOnBlock(flagged, support, BlockFace.TOP);
+        tick(2);
+        net.minestom.server.entity.LivingEntity marker = (net.minestom.server.entity.LivingEntity)
+                world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ARMOR_STAND)
+                        .findFirst().orElse(null);
+        net.minestom.server.entity.metadata.other.ArmorStandMeta mm =
+                (net.minestom.server.entity.metadata.other.ArmorStandMeta) marker.getEntityMeta();
+        check("Invisible/Small/NoBasePlate/Marker flags parse off the placement item onto the entity meta",
+                marker.isInvisible() && mm.isSmall() && mm.isHasNoBasePlate() && mm.isMarker());
+
+        // a marker ignores interaction entirely
+        player.setItemInMainHand(ItemStack.of(Material.DIAMOND_CHESTPLATE));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, marker, net.minestom.server.entity.PlayerHand.MAIN, new Vec(0, 1.2, 0)));
+        check("a marker armor stand ignores equip interaction",
+                marker.getEquipment(EquipmentSlot.CHESTPLATE).isAir()
+                        && player.getItemInMainHand().material() == Material.DIAMOND_CHESTPLATE);
+
+        // pose: applyPose drives the head rotation meta
+        clearEntitiesExceptPlayer();
+        world.setBlock(support, Block.STONE);
+        useItemOnBlock(ItemStack.of(Material.ARMOR_STAND), support, BlockFace.TOP);
+        tick(2);
+        net.minestom.server.entity.LivingEntity posed = (net.minestom.server.entity.LivingEntity)
+                world.getEntities().stream().filter(en -> en.getEntityType() == EntityType.ARMOR_STAND)
+                        .findFirst().orElse(null);
+        dev.pointofpressure.minecom.blocks.ArmorStands.applyPose(posed,
+                new Vec(30, 45, 60), null, null, null, null, null);
+        net.minestom.server.entity.metadata.other.ArmorStandMeta pm =
+                (net.minestom.server.entity.metadata.other.ArmorStandMeta) posed.getEntityMeta();
+        check("applyPose drives the head-rotation pose meta", pm.getHeadRotation().equals(new Vec(30, 45, 60)));
+
+        // break: one hit only marks; a second quick hit breaks + drops the item and its gear
+        posed.setEquipment(EquipmentSlot.HELMET, ItemStack.of(Material.GOLDEN_HELMET));
+        EventDispatcher.call(new EntityAttackEvent(player, posed));
+        check("a single attack does not break the stand", !posed.isRemoved());
+        EventDispatcher.call(new EntityAttackEvent(player, posed));
+        tick(2);
+        boolean standItem = world.getEntities().stream().anyMatch(en ->
+                en instanceof net.minestom.server.entity.ItemEntity ie && ie.getItemStack().material() == Material.ARMOR_STAND);
+        boolean helmetItem = world.getEntities().stream().anyMatch(en ->
+                en instanceof net.minestom.server.entity.ItemEntity ie && ie.getItemStack().material() == Material.GOLDEN_HELMET);
+        check("a second quick attack breaks the stand, dropping the armor_stand item + its equipment",
+                posed.isRemoved() && standItem && helmetItem);
+
+        clearEntitiesExceptPlayer();
+        world.setBlock(support, Block.AIR);
         resetPlayer();
     }
 
@@ -3326,6 +3431,14 @@ public final class PlayTest {
         EventDispatcher.call(new PlayerBlockInteractEvent(player, PlayerHand.MAIN, world,
                 world.getBlock(pos), pos, new Vec(0.5, 0.5, 0.5), BlockFace.TOP));
         tick(1);
+    }
+
+    /** Whether the player's inventory currently holds at least one of the given material. */
+    private static boolean playerHasItem(Material material) {
+        for (ItemStack stack : player.getInventory().getItemStacks()) {
+            if (stack.material() == material) return true;
+        }
+        return false;
     }
 
     private static void useItemOnBlock(ItemStack item, BlockVec pos, BlockFace face) {

@@ -235,9 +235,14 @@ leftovers.
   orbs on landing), glass-bottle water fill, shears via `Shearing.shear`
   (no tool durability in containers), armor equipping onto living entities
   with empty slots, firework rockets (cosmetic flight only — no explosion
-  or elytra boost). Still missing: armor stands (no armor-stand system),
+  or elytra boost). Still missing:
   brush (no archaeology), candle placement, chest-onto-donkey (no
-  chested-horse inventory). Honeycomb/waxing landed 2026-07-12 (Sonnet,
+  chested-horse inventory). Armor stands landed 2026-07-16 (Opus, Tier 3
+  batch 1 — `blocks/ArmorStands.java`: place/consume, cursor-height equip +
+  swap + bare-hand take, Invisible/Small/NoBasePlate/Marker/ShowArms + pose
+  from item NBT, two-hit player break dropping the item + gear; simplified
+  to the player-break path only, no incremental-health/fire/explosion break
+  branches, disabled-slots always 0, poses meta-only). Honeycomb/waxing landed 2026-07-12 (Sonnet,
   `blocks/CopperWaxing.java` — see the random-tick engine entry above, now
   that oxidation exists for it to block). Sculk
   shriekers landed too (Vibrations.java): player-caused shrieks, Darkness,
