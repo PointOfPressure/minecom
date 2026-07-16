@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 832;
+    private static final int EXPECTED_CHECK_COUNT = 844;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -253,6 +253,7 @@ public final class PlayTest {
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
         scenario("armor stand: place/consume, held-item equip + swap, bare-hand take, NBT flags, marker ignores interaction, two-hit break drops item + gear", PlayTest::scenarioArmorStand);
+        scenario("beacon: pyramid levels 1-4, beam needs clear sky (glass passes), menu validates + consumes payment, effects apply in range at the right amp", PlayTest::scenarioBeacon);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -1034,6 +1035,114 @@ public final class PlayTest {
 
         clearEntitiesExceptPlayer();
         world.setBlock(support, Block.AIR);
+        resetPlayer();
+    }
+
+    /**
+     * Beacon (BeaconBlockEntity / BeaconMenu decompile): a widening BEACON_BASE_BLOCKS pyramid
+     * sets the level 0-4; the beam (and thus effects) only carry with clear sky above; the menu
+     * validates an effect choice against the level and consumes one payment item; on the 80-tick
+     * cadence an active beacon reapplies its effect to in-range players (amp II at level 4 when
+     * secondary == primary).
+     */
+    private static void scenarioBeacon() {
+        clearEntitiesExceptPlayer();
+        int bx = 150, bz = 150, by = Y + 1;
+        BlockVec beacon = new BlockVec(bx, by, bz);
+        world.setBlock(beacon, Block.BEACON);
+        // level-1 pyramid: a 3x3 of iron directly beneath the beacon
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dz = -1; dz <= 1; dz++)
+                world.setBlock(new BlockVec(bx + dx, by - 1, bz + dz), Block.IRON_BLOCK);
+        dev.pointofpressure.minecom.blocks.Beacons.track(beacon);
+        dev.pointofpressure.minecom.blocks.Beacons.recompute(beacon);
+        check("a single 3x3 base layer reads as a level-1 beacon",
+                dev.pointofpressure.minecom.blocks.Beacons.levels(beacon) == 1);
+
+        // extend to a full level-4 pyramid (5x5, 7x7, 9x9 below)
+        for (int step = 2; step <= 4; step++)
+            for (int dx = -step; dx <= step; dx++)
+                for (int dz = -step; dz <= step; dz++)
+                    world.setBlock(new BlockVec(bx + dx, by - step, bz + dz), Block.IRON_BLOCK);
+        dev.pointofpressure.minecom.blocks.Beacons.recompute(beacon);
+        check("a full four-layer pyramid reads as level 4",
+                dev.pointofpressure.minecom.blocks.Beacons.levels(beacon) == 4);
+        check("a clear column above the beacon activates the beam",
+                dev.pointofpressure.minecom.blocks.Beacons.beamActive(beacon));
+
+        // an opaque block above breaks the beam; removing it restores it
+        world.setBlock(new BlockVec(bx, by + 3, bz), Block.STONE);
+        dev.pointofpressure.minecom.blocks.Beacons.recompute(beacon);
+        check("an opaque block above the beacon breaks the beam",
+                !dev.pointofpressure.minecom.blocks.Beacons.beamActive(beacon));
+        world.setBlock(new BlockVec(bx, by + 3, bz), Block.AIR);
+        // glass passes the beam (BeaconBeamBlock, lightBlocked 0)
+        world.setBlock(new BlockVec(bx, by + 3, bz), Block.GLASS);
+        dev.pointofpressure.minecom.blocks.Beacons.recompute(beacon);
+        check("glass above the beacon still lets the beam through",
+                dev.pointofpressure.minecom.blocks.Beacons.beamActive(beacon));
+        world.setBlock(new BlockVec(bx, by + 3, bz), Block.AIR);
+        dev.pointofpressure.minecom.blocks.Beacons.recompute(beacon);
+
+        // menu payment: a valid selection at level 4 consumes one payment item
+        net.minestom.server.inventory.type.BeaconInventory menu =
+                new net.minestom.server.inventory.type.BeaconInventory(net.kyori.adventure.text.Component.text("Beacon"));
+        menu.setItemStack(0, ItemStack.of(Material.IRON_INGOT));
+        boolean picked = dev.pointofpressure.minecom.blocks.Beacons.selectEffects(
+                beacon, net.minestom.server.potion.PotionEffect.SPEED, null, menu);
+        check("selecting a valid effect through the menu is accepted and consumes the payment item",
+                picked && menu.getItemStack(0).isAir()
+                        && dev.pointofpressure.minecom.blocks.Beacons.primary(beacon)
+                                == net.minestom.server.potion.PotionEffect.SPEED);
+
+        // gating: a secondary needs level 4 and must be regeneration or a copy of the primary
+        menu.setItemStack(0, ItemStack.of(Material.EMERALD));
+        boolean regenOk = dev.pointofpressure.minecom.blocks.Beacons.selectEffects(beacon,
+                net.minestom.server.potion.PotionEffect.SPEED,
+                net.minestom.server.potion.PotionEffect.REGENERATION, menu);
+        check("a regeneration secondary is valid at level 4", regenOk);
+        menu.setItemStack(0, ItemStack.of(Material.EMERALD));
+        boolean badSecondary = dev.pointofpressure.minecom.blocks.Beacons.selectEffects(beacon,
+                net.minestom.server.potion.PotionEffect.SPEED,
+                net.minestom.server.potion.PotionEffect.HASTE, menu);
+        check("a non-regeneration secondary that differs from the primary is rejected",
+                !badSecondary && !menu.getItemStack(0).isAir());
+        boolean noPay = dev.pointofpressure.minecom.blocks.Beacons.selectEffects(beacon,
+                net.minestom.server.potion.PotionEffect.SPEED, null,
+                new net.minestom.server.inventory.type.BeaconInventory(net.kyori.adventure.text.Component.text("Beacon")));
+        check("an effect selection with no payment item is rejected", !noPay);
+
+        // effect application: amp II when secondary == primary, and only within range
+        menu.setItemStack(0, ItemStack.of(Material.DIAMOND));
+        dev.pointofpressure.minecom.blocks.Beacons.selectEffects(beacon,
+                net.minestom.server.potion.PotionEffect.SPEED,
+                net.minestom.server.potion.PotionEffect.SPEED, menu);
+        player.clearEffects();
+        player.teleport(new Pos(bx + 0.5, by + 1, bz + 0.5)).join();
+        dev.pointofpressure.minecom.blocks.Beacons.applyEffects(beacon);
+        check("an in-range player gains the beacon's primary effect at amp II (secondary == primary)",
+                dev.pointofpressure.minecom.survival.Potions.effectLevel(player,
+                        net.minestom.server.potion.PotionEffect.SPEED) == 2);
+
+        player.clearEffects();
+        player.teleport(new Pos(bx + 60.5, by + 1, bz + 0.5)).join();
+        dev.pointofpressure.minecom.blocks.Beacons.applyEffects(beacon);
+        check("a player beyond the (level*10+10) range gains no beacon effect",
+                dev.pointofpressure.minecom.survival.Potions.effectLevel(player,
+                        net.minestom.server.potion.PotionEffect.SPEED) == 0);
+
+        // a broken beam suppresses effects even at level 4
+        player.clearEffects();
+        player.teleport(new Pos(bx + 0.5, by + 1, bz + 0.5)).join();
+        world.setBlock(new BlockVec(bx, by + 3, bz), Block.STONE);
+        dev.pointofpressure.minecom.blocks.Beacons.recompute(beacon);
+        dev.pointofpressure.minecom.blocks.Beacons.applyEffects(beacon);
+        check("a beacon with a broken beam applies no effect even at level 4",
+                dev.pointofpressure.minecom.survival.Potions.effectLevel(player,
+                        net.minestom.server.potion.PotionEffect.SPEED) == 0);
+
+        world.setBlock(new BlockVec(bx, by + 3, bz), Block.AIR);
+        clearEntitiesExceptPlayer();
         resetPlayer();
     }
 

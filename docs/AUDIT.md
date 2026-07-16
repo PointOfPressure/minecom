@@ -248,6 +248,16 @@ leftovers.
   shriekers landed too (Vibrations.java): player-caused shrieks, Darkness,
   warning levels; the warden itself landed 2026-07-12 (Fable — see the
   mobs/ section entry). (each S once its base system exists)
+- Beacons landed 2026-07-16 (Opus, Tier 3 batch 1 — `blocks/Beacons.java`,
+  ported from BeaconBlockEntity/BeaconMenu): updateBase pyramid levels 0-4
+  over BEACON_BASE_BLOCKS, beam/effect sky-access gate (lightBlocked>=15
+  breaks it, glass passes), validateEffects level-gating, menu payment-item
+  consumption, and the gameTime%80 effect application (level*10+10 range,
+  (9+level*2)*20 duration, amp II at level 4 when secondary==primary).
+  Simplified: whole beam/level recompute on the 80-tick cadence (not the
+  10-blocks/tick incremental beamSections walk), no beam colour sections or
+  CONSTRUCT_BEACON advancement, the set-beacon packet maps PotionType->effect
+  by key.
 - Redstone.java `containerSignal` — **expanded 2026-07-11 (Fable)**: added
   copper bulb (LIT=15), crafter (filled+locked slots), sculk sensors (last
   vibration frequency while active). Still missing: beehive honey level (no

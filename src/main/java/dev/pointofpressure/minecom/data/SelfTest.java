@@ -1468,6 +1468,31 @@ public final class SelfTest {
                             ItemStack.of(Material.IRON_PICKAXE), ItemStack.AIR).isAir());
         }
 
+        // Beacon menu effect-validation (BeaconBlockEntity.validateEffects), a pure level-gating table.
+        check("beacon: SPEED (level-1 effect) is a valid primary at level 1",
+                dev.pointofpressure.minecom.blocks.Beacons.validateEffects(
+                        net.minestom.server.potion.PotionEffect.SPEED, null, 1));
+        check("beacon: STRENGTH (level-3 effect) is rejected as a primary at level 2",
+                !dev.pointofpressure.minecom.blocks.Beacons.validateEffects(
+                        net.minestom.server.potion.PotionEffect.STRENGTH, null, 2));
+        check("beacon: REGENERATION cannot be a primary (its required level is 4)",
+                !dev.pointofpressure.minecom.blocks.Beacons.validateEffects(
+                        net.minestom.server.potion.PotionEffect.REGENERATION, null, 4));
+        check("beacon: a secondary needs level 4",
+                !dev.pointofpressure.minecom.blocks.Beacons.validateEffects(
+                        net.minestom.server.potion.PotionEffect.SPEED,
+                        net.minestom.server.potion.PotionEffect.REGENERATION, 3));
+        check("beacon: level 4 allows a regeneration secondary or a copy of the primary, not a third effect",
+                dev.pointofpressure.minecom.blocks.Beacons.validateEffects(
+                        net.minestom.server.potion.PotionEffect.SPEED,
+                        net.minestom.server.potion.PotionEffect.REGENERATION, 4)
+                && dev.pointofpressure.minecom.blocks.Beacons.validateEffects(
+                        net.minestom.server.potion.PotionEffect.SPEED,
+                        net.minestom.server.potion.PotionEffect.SPEED, 4)
+                && !dev.pointofpressure.minecom.blocks.Beacons.validateEffects(
+                        net.minestom.server.potion.PotionEffect.SPEED,
+                        net.minestom.server.potion.PotionEffect.HASTE, 4));
+
         emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
             emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
