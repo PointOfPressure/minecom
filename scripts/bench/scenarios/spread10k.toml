@@ -1,17 +1,35 @@
-# Scenario (b), MASTERPLAN §4 P0: N bots spread over a pregenerated
-# 10,000-chunk (100x100) world. Blocked as of 2026-07-15 by the rust-mc-bot
-# connection bug — see docs/HANDOFF.md's escalation entry.
+# Scenario (b), MASTERPLAN §4 P0: N bots spread over a pregenerated world —
+# distinct load shape from (a): many separate chunk columns touched instead
+# of one shared spawn column, no per-player view-square overlap to amortize.
+# The rust-mc-bot connection bug (docs/HANDOFF.md, 2026-07-15) is fixed as of
+# commit 909d817. The full 10,000-chunk (100x100) pregen the name/original
+# spec implies is NOT what this laptop runs: at ~0.46 chunks/sec (see
+# chunkgen.toml) that's ~6 hours just to pregen, before any bot even joins —
+# docs/HANDOFF.md's prior session already flagged this and smoke-tested the
+# pregen→spread-teleport pipeline at radius=4 instead of attempting it. This
+# config keeps the file's name (it's still "spread", not "spawn") but scales
+# the actual radius down to what this laptop can pregen in one session; bump
+# both `pregen_radius_chunks` and `MINECOM_BENCH_SPREAD_RADIUS` together (they
+# must match — the spread teleport picks a random column inside the radius,
+# and any column outside the pregenerated square falls through to live
+# cold-gen) for a Threadripper run (MASTERPLAN §11.1).
 name = "spread10k"
 mode = "live"
-description = "N bots spread across a pregenerated 100x100-chunk (10,000-chunk) world"
+description = "N bots spread across a pregenerated square of chunks (scaled down from 10k on this laptop — see comment)"
 duration_seconds = 180
-bots = 100
-bot_join_batch = 100
+bots = 15
 world = "pregen"
-pregen_radius_chunks = 50
+pregen_radius_chunks = 8
 pregen_seed = 20260708
+warm_settle_seconds = 60
 bench_scenario_env = "spread"
-bench_extra_env = { MINECOM_BENCH_SPREAD_RADIUS = "50" }
+bench_extra_env = { MINECOM_BENCH_SPREAD_RADIUS = "8" }
 join_hold_seconds = 10
 join_timeout_seconds = 60
+# join pacing: batches of ~5 with a gap, same rationale as spawn.toml's ramp
+# step — a mass-connect burst is the cold-join stall this laptop's chunk
+# pipeline can't keep up with. No ramp/knee-finding here (that's scenario
+# (a)'s job); this scenario measures steady state at a fixed target.
+bot_join_batch = 5
+bot_join_batch_gap_seconds = 15
 ramp = false

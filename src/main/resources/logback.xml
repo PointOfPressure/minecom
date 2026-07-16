@@ -4,6 +4,15 @@
       <pattern>%d{HH:mm:ss} [%level] %logger{0}: %msg%n</pattern>
     </encoder>
   </appender>
+  <!-- Minestom's own packet reader warns on any trailing unread bytes after a
+       successful decode (see PacketReading.readPayload) — harmless per its own
+       source (the packet still deserializes fine, only benign trailing bytes
+       are discarded), but a client sending slightly-oversized position packets
+       at normal tick rate floods this at ~90 lines/sec, and synchronously
+       logging that many lines to this laptop's HDD is itself enough overhead
+       to blow through Minestom's keep-alive budget and get that connection
+       reset (MASTERPLAN §4 P0 finding — see docs/HANDOFF.md). -->
+  <logger name="net.minestom.server.network.packet.PacketReading" level="ERROR"/>
   <root level="INFO">
     <appender-ref ref="STDOUT"/>
   </root>

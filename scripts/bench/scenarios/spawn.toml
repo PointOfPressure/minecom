@@ -1,21 +1,46 @@
 # Scenario (a), MASTERPLAN §4 P0: N bots wandering at the default spawn point.
-# Blocked as of 2026-07-15 by the rust-mc-bot connection bug — see
-# docs/HANDOFF.md's escalation entry. run_scenario.py will fail loudly
-# (not report fake numbers) until that's fixed.
+# The rust-mc-bot connection bug (docs/HANDOFF.md, 2026-07-15) is fixed as of
+# commit 909d817 — what's left is this laptop's own chunk-pipeline ceiling
+# (same entry's "Remaining" section), so this config is sized for THAT: a
+# pregenerated+warm world, paced joins, and a realistic target instead of the
+# "does it fail loudly" 100-bot config from before the fix. Bump `bots` and
+# `pregen_radius_chunks` together for a Threadripper run (MASTERPLAN §11.1).
 name = "spawn"
 mode = "live"
 description = "N bots wandering at the default spawn point"
-duration_seconds = 180
-bots = 100
-bot_join_batch = 100
-world = "production"
+duration_seconds = 150
+bots = 15
+world = "pregen"
+# radius=6 (144 chunks, ~5 min at this laptop's ~0.46 chunks/sec — see
+# chunkgen.toml/docs/BENCHMARKS.md) comfortably covers every bot's
+# BENCH_CHUNK_VIEW_DISTANCE=4 (9x9) view square centered near spawn (0,0)
+# plus the bots' own small per-tick random-walk drift over the run.
+pregen_radius_chunks = 6
+pregen_seed = 20260708
+warm_settle_seconds = 60
 bench_scenario_env = "spawn"
+# MUST match pregen_radius_chunks: BenchSetup.forceloadSquare loads exactly
+# this square into memory before any player can join (see its class comment —
+# Redstone.tick's queue NPEs on a neighbor-changed notification that reaches a
+# chunk never loaded into memory, even if it's already on disk from pregen,
+# and permanently kills the shared redstone scheduler). Bigger than the pregen
+# radius would fall through to live generation for the excess; smaller would
+# reopen the gap this exists to close.
+bench_extra_env = { MINECOM_BENCH_FORCELOAD_RADIUS = "6" }
 join_hold_seconds = 10
 join_timeout_seconds = 60
 
 # Ramp mode: find max bots before sub-20 TPS by joining in batches instead of
 # all at once (MASTERPLAN §4 P0's "max bots before <20 TPS" result field).
+# step=5 (not the pre-fix 20) is the "batches of ~5" pacing this laptop's
+# chunk-streaming ceiling needs — each wave gets a full interval to finish
+# streaming before the next lands.
 ramp = true
-ramp_step = 20
-ramp_interval_seconds = 20
+ramp_step = 5
+# 40s (not 20s): empirically, 20s wasn't enough recovery time between waves on
+# this HDD — a fresh join burst's chunk-streaming I/O was still delaying
+# keep-alive service to the PREVIOUS wave's already-connected bots long enough
+# to trip their 15s kick threshold, a real (if narrow) manifestation of the
+# same chunk-pipeline ceiling this scenario exists to measure.
+ramp_interval_seconds = 40
 ramp_tps_floor = 19.5

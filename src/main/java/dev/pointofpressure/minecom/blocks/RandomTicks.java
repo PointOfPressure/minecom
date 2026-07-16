@@ -537,6 +537,10 @@ public final class RandomTicks {
         int dy = face == 2 ? 1 : face == 3 ? -1 : 0;
         int dz = face == 4 ? 1 : face == 5 ? -1 : 0;
         Point target = pos.add(dx, dy, dz);
+        // a bud right at the edge of a loaded/pregenerated area can face a neighbor
+        // chunk nothing has ever loaded — same class of gap as docs/AUDIT.md's
+        // Portals.tryLight fix; unloaded means "nothing to grow into" here.
+        if (!in.isChunkLoaded(target.blockX() >> 4, target.blockZ() >> 4)) return;
         Block at = in.getBlock(target);
         String key = at.key().value();
         String facing = facingName(dx, dy, dz);

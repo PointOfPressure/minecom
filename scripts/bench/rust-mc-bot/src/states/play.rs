@@ -150,8 +150,28 @@ pub fn write_keep_alive_packet(id: u64) -> Buf {
     buf
 }
 
+/// Set Player Position
+/// https://minecraft.wiki/w/Java_Edition_protocol/Packets#Set_Player_Position
+/// Position-only, no yaw/pitch fields — 0x1E is ClientPlayerPositionPacket in
+/// minecom/Minestom's registry (confirmed by counting PacketVanilla.CLIENT_PLAY
+/// entries), NOT ClientPlayerPositionAndRotationPacket (that's 0x1F). This used
+/// to reuse write_pos's position+rotation layout under this ID, appending two
+/// unwanted f32s (8 bytes) that minecom's packet reader logged as "not fully
+/// read" on every single tick from every bot — benign per Minestom's own
+/// length-prefixed framing, but real noise, and the bot never actually turns
+/// (yaw/pitch were always 0.0 dummies), so there was never a reason to send
+/// the rotation variant here at all.
 pub fn write_current_pos(bot: &Bot) -> Buf {
-    write_pos(bot.x, bot.y, bot.z, 0.0, 0.0)
+    let mut buf = Buf::new();
+    buf.write_packet_id(0x1E);
+
+    buf.write_f64(bot.x);
+    buf.write_f64(bot.y);
+    buf.write_f64(bot.z);
+
+    buf.write_bool(false);
+
+    buf
 }
 
 /// Set Player Position and Rotation
@@ -159,7 +179,7 @@ pub fn write_current_pos(bot: &Bot) -> Buf {
 pub fn write_pos(x: f64, y: f64, z: f64, yaw: f32, pitch: f32) -> Buf {
     // ClientPlayerPositionAndRotationPacket
     let mut buf = Buf::new();
-    buf.write_packet_id(0x1E);
+    buf.write_packet_id(0x1F);
 
     buf.write_f64(x);
     buf.write_f64(y);

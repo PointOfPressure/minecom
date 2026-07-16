@@ -44,9 +44,38 @@ public final class BenchSetup {
             case "redstone" -> stampRedstoneClocks(overworld, envInt("MINECOM_BENCH_REDSTONE_COUNT", 400));
             case "mobfarm" -> stampMobFarm(overworld, envInt("MINECOM_BENCH_MOB_COUNT", 150),
                     System.getenv().getOrDefault("MINECOM_BENCH_MOB_KIND", "zombie"));
-            case "spawn" -> { /* default connect-at-spawn behavior needs no setup */ }
+            case "spawn" -> forceloadSquare(overworld, envInt("MINECOM_BENCH_FORCELOAD_RADIUS", 10));
             default -> LOGGER.warn("Unknown MINECOM_BENCH_SCENARIO={}, ignoring", scenario);
         }
+    }
+
+    /**
+     * Force-loads a square of chunks around spawn before any player can join
+     * (same pattern as {@link #stampRedstoneClocks}/{@link #stampMobFarm}'s own
+     * pre-join loadChunk loops, and PlayTest's own explosion-safety forceload —
+     * see its class comment at the sleep/explosion test). A vanilla-parity
+     * world's natural terrain can contain redstone-reactive structures
+     * (dispenser traps, etc.); {@code Redstone.tick}'s queue does a synchronous
+     * neighbor lookup with no lazy-load fallback, so a neighbor-changed
+     * notification whose target chunk was never loaded into memory (server view
+     * distance only loads what's currently in a player's view square, even
+     * though {@code --genregions} pregen already wrote it to disk) throws
+     * {@code NullPointerException("Unloaded chunk")} and PERMANENTLY kills the
+     * shared redstone scheduler for the rest of the process. Real production
+     * traffic avoids this because players load chunks gradually as they
+     * explore; a bench swarm spawning straight into a small pregenerated bubble
+     * does not get that natural margin, so the harness adds it explicitly here
+     * instead of narrowing MASTERPLAN §4 P0's chunk-view-distance ergonomics
+     * fix to dodge it indirectly.
+     */
+    private static void forceloadSquare(InstanceContainer instance, int radiusChunks) {
+        java.util.List<CompletableFuture<?>> loads = new java.util.ArrayList<>();
+        for (int cx = -radiusChunks; cx < radiusChunks; cx++)
+            for (int cz = -radiusChunks; cz < radiusChunks; cz++)
+                loads.add(instance.loadChunk(cx, cz));
+        CompletableFuture.allOf(loads.toArray(new CompletableFuture[0])).join();
+        LOGGER.info("Bench forceload: {}x{} chunks around spawn kept in memory (redstone-scheduler safety margin)",
+                radiusChunks * 2, radiusChunks * 2);
     }
 
     /** Scatters each newly-joined player across a pregenerated square (scenario b). */
@@ -57,6 +86,7 @@ public final class BenchSetup {
             LOGGER.warn("MINECOM_BENCH_SCENARIO=spread but no vanilla generator is active (flat world?) — skipping");
             return;
         }
+        forceloadSquare(overworld, radiusChunks);
         events.addListener(PlayerSpawnEvent.class, event -> {
             if (!event.isFirstSpawn()) return;
             var rng = ThreadLocalRandom.current();

@@ -321,6 +321,14 @@ public final class VNaturalSpawner {
             for (int ll = 0; ll < max; ll++) {
                 x += rng.nextInt(6) - rng.nextInt(6);
                 z += rng.nextInt(6) - rng.nextInt(6);
+                // this cluster-drift walk can wander ~20 blocks from the starting chunk
+                // (mirrors real vanilla's NaturalSpawner, which never needs this guard
+                // because production chunk loading always keeps well ahead of it — see
+                // docs/AUDIT.md's Portals.tryLight precedent for this project's own
+                // established fix for that same class of gap); one guard here protects
+                // every downstream check (weightedPick/isValidSpawnPositionForType/
+                // isSpawnPositionOk/checkSpawnRules) instead of hunting each separately.
+                if (!instance.isChunkLoaded(x >> 4, z >> 4)) continue;
                 double xx = x + 0.5, zz = z + 0.5;
                 Player near = nearestPlayer(xx, sy, zz);
                 if (near == null) continue;
@@ -521,8 +529,13 @@ public final class VNaturalSpawner {
             new Entry("minecraft:magma_cube", 3, 4, 4));
 
     private Entry weightedPick(Cat cat, int x, int y, int z, ThreadLocalRandom rng) {
-        // nether-fortress rule: monsters over nether brick draw from the fortress list
-        if (cat == Cat.MONSTER) {
+        // nether-fortress rule: monsters over nether brick draw from the fortress list.
+        // spawnCategoryForPosition's own cluster-drift loop can walk the candidate
+        // position up to ~20 blocks from its starting chunk (mirrors real vanilla's
+        // NaturalSpawner, which never needs this guard because production chunk
+        // loading always keeps well ahead of it — see docs/AUDIT.md's Portals.tryLight
+        // precedent for this project's own established fix for that same class of gap).
+        if (cat == Cat.MONSTER && instance.isChunkLoaded(x >> 4, z >> 4)) {
             Block below = instance.getBlock(x, y - 1, z);
             if (below != null && below.key().value().equals("nether_bricks")) {
                 return pick(FORTRESS_ENEMIES, rng);

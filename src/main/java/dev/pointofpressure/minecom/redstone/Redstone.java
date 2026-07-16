@@ -303,6 +303,10 @@ public final class Redstone {
         int max = 0;
         for (Vec d : ALL) {
             Point np = pos.add(d);
+            // same unloaded-chunk guard as activated()/blockPowered() below — a neighbor
+            // outside anything ever loaded carries no power, exactly like real vanilla
+            // would find nothing there (see docs/AUDIT.md's Portals.tryLight precedent).
+            if (!instance.isChunkLoaded(np.blockX() >> 4, np.blockZ() >> 4)) continue;
             Block n = instance.getBlock(np);
             String key = n.key().value();
             Vec toMe = d.mul(-1);
@@ -378,6 +382,7 @@ public final class Redstone {
         int max = 0;
         for (Vec d : ALL) {
             Point np = pos.add(d);
+            if (!instance.isChunkLoaded(np.blockX() >> 4, np.blockZ() >> 4)) continue;
             Block n = instance.getBlock(np);
             if (n.key().value().equals("redstone_wire")) continue;
             max = Math.max(max, emitted(n, np, d.mul(-1)));
@@ -463,6 +468,11 @@ public final class Redstone {
         boolean solidAbove = isSolid(instance.getBlock(at.add(0, 1, 0)));
         for (int[] h : HORIZ) {
             Point side = at.add(h[0], 0, h[1]);
+            // `side` can cross into a chunk nothing has ever loaded (a bench bot swarm's
+            // small wander no longer has the room a real player's gradual exploration
+            // gives it — see BenchSetup.forceloadSquare's class comment); the vertical
+            // add()s below stay in `side`'s own chunk column, so this one guard covers them.
+            if (!instance.isChunkLoaded(side.blockX() >> 4, side.blockZ() >> 4)) continue;
             Block sideBlock = instance.getBlock(side);
             if (sideBlock.key().value().equals("redstone_wire")) {
                 result.add(side);
@@ -486,6 +496,10 @@ public final class Redstone {
         for (int[] h : HORIZ) {
             Vec d = new Vec(h[0], 0, h[1]);
             Point side = at.add(d);
+            if (!instance.isChunkLoaded(side.blockX() >> 4, side.blockZ() >> 4)) {
+                wire = wire.withProperty(dirName(d), "none");
+                continue;
+            }
             Block sideBlock = instance.getBlock(side);
             String value = "none";
             String key = sideBlock.key().value();

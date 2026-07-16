@@ -25,6 +25,26 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BENCH_DIR = Path(__file__).resolve().parent
 MINECOM_JAR = REPO_ROOT / "target" / "minecom.jar"
 RUST_BOT = BENCH_DIR / "rust-mc-bot" / "target" / "release" / "rust-mc-bot"
+# Harness ergonomics for weak hardware (MASTERPLAN §4 P0, docs/HANDOFF.md
+# 2026-07-15 "Remaining"): the default (Minestom's own default is 8, vanilla's
+# is 10) sends every player a much wider chunk square than this 5400rpm-HDD
+# laptop can stream fast enough to beat Minestom's 25s keep-alive kick window
+# on a join burst. 4 (9x9=81 chunks/player) is the value scenario configs'
+# pregen radii are sized against below.
+BENCH_CHUNK_VIEW_DISTANCE = 4
+# Minestom's per-player inbound packet queue (default capacity 1,000, drained
+# at most 50/tick — net.minestom.server.entity.Player.addPacketToQueue/
+# interpretPacketQueue) kicks a connection with "Too Many Packets" the instant
+# it fills, which is exactly what happens on this laptop: a tick-thread stall
+# from HDD-bound chunk I/O pauses draining while a bot's steady ~2 packets/
+# tick keeps arriving over the network at its own pace, and a stall of only a
+# few seconds is enough to back up 1,000 queued packets from even a handful of
+# bots. Root-caused via the exact "Too Many Packets" kick reason (not a
+# keep-alive timeout as first suspected) after ruling out every other
+# explanation this session (see docs/HANDOFF.md) — a much bigger queue just
+# gives this specific hardware profile the slack production-grade disks don't
+# need.
+BENCH_PACKET_QUEUE_SIZE = 20000
 # PaperMC 26.2 build 60 (fill.papermc.io), downloaded 2026-07-15 for the P0
 # baseline — self-contained jar, not part of this repo (like ~/mc-26.2).
 PAPER_JAR = Path.home() / "paper-26.2" / "paper-26.2-60.jar"
@@ -179,7 +199,8 @@ class LogTailProcess:
         return self.proc.pid
 
 
-def launch_minecom(workdir, log_path, extra_env=None, metrics_port=9225, game_port=25565, xmx="2048M", jfr_path=None):
+def launch_minecom(workdir, log_path, extra_env=None, metrics_port=9225, game_port=25565, xmx="2048M", jfr_path=None,
+                    chunk_view_distance=BENCH_CHUNK_VIEW_DISTANCE):
     """target/minecom.jar, offline mode by default (no online-mode flag needed).
     Bench scenario setup is entirely env-gated (bench/BenchSetup.java) so a
     plain launch with no MINECOM_BENCH_* vars behaves like production."""
@@ -190,6 +211,9 @@ def launch_minecom(workdir, log_path, extra_env=None, metrics_port=9225, game_po
     if extra_env:
         env.update(extra_env)
     jvm_flags = [f"-Xmx{xmx}"]
+    if chunk_view_distance is not None:
+        jvm_flags.append(f"-Dminestom.chunk-view-distance={chunk_view_distance}")
+    jvm_flags.append(f"-Dminestom.packet-queue-size={BENCH_PACKET_QUEUE_SIZE}")
     if jfr_path:
         jvm_flags.append(f"-XX:StartFlightRecording=filename={jfr_path},settings=profile")
     proc = LogTailProcess(["java", *jvm_flags, "-jar", str(MINECOM_JAR)], workdir, log_path, env=env)
@@ -274,6 +298,25 @@ def wait_for_players(metrics_port, target, hold_seconds, timeout):
         f"{hold_seconds}s within {timeout}s (last observed: {last}). Not reporting scenario "
         f"numbers from an unverified server population — see docs/HANDOFF.md's rust-mc-bot "
         f"escalation entry (2026-07-15) if this is the known keep-alive drop.")
+
+
+def join_paced(swarm, target, batch_size, gap_seconds, metrics_port, hold_seconds, timeout):
+    """Join `target` bots in batches of `batch_size` with `gap_seconds` between
+    each (MASTERPLAN §4 P0 harness ergonomics — a single mass-connect burst is
+    exactly the cold-join stall docs/HANDOFF.md's 2026-07-15 entry measured:
+    this laptop's chunk pipeline can't stream N players' worth of chunks in
+    parallel fast enough to beat the keep-alive kick). Batching gives the
+    server time to finish streaming each wave before the next one lands, then
+    hands off to wait_for_players for the same hold-and-verify sanity gate
+    every scenario uses."""
+    connected = 0
+    while connected < target:
+        batch = min(batch_size, target - connected)
+        swarm.add_batch(batch)
+        connected += batch
+        if connected < target:
+            time.sleep(gap_seconds)
+    return wait_for_players(metrics_port, target, hold_seconds, timeout)
 
 
 def write_result(path, result):
