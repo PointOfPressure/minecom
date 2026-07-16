@@ -543,6 +543,12 @@ def run_live_vanilla(cfg, server, rid):
         # gravity/collision — without this vanilla/Paper fly-kick them after
         # 80 ticks (2026-07-16 discriminator run: "Flying is not enabled")
         f"allow-flight=true\n"
+        # pause-when-empty-seconds=-1: never idle-pause. Default 60 stops
+        # ticking after 60s with no players — on bots=0 scenarios (redstone,
+        # mobfarm) that made vanilla read a fake ~8 TPS (power-save, not load;
+        # 2026-07-16 idle re-verify, see docs/BENCHMARKS.md). minecom has no
+        # idle-pause, so leaving this on is an unfair apples-to-oranges compare.
+        f"pause-when-empty-seconds=-1\n"
         f"view-distance={bc.BENCH_CHUNK_VIEW_DISTANCE}\nmax-tick-time=-1\nsync-chunk-writes=false\n"
     )
     work = vanilla_oracle.prepare_workdir(workdir / server, properties, fresh=True)

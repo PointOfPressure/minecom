@@ -207,8 +207,8 @@ cell; per-cell JSON filename is in the collation note above each section.
 |---|---|---:|---:|---:|
 | (a) spawn | TPS / MSPT p50 / p99 | **20.0 / 2.9 / 8.5** | 20.0 / 9.9 / 20.8 | 20.0 / 5.3 / 9.5 |
 | (b) spread10k | TPS / p50 / p99 | **20.0 / 5.5 / 20.1** | 20.0 / 9.8 / 19.9 | 19.98 / 7.6 / 29.5 |
-| (c) redstone | TPS / p50 / p99 | **20.0 / 0.2 / 2.6** | 7.97* / 1.4 / 2.1 | 20.0 / 1.1 / 2.2 |
-| (d) mobfarm | TPS / p50 / p99 | **20.0 / 1.0 / 3.7** | 7.97* / 3.0 / 9.2 | 20.0 / 1.0 / 2.0 |
+| (c) redstone | TPS / p50 / p99 | **20.0 / 0.2 / 2.6** | n/a† / 1.4 / 2.1 | 20.0 / 1.1 / 2.2 |
+| (d) mobfarm | TPS / p50 / p99 | **20.0 / 1.0 / 3.7** | n/a† / 3.0 / 9.2 | 20.0 / 1.0 / 2.0 |
 | (e) chunkgen | chunks/sec | **0.46** | 3.47 | 3.92 |
 
 Read of the first-ever numbers: at 15 players, minecom-with-vanilla-logic
@@ -217,11 +217,21 @@ scenario** — spawn p99 is 2.4x better than vanilla's — while chunk
 generation remains its one honest, large deficit (7.5-8.5x slower, P1's
 declared target, independently confirmed three ways this week).
 
-*The vanilla 7.97-TPS redstone/mobfarm cells are striking (minecom holds
-20.0 on identical world setups) but were measured during a contended
-overnight window — RE-VERIFY on an idle box before quoting them anywhere
-public. If they hold, that's the headline; until then they're flagged,
-not claimed.
+†**RETRACTED headline — do NOT quote.** Earlier drafts showed vanilla at
+7.97 TPS on redstone/mobfarm (vs minecom's 20.0) and flagged it as a
+possible headline. An idle re-verify (2026-07-16) found the CAUSE, not a
+confirmation: these two scenarios run `bots=0`, and vanilla's
+`pause-when-empty-seconds=60` pauses ticking after 60s with no players
+("Server empty for 60 seconds, pausing" in its log). The 7.97 was vanilla
+power-saving an idle server — its p99 MSPT of 2.1-9.2 ms proves the tick
+work was trivial, not overloaded. Paper (same properties) read a clean
+20.0, which is why only vanilla looked anomalous. NOT a minecom win: it was
+an unfair comparison (minecom has no idle-pause, so it kept ticking). Fixed
+in the harness (`pause-when-empty-seconds=-1` on baselines); an honest
+redstone/mobfarm TPS comparison needs a re-run with neither server idling
+(or a keep-alive bot in these scenarios). Until then vanilla's TPS cell is
+n/a; the MSPT numbers (real per-executed-tick cost) stand. Lesson banked: a
+low MSPT beside a low TPS means idle, not overload — cross-check the two.
 
 ### (e) chunkgen — chunk generation throughput
 
