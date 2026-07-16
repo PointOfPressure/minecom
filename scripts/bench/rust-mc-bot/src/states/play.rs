@@ -30,13 +30,20 @@ pub fn process_join_game(buffer: &mut Buf, bot: &mut Bot, _compression: &mut Com
 /// Synchronize Player Position
 /// https://minecraft.wiki/w/Java_Edition_protocol/Packets#Synchronize_Player_Position
 pub fn process_teleport(buffer: &mut Buf, bot: &mut Bot, compression: &mut Compression) {
+    // 26.2 layout (Minestom PlayerPositionAndLookPacket.SERIALIZER):
+    // teleportId VAR_INT, position 3xf64, delta 3xf64, yaw f32, pitch f32,
+    // flags INT. The old code skipped delta and read flags as one byte —
+    // benign only while delta is Vec.ZERO (flags byte read as 0/absolute).
     let id = buffer.read_var_u32().0;
     let x = buffer.read_f64();
     let y = buffer.read_f64();
     let z = buffer.read_f64();
+    let _delta_x = buffer.read_f64();
+    let _delta_y = buffer.read_f64();
+    let _delta_z = buffer.read_f64();
     let _yaw = buffer.read_f32();
     let _pitch = buffer.read_f32();
-    let flags = buffer.read_byte();
+    let flags = buffer.read_u32();
     if flags & 0b10000 == 0 {
         bot.x = x;
     } else {
