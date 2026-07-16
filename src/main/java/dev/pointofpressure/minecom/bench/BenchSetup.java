@@ -69,13 +69,18 @@ public final class BenchSetup {
      * fix to dodge it indirectly.
      */
     private static void forceloadSquare(InstanceContainer instance, int radiusChunks) {
+        // INCLUSIVE bounds: -r..r. The old -r..<r exclusive upper edge left
+        // chunk +r unloaded, so bots wandering near it triggered runtime
+        // worldgen — which runs on the virtual-thread carrier pool and, on a
+        // low-core box, starves every connection read loop into a mass
+        // "Timeout" kick (2026-07-16 read-stall investigation, HANDOFF).
         java.util.List<CompletableFuture<?>> loads = new java.util.ArrayList<>();
-        for (int cx = -radiusChunks; cx < radiusChunks; cx++)
-            for (int cz = -radiusChunks; cz < radiusChunks; cz++)
+        for (int cx = -radiusChunks; cx <= radiusChunks; cx++)
+            for (int cz = -radiusChunks; cz <= radiusChunks; cz++)
                 loads.add(instance.loadChunk(cx, cz));
         CompletableFuture.allOf(loads.toArray(new CompletableFuture[0])).join();
         LOGGER.info("Bench forceload: {}x{} chunks around spawn kept in memory (redstone-scheduler safety margin)",
-                radiusChunks * 2, radiusChunks * 2);
+                radiusChunks * 2 + 1, radiusChunks * 2 + 1);
     }
 
     /** Scatters each newly-joined player across a pregenerated square (scenario b). */

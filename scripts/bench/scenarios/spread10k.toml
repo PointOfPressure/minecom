@@ -19,11 +19,15 @@ description = "N bots spread across a pregenerated square of chunks (scaled down
 duration_seconds = 180
 bots = 15
 world = "pregen"
-pregen_radius_chunks = 8
+# pregen STRICTLY exceeds spread+view+mob-roam: bots anchor to +-6, views
+# reach +-10, mobs roam a few chunks further — all inside the pregen'd +-14
+# (which the spawn scenario already cached). Generation during a live run
+# starves connection reads via the shared carrier pool (2026-07-16, HANDOFF).
+pregen_radius_chunks = 14
 pregen_seed = 20260708
 warm_settle_seconds = 60
 bench_scenario_env = "spread"
-bench_extra_env = { MINECOM_BENCH_SPREAD_RADIUS = "8" }
+bench_extra_env = { MINECOM_BENCH_SPREAD_RADIUS = "6" }
 join_hold_seconds = 10
 join_timeout_seconds = 60
 # join pacing: batches of ~5 with a gap, same rationale as spawn.toml's ramp

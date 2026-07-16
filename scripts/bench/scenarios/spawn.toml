@@ -11,16 +11,18 @@ description = "N bots wandering at the default spawn point"
 duration_seconds = 150
 bots = 15
 world = "pregen"
-# radius=6 (144 chunks, ~5 min at this laptop's ~0.46 chunks/sec — see
-# chunkgen.toml/docs/BENCHMARKS.md) comfortably covers every bot's
-# BENCH_CHUNK_VIEW_DISTANCE=4 (9x9) view square centered near spawn (0,0)
-# plus the bots' own small per-tick random-walk drift over the run.
-pregen_radius_chunks = 6
+# 14, not 6: mobs (restored + natural spawns) roam past the forceload square
+# over a 3.5-min run; the frontier must be pregen'd DISK (cheap load), never
+# live generation — worldgen runs on the virtual-thread carriers and starves
+# every connection read loop (2026-07-16 read-stall investigation, HANDOFF)
+pregen_radius_chunks = 14
 pregen_seed = 20260708
 warm_settle_seconds = 60
 bench_scenario_env = "spawn"
-# MUST match pregen_radius_chunks: BenchSetup.forceloadSquare loads exactly
-# this square into memory before any player can join (see its class comment —
+# STRICTLY LESS than pregen_radius_chunks (14): the forceload square is the
+# in-memory redstone-safety bubble; everything mobs can roam to beyond it must
+# still exist on DISK from pregen so boundary crossings are cheap loads, never
+# live generation (see pregen comment above). Original rationale —
 # Redstone.tick's queue NPEs on a neighbor-changed notification that reaches a
 # chunk never loaded into memory, even if it's already on disk from pregen,
 # and permanently kills the shared redstone scheduler). Bigger than the pregen

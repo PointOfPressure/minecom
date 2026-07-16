@@ -1,0 +1,33 @@
+{
+  "bots_connected": 15,
+  "bots_requested": 15,
+  "commit": "56ca5182fc973059fdd9cdbca0460841c0cdb6d7",
+  "description": "N bots spread across a pregenerated square of chunks (scaled down from 10k on this laptop \u2014 see comment)",
+  "duration_seconds": 180,
+  "gc_collections_total": 65.0,
+  "gc_time_ms_total": 419.0,
+  "hardware": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "hostname": "Inspiron-7548",
+    "java_version": "openjdk version \"25.0.3\" 2026-04-21",
+    "logical_cpus": 4,
+    "mem_total_mb": 15904,
+    "os": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39"
+  },
+  "heap_used_bytes": 167783032.0,
+  "jfr_path": null,
+  "max_bots_before_sub20_tps": null,
+  "mspt_p50": 5.528464,
+  "mspt_p95": 9.666412,
+  "mspt_p99": 20.149646,
+  "mspt_source": "minestom ServerTickMonitorEvent (true per-tick)",
+  "packet_bytes_out_proxy": 46101857,
+  "packet_bytes_out_source": "proc/pid/io wchar delta proxy (coarse \u2014 see bench_common.proc_io_bytes)",
+  "run_id": "spread10k_minecom_20260716T160330Z",
+  "scenario": "spread10k",
+  "server": "minecom",
+  "status": "ok",
+  "tick_count": 3600,
+  "timestamp": "2026-07-16T16:03:30.897883+00:00",
+  "tps": 20.0
+}

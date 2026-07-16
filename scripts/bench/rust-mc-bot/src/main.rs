@@ -151,9 +151,19 @@ pub struct Bot {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+    // wander anchor + hover ceiling, set on the first position sync: bots
+    // have no physics, so they climb to anchor_y+HOVER_HEIGHT (legal with
+    // allow-flight=true) and wander within WANDER_RADIUS of the anchor —
+    // no terrain collisions ("moved wrongly"), no fly-kick, no cold chunks
+    pub anchor_x: f64,
+    pub anchor_y: f64,
+    pub anchor_z: f64,
     pub buffering_buf: Buf,
     pub joined: bool,
 }
+
+pub const HOVER_HEIGHT: f64 = 40.0;
+pub const WANDER_RADIUS: f64 = 24.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProtocolState {
@@ -232,6 +242,9 @@ pub fn start_bots(count: u32, addrs: Address, name_offset: u32, cpus: u32) {
                     x: 0.0,
                     y: 0.0,
                     z: 0.0,
+                    anchor_x: 0.0,
+                    anchor_y: 0.0,
+                    anchor_z: 0.0,
                     buffering_buf: Buf::with_length(200),
                     joined: false,
                 };
@@ -292,18 +305,25 @@ pub fn start_bots(count: u32, addrs: Address, name_offset: u32, cpus: u32) {
                 bot.send_packet(play::write_tick_end(), &mut compression);
             }
             if SHOULD_MOVE && bot.teleported {
-                bot.x += rand::random::<f64>() * 1.0 - 0.5;
-                bot.z += rand::random::<f64>() * 1.0 - 0.5;
+                // climb to the hover ceiling first (1 block/tick is a legal
+                // ascent), then wander clamped to the anchor column
+                let hover = bot.anchor_y + HOVER_HEIGHT;
+                if bot.y < hover {
+                    bot.y = (bot.y + 1.0).min(hover);
+                }
+                bot.x = (bot.x + rand::random::<f64>() * 1.0 - 0.5)
+                    .clamp(bot.anchor_x - WANDER_RADIUS, bot.anchor_x + WANDER_RADIUS);
+                bot.z = (bot.z + rand::random::<f64>() * 1.0 - 0.5)
+                    .clamp(bot.anchor_z - WANDER_RADIUS, bot.anchor_z + WANDER_RADIUS);
                 bot.send_packet(play::write_current_pos(bot), &mut compression);
 
                 if (tick_counter + bot.id) % action_tick == 0 {
                     match rand::thread_rng().gen_range(0..=4u8) {
                         0 => {
-                            // Send chat
+                            // arm swing (chat here got bots "Kicked for
+                            // spamming" by vanilla's chat rate limit)
                             bot.send_packet(
-                                play::write_chat_message(
-                                    MESSAGES.choose(&mut rand::thread_rng()).unwrap(),
-                                ),
+                                play::write_animation(rand::random()),
                                 &mut compression,
                             );
                         }

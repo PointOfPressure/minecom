@@ -214,6 +214,9 @@ def launch_minecom(workdir, log_path, extra_env=None, metrics_port=9225, game_po
     if chunk_view_distance is not None:
         jvm_flags.append(f"-Dminestom.chunk-view-distance={chunk_view_distance}")
     jvm_flags.append(f"-Dminestom.packet-queue-size={BENCH_PACKET_QUEUE_SIZE}")
+    # more carriers than cores: keeps a worldgen/chunk-load burst on the
+    # virtual-thread pool from starving connection read loops (2026-07-16)
+    jvm_flags.append("-Djdk.virtualThreadScheduler.parallelism=8")
     if jfr_path:
         jvm_flags.append(f"-XX:StartFlightRecording=filename={jfr_path},settings=profile")
     proc = LogTailProcess(["java", *jvm_flags, "-jar", str(MINECOM_JAR)], workdir, log_path, env=env)

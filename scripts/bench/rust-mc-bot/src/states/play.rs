@@ -60,8 +60,21 @@ pub fn process_teleport(buffer: &mut Buf, bot: &mut Bot, compression: &mut Compr
         bot.z += z;
     }
     bot.send_packet(write_tele_confirm(id), compression);
+    if !bot.teleported {
+        // first sync = spawn: anchor the wander/hover box here (main.rs)
+        bot.anchor_x = bot.x;
+        bot.anchor_y = bot.y;
+        bot.anchor_z = bot.z;
+    } else {
+        // later syncs (scenario spread-teleports) re-home the anchor too
+        bot.anchor_x = bot.x;
+        bot.anchor_y = bot.anchor_y.max(bot.y);
+        bot.anchor_z = bot.z;
+    }
     bot.teleported = true;
-    println!("{x}, {y}, {z}");
+    if std::env::var("BOT_TRACE").is_ok() {
+        println!("teleport sync -> {x}, {y}, {z}");
+    }
 }
 
 /// Chat Message

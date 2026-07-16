@@ -5,7 +5,7 @@ server and emit one machine-readable JSON result.
     python3 scripts/bench/run_scenario.py chunkgen --server minecom
     python3 scripts/bench/run_scenario.py chunkgen --server vanilla
     python3 scripts/bench/run_scenario.py redstone --server minecom
-    python3 scripts/bench/run_scenario.py spawn --server minecom      # currently fails loudly, see below
+    python3 scripts/bench/run_scenario.py spawn --server minecom
 
 Scenarios are configs (scripts/bench/scenarios/*.toml), not script forks —
 this file has one code path per scenario `mode` (live | chunkgen), not one
@@ -16,10 +16,10 @@ empty server" rule): a live scenario with bots > 0 requires
 `minecom_players_online` to reach the target and hold — see
 bench_common.wait_for_players. A run that can't verify its own population
 does NOT report scenario numbers: it writes a result JSON with
-status="failed" and a failure_reason, and exits nonzero. As of 2026-07-15
-this means scenarios (a) spawn and (b) spread10k fail loudly EVERY run —
-that is expected and correct until docs/HANDOFF.md's rust-mc-bot
-connection-drop entry is resolved, not a bug in this script.
+status="failed" and a failure_reason, and exits nonzero. (This gate
+refused to emit fake numbers through the entire 2026-07-15/16 bot-bug
+investigation — all five scenarios produce real numbers as of 2026-07-16;
+see docs/BENCHMARKS.md.)
 
 Live scenarios currently only support --server minecom: the vanilla/Paper
 baseline path is wired for chunkgen (scenario e) only this session — a live
@@ -37,6 +37,7 @@ import argparse
 import math
 import random
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -201,20 +202,29 @@ def run_live(cfg, server, rid, jfr=False):
         if cfg.get("world") == "pregen":
             seed, radius = cfg.get("pregen_seed", 20260708), cfg["pregen_radius_chunks"]
             gen_log = log_dir / "pregen.log"
-            proc = subprocess.run(
-                ["java", "-Xmx2048M", "-jar", str(bc.MINECOM_JAR), "--genregions", str(seed), str(radius)],
-                cwd=workdir, capture_output=True, text=True)
-            gen_log.write_text(proc.stdout + proc.stderr)
-            # GenRegions takes its seed as a bare CLI arg — it never touches
-            # world/seed.txt, so a subsequent normal boot's Bootstrap.worldSeed()
-            # would pick a fresh RANDOM seed (and a random Bootstrap.findSpawn()
-            # spawn point unrelated to what was just pregenerated) unless this
-            # pins it to match. Must be written before launch_minecom() below.
-            (workdir / "world").mkdir(parents=True, exist_ok=True)
-            (workdir / "world" / "seed.txt").write_text(str(seed))
-            if proc.returncode != 0 or "genregions done" not in proc.stdout:
-                result.update(status="failed", failure_reason=f"pregen failed, see {gen_log}")
-                return result
+            # pregen worlds are pure functions of (jar-era worldgen, seed,
+            # radius) — cache them; at ~0.46 chunks/sec on this laptop a
+            # radius-14 world costs ~30 min once, unacceptable per run
+            cache = WORK_ROOT / "pregen-cache" / f"seed{seed}_r{radius}"
+            if not (cache / "world" / "seed.txt").exists():
+                cache.mkdir(parents=True, exist_ok=True)
+                proc = subprocess.run(
+                    ["java", "-Xmx2048M", "-jar", str(bc.MINECOM_JAR), "--genregions", str(seed), str(radius)],
+                    cwd=cache, capture_output=True, text=True)
+                gen_log.write_text(proc.stdout + proc.stderr)
+                if proc.returncode != 0 or "genregions done" not in proc.stdout:
+                    shutil.rmtree(cache, ignore_errors=True)
+                    result.update(status="failed", failure_reason=f"pregen failed, see {gen_log}")
+                    return result
+                # GenRegions takes its seed as a bare CLI arg — it never touches
+                # world/seed.txt, so a subsequent normal boot's Bootstrap.worldSeed()
+                # would pick a fresh RANDOM seed (and a random Bootstrap.findSpawn()
+                # spawn point unrelated to what was just pregenerated) unless this
+                # pins it to match. Written into the cache so every reuse gets it.
+                (cache / "world" / "seed.txt").write_text(str(seed))
+            else:
+                gen_log.write_text(f"pregen cache hit: {cache}\n")
+            shutil.copytree(cache / "world", workdir / "world", dirs_exist_ok=True)
 
         srv = bc.launch_minecom(workdir, log_dir / "server.log", extra_env=extra_env,
                                  metrics_port=metrics_port, jfr_path=jfr_path)
@@ -495,6 +505,10 @@ def run_live_vanilla(cfg, server, rid):
     seed = cfg.get("pregen_seed", 20260708)
     properties = (
         f"level-seed={seed}\nonline-mode=false\nspawn-protection=0\n"
+        # allow-flight: the bots hover above terrain instead of simulating
+        # gravity/collision — without this vanilla/Paper fly-kick them after
+        # 80 ticks (2026-07-16 discriminator run: "Flying is not enabled")
+        f"allow-flight=true\n"
         f"view-distance={bc.BENCH_CHUNK_VIEW_DISTANCE}\nmax-tick-time=-1\nsync-chunk-writes=false\n"
     )
     work = vanilla_oracle.prepare_workdir(workdir / server, properties, fresh=True)
