@@ -14,6 +14,28 @@ of what got escalated and why.
 
 ---
 
+## Tier 3 parity batch 1 landed (2026-07-16, Opus 4.8) — armor stands + beacons + conduits, no escalation
+
+Not an escalation — a progress note. MASTERPLAN §3 Tier 3 batch 1 shipped as three
+commits (armor stands / beacons / conduits), each a self-contained landable unit
+decompiled fresh against 26.2 (ArmorStand/ArmorStandItem, BeaconBlockEntity/
+BeaconMenu, ConduitBlockEntity, now cached under `vanilla-src/`). Behaviour ported,
+not copied; per-class simplifications stated in source + `docs/AUDIT.md`.
+
+Coverage added: +31 PlayTest checks (scenarioArmorStand 10, scenarioBeacon 12,
+scenarioConduit 9) and +7 SelfTest checks (beacon validateEffects table, conduit
+effectRange). EXPECTED_CHECK_COUNT 822 -> 853. All three scenarios verified green
+in isolation (filtered `--playtest` runs, logs in `test-logs/tier3_pt_*`); no
+"DIAG silk" in any run.
+
+NOTE for the next session on this box: a FULL `--selftest` is HDD-bound to
+30-60+ min here (the ancient-city / trial-chamber / end-city / ocean-monument-
+across-5-seeds / woodland-mansion *real generation* checks each cost minutes on
+the 5400rpm drive), which exceeds a single 10-min foreground command window — run
+it backgrounded. The v0.26.0 tag's green-bar run was done this way.
+
+---
+
 ## ~~ESCALATION: minecom bot-scenario connections still die mid-run after six real fixes~~ — DONE (2026-07-16, Fable): all five P0 scenarios now produce real numbers against minecom
 
 Resolution, in the order the layers came off (full evidence in this session's
