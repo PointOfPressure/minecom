@@ -269,8 +269,9 @@ leftovers.
   enumeration (the vanilla Enemy interface).
 - Redstone.java `containerSignal` — **expanded 2026-07-11 (Fable)**: added
   copper bulb (LIT=15), crafter (filled+locked slots), sculk sensors (last
-  vibration frequency while active). Still missing: beehive honey level (no
-  bee/hive system). Barrel/brewing/cake/end-portal-frame/chiseled-bookshelf/
+  vibration frequency while active); **beehive/bee-nest honey_level added
+  2026-07-16 (Sonnet 5, Tier 3 batch 2)** alongside `blocks/Beehives.java` — the
+  raw honey_level (0-5), unscaled (BeehiveBlock.getAnalogOutputSignal). Barrel/brewing/cake/end-portal-frame/chiseled-bookshelf/
   decorated-pot reads were already present.
 - ~~Redstone.java — no crafter block~~ **Done 2026-07-11 (Fable)**:
   `redstone/Crafters.java` — trigger edge + 4gt delay, 6gt CRAFTING, eject
@@ -673,7 +674,32 @@ leftovers.
     mother, strider cold-shaking animation, skeleton-horse lightning trap
     (AUDIT: still open below), parrot taming (still open below), mob item
     pickup (still open below).
-- Missing passive/utility mobs: bee (pollination/hive/anger — M-L), cat (village
+- ~~Missing passive/utility mob: bee (pollination/hive/anger)~~ **Done 2026-07-16
+  (Sonnet 5, Tier 3 batch 2)** — `mobs/Bees.java` (decompile-verified against `Bee`,
+  freshly re-decompiled for the 26.2 bump) + `blocks/Beehives.java` (against
+  `BeehiveBlockEntity`/`BeehiveBlock`): pollination (BlockTags.BEE_ATTRACTIVE within
+  Manhattan radius 5, 400+ hover ticks -> nectar, real 20%/tick early-exit roll),
+  hive delivery (MIN_OCCUPATION_TICKS_NECTAR/NECTARLESS gate, honey_level +1 or +2
+  (1% roll) capped at 5), anger + sting-once-then-die (real vanilla death formula:
+  `timeSinceSting%5==0 && random.nextInt(clamp(1200-timeSinceSting,1,1200))==0` —
+  deterministically fires at exactly tick 1200), campfire/soul-campfire sedation
+  (CampfireBlock.isSmokeyPos ported: up to 5 blocks straight down, stops early at a
+  smoke-blocking solid), shears/glass-bottle harvest at honey_level 5 (3 honeycomb
+  — HARVEST_BEEHIVE's fixed loot count, hardcoded since it's a gameplay loot table
+  this project's extractor doesn't bundle — or a honey_bottle), max-3 occupant
+  storage. New bundled data: `block_map_colors.json` (`scripts/extract_map_colors.py`,
+  465 direct + 147 DyeColor-family block->MapColor entries, `--validate` checked
+  against the live MapColor.java decompile) — built for the maps item in this same
+  batch but the extractor parses `Blocks.java` generically, no bee-specific
+  dependency. Simplifications: a released bee is a fresh entity (no full NBT
+  round-trip of the one that entered), front-blocked-release retry/eviction and the
+  shared "one flower memory per hive" nicety are skipped, no day/night hive-return
+  gate exists in the 26.2 decompile at all (`EnvironmentAttributes.BEES_STAY_IN_HIVE`
+  defaults false with no biome override wired in this project — ported faithfully,
+  not the commonly-assumed "bees fly home at night" behavior), hive/flower discovery
+  is a periodic block-tag scan (no POI-manager range query in this project), no
+  crop-growing (BeeGrowCropGoal).
+- Missing passive/utility mobs: cat (village
   spawning, morning gifts, creeper repel — taming/feeding DONE, see above),
   skeleton_horse (trap exists? no —
   lightning trap missing), trader_llama (wandering trader spawns alone;

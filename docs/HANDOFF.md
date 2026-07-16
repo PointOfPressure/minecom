@@ -14,6 +14,38 @@ of what got escalated and why.
 
 ---
 
+## Tier 3 parity batch 2, item 1/3 landed (2026-07-17, Sonnet 5) — bees + beehives, no escalation
+
+Not an escalation — a progress note (mid-batch: maps and signs/banners still in flight this
+same session, landing as separate commits per item). Bees + beehives shipped as one commit,
+decompiled fresh against 26.2 (`Bee`, `BeehiveBlockEntity`, `BeehiveBlock`, `CampfireBlock`,
+now cached under `vanilla-src/`). Full state machine ported: pollination (BEE_ATTRACTIVE tag,
+400+ hover ticks, real 20%/tick early-exit roll), hive delivery (nectar/nectarless occupation
+gates, honey_level advance with the 1%-chance-of-+2 roll capped at 5), anger + sting-once-then-
+die (the exact vanilla death formula — deterministically fires at tick 1200, not just
+eventually), campfire/soul-campfire sedation (`CampfireBlock.isSmokeyPos` ported), shears/
+glass-bottle harvest at honey_level 5, and the beehive comparator signal (closes an old AUDIT
+gap in `Redstone.containerSignal` in passing). Also landed in this same commit: `block_map_
+colors.json` + `scripts/extract_map_colors.py` (built for the maps item but the extractor is
+generic, no bee dependency) and `data/MapColors.java` (the ported MapColor table, ready for
+maps' selftest).
+
+**One real flake found and fixed, not shrugged off (rule 8):** the pollination check failed
+intermittently — root cause was `WeatherCycle`'s ambient 1%/tick chance to start raining
+firing mid-scenario (pollination's `canBeeUse` gate requires `!isRaining`, matching real
+vanilla), not a product bug. Fixed by forcing clear weather at scenario start (`world.
+setWeather(CLEAR)`), matching the pattern several other scenarios already use. A second,
+separate timing issue (the hive-storage check racing the bee's own live per-tick scheduler
+when driven by a tight synchronous `tickForTest` loop right after a same-chunk teleport) was
+fixed by switching that one assertion to `waitFor` (bounded real-tick polling) instead —
+documented in `scenarioBee`'s comments so the next session doesn't reintroduce either race.
+
+Coverage: +13 PlayTest checks (`scenarioBee`). EXPECTED_CHECK_COUNT 853 -> 866. Verified via 5+
+consecutive isolated (`--playtest bee`) runs plus two full-suite runs (865/0 then 866/0 after
+the comparator check), no "DIAG silk" in any run.
+
+---
+
 ## Tier 3 parity batch 1 landed (2026-07-16, Opus 4.8) — armor stands + beacons + conduits, no escalation
 
 Not an escalation — a progress note. MASTERPLAN §3 Tier 3 batch 1 shipped as three

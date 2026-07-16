@@ -890,6 +890,9 @@ public final class Redstone {
         } else if (key.equals("creaking_heart")) {
             // CreakingHeartBlockEntity.computeAnalogOutputSignal: distance-scaled
             return dev.pointofpressure.minecom.blocks.CreakingHearts.comparatorSignal(pos);
+        } else if (key.equals("beehive") || key.equals("bee_nest")) {
+            // BeehiveBlock.getAnalogOutputSignal: the raw honey_level (0-5), unscaled.
+            return dev.pointofpressure.minecom.blocks.Beehives.comparatorOutput(block);
         } else {
             return -1;
         }

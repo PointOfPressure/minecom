@@ -184,6 +184,7 @@ public final class Mobs {
                  "llama", "turtle", "panda", "polar_bear", "armadillo", "camel", "fox", "frog",
                  "parrot", "ocelot" ->
                     dev.pointofpressure.minecom.mobs.ai.VanillaMobs.animal(kind, instance, pos);
+            case "bee" -> dev.pointofpressure.minecom.mobs.Bees.spawn(instance, pos);
             case "wolf" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.wolf(instance, pos);
             case "cat" -> dev.pointofpressure.minecom.mobs.ai.VanillaMobs.cat(instance, pos);
             case "horse", "donkey", "mule", "skeleton_horse", "zombie_horse" ->

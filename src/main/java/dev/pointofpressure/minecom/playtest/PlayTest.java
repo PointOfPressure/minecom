@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 853;
+    private static final int EXPECTED_CHECK_COUNT = 866;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -255,6 +255,7 @@ public final class PlayTest {
         scenario("armor stand: place/consume, held-item equip + swap, bare-hand take, NBT flags, marker ignores interaction, two-hit break drops item + gear", PlayTest::scenarioArmorStand);
         scenario("beacon: pyramid levels 1-4, beam needs clear sky (glass passes), menu validates + consumes payment, effects apply in range at the right amp", PlayTest::scenarioBeacon);
         scenario("conduit: 3x3x3 water gate + radius-2 prismarine ring gate activation (16) and hunting (42), power radius size/7*16, in-water power, hostile pulse", PlayTest::scenarioConduit);
+        scenario("bee + beehive: pollination gains nectar, hive delivery advances honey, shears/bottle harvest at level 5, campfire sedation, anger + sting-once-then-die", PlayTest::scenarioBee);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -1244,6 +1245,132 @@ public final class PlayTest {
             for (int x = cx - 2; x <= cx + 2; x++)
                 for (int z = cz - 2; z <= cz + 2; z++)
                     world.setBlock(new BlockVec(x, y, z), Block.AIR);
+        resetPlayer();
+    }
+
+    /**
+     * Bee + beehive/bee-nest: pollination (400+ hover ticks -> nectar), hive delivery (honey
+     * advances, occupancy gates release), shears/bottle harvest at honey_level 5 (campfire
+     * smoke suppresses the evacuate+anger side effects), and anger/sting-once-then-die. Every
+     * multi-hundred-tick wait uses {@code tickForTest} hooks (Bees/Beehives), never a real
+     * wall-clock/server-tick wait — the sting death roll is checked via ONE bee driven to the
+     * exact deterministic tick (1200) real vanilla's formula guarantees a kill at, not an
+     * aggregate-over-random-count (unlike phantom group size, this one isn't actually random
+     * at that exact tick — Mth.clamp(1200-1200,1,1200)=1, nextInt(1) is always 0).
+     */
+    private static void scenarioBee() {
+        clearEntitiesExceptPlayer();
+        // WeatherCycle rolls a 1%/tick chance to start raining on its own real-tick schedule;
+        // pollination's canBeeUse gate requires !isRaining, so an ambient rain start mid-run
+        // was a genuine (if infrequent) flake here — force clear before the pollination check.
+        world.setWeather(net.minestom.server.instance.Weather.CLEAR);
+        int cx = 140, cz = 140, cy = Y + 5;
+        for (int x = -3; x <= 3; x++)
+            for (int z = -3; z <= 3; z++)
+                world.setBlock(new BlockVec(cx + x, cy, cz + z), Block.AIR);
+
+        // --- base stats + not angry on spawn ---
+        var bee = dev.pointofpressure.minecom.mobs.Bees.spawn(world, new Pos(cx + 0.5, cy + 1, cz + 0.5));
+        check("bee spawns with real vanilla stats (10 HP, 2 attack damage) and starts calm",
+                bee.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 10.0
+                        && bee.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 2.0
+                        && !dev.pointofpressure.minecom.mobs.Bees.isAngry(bee)
+                        && !dev.pointofpressure.minecom.mobs.Bees.hasNectar(bee));
+
+        // --- pollination: a poppy right where the bee already hovers, driven to nectar ---
+        world.setWeather(net.minestom.server.instance.Weather.CLEAR); // belt-and-suspenders, see the WeatherCycle note above
+        BlockVec flower = new BlockVec(cx + 1, cy + 1, cz);
+        world.setBlock(flower, Block.POPPY);
+        bee.teleport(new Pos(flower.x() + 0.5, flower.y() + 0.6, flower.z() + 0.5)).join();
+        for (int i = 0; i < 700 && !dev.pointofpressure.minecom.mobs.Bees.hasNectar(bee); i++) {
+            dev.pointofpressure.minecom.mobs.Bees.tickForTest(bee);
+        }
+        check("a bee hovering over a bee-attractive flower for long enough gains nectar",
+                dev.pointofpressure.minecom.mobs.Bees.hasNectar(bee));
+        world.setBlock(flower, Block.AIR);
+
+        // --- hive delivery: a nectar bee flies home, gets stored, and honey advances ---
+        BlockVec hive = new BlockVec(cx, cy, cz + 3);
+        world.setBlock(hive, Block.BEEHIVE.withProperties(java.util.Map.of("facing", "south", "honey_level", "0")));
+        dev.pointofpressure.minecom.blocks.Beehives.track(hive);
+        dev.pointofpressure.minecom.mobs.Bees.setHivePos(bee, hive);
+        // Teleport adjacent rather than waiting out real flight physics/distance — this is
+        // testing the storage GATE, not flight realism (same idea as pollination teleporting
+        // straight onto the flower above). The bee's own real per-tick scheduler (registered at
+        // spawn) drives the actual storage once it observes the new position, so this polls the
+        // observable outcome via waitFor (real ticks, bounded) rather than a manual tickForTest
+        // loop racing that live scheduler — driving the SAME state machine from two callers at
+        // once made the "stored" instant itself non-deterministic (flaky), even though the
+        // eventual outcome always converged; see AUDIT.md.
+        bee.teleport(new Pos(hive.x() + 0.5, hive.y() + 0.5, hive.z() + 0.5)).join();
+        boolean stored = waitFor(() -> dev.pointofpressure.minecom.blocks.Beehives.occupantCount(hive) > 0, 3000);
+        check("a nectar-carrying bee flies home and is stored as a hive occupant (max 3, real MAX_OCCUPANTS)",
+                stored && dev.pointofpressure.minecom.blocks.Beehives.occupantCount(hive) == 1);
+        for (int i = 0; i < 2403 && dev.pointofpressure.minecom.blocks.Beehives.occupantCount(hive) > 0; i++) {
+            dev.pointofpressure.minecom.blocks.Beehives.tickForTest();
+        }
+        check("after MIN_OCCUPATION_TICKS_NECTAR=2400 ticks a nectar occupant is released and honey_level advances",
+                dev.pointofpressure.minecom.blocks.Beehives.occupantCount(hive) == 0
+                        && dev.pointofpressure.minecom.blocks.Beehives.honeyLevel(hive) >= 1);
+        check("the hive's comparator signal reads its raw honey_level (BeehiveBlock.getAnalogOutputSignal)",
+                dev.pointofpressure.minecom.blocks.Beehives.comparatorOutput(world.getBlock(hive))
+                        == dev.pointofpressure.minecom.blocks.Beehives.honeyLevel(hive));
+
+        // --- harvesting at honey_level 5: shears drop honeycomb, unsedated harvest evacuates ---
+        world.setBlock(hive, Block.BEEHIVE.withProperties(java.util.Map.of("facing", "south", "honey_level", "5")));
+        dev.pointofpressure.minecom.blocks.Beehives.addOccupant(hive, false);
+        clearEntitiesExceptPlayer();
+        useItemOnBlock(ItemStack.of(Material.SHEARS), hive, BlockFace.TOP);
+        tick(2);
+        boolean honeycombDropped = world.getEntities().stream().anyMatch(en -> en instanceof ItemEntity ie
+                && ie.getItemStack().material() == Material.HONEYCOMB && ie.getItemStack().amount() == 3);
+        check("shearing a honey_level-5 hive drops 3 honeycomb and resets honey_level to 0",
+                honeycombDropped && dev.pointofpressure.minecom.blocks.Beehives.honeyLevel(hive) == 0);
+        check("an un-sedated harvest evacuates every occupant (angered onto the harvester)",
+                dev.pointofpressure.minecom.blocks.Beehives.occupantCount(hive) == 0);
+        clearEntitiesExceptPlayer();
+
+        // --- campfire below sedates: honey resets but occupants are left alone ---
+        world.setBlock(hive, Block.BEEHIVE.withProperties(java.util.Map.of("facing", "south", "honey_level", "5")));
+        dev.pointofpressure.minecom.blocks.Beehives.addOccupant(hive, false);
+        BlockVec below = new BlockVec(hive.x(), hive.y() - 1, hive.z());
+        world.setBlock(below, Block.CAMPFIRE.withProperty("lit", "true"));
+        check("a lit campfire directly below a hive sedates it (CampfireBlock.isSmokeyPos)",
+                dev.pointofpressure.minecom.blocks.Beehives.isSedated(hive));
+        useItemOnBlock(ItemStack.of(Material.GLASS_BOTTLE), hive, BlockFace.TOP);
+        tick(2);
+        check("a sedated harvest (glass bottle -> honey bottle) resets honey but leaves occupants undisturbed",
+                dev.pointofpressure.minecom.blocks.Beehives.honeyLevel(hive) == 0
+                        && dev.pointofpressure.minecom.blocks.Beehives.occupantCount(hive) == 1);
+        check("the glass bottle harvest returns a honey_bottle",
+                player.getItemInMainHand().material() == Material.HONEY_BOTTLE);
+        world.setBlock(below, Block.AIR);
+        world.setBlock(hive, Block.AIR);
+        clearEntitiesExceptPlayer();
+
+        // --- anger + sting-once-then-die ---
+        var angryBee = dev.pointofpressure.minecom.mobs.Bees.spawn(world, new Pos(cx + 0.5, cy + 1, cz + 0.5));
+        player.teleport(new Pos(cx + 0.5, cy + 1, cz + 0.5)).join();
+        angryBee.damage(new net.minestom.server.entity.damage.EntityDamage(player, 0.0f));
+        check("a bee hit by a living entity becomes angry at its attacker (NeutralMob.setTarget)",
+                dev.pointofpressure.minecom.mobs.Bees.isAngry(angryBee));
+        float playerHpBefore = player.getHealth();
+        boolean stung = false;
+        for (int i = 0; i < 200 && !stung; i++) {
+            dev.pointofpressure.minecom.mobs.Bees.tickForTest(angryBee);
+            stung = dev.pointofpressure.minecom.mobs.Bees.hasStung(angryBee);
+        }
+        check("an angry bee in range stings its target once (2 damage) and stops being angry",
+                stung && !dev.pointofpressure.minecom.mobs.Bees.isAngry(angryBee) && player.getHealth() < playerHpBefore);
+        for (int i = 0; i < 1205 && !angryBee.isDead(); i++) {
+            dev.pointofpressure.minecom.mobs.Bees.tickForTest(angryBee);
+        }
+        // isDead() flips synchronously inside kill(); actual removal is scheduled 1000ms out
+        // (EntityCreature's death-animation delay) so isRemoved() wouldn't be true yet here.
+        check("a stung bee dies by exactly its 1200-tick STING_DEATH_COUNTDOWN (real vanilla's "
+                + "clamp guarantees the roll at that tick, not just eventually)", angryBee.isDead());
+
+        clearEntitiesExceptPlayer();
         resetPlayer();
     }
 

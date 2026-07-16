@@ -36,6 +36,7 @@ public final class VanillaData {
     static JsonObject enchantments;
     static JsonObject itemEnchantability;
     static JsonObject itemRepairable;
+    private static JsonObject blockMapColors;
 
     private static final Map<String, Set<String>> ITEM_TAG_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> BLOCK_TAG_CACHE = new ConcurrentHashMap<>();
@@ -59,6 +60,7 @@ public final class VanillaData {
         enchantments = read("/vanilla/enchantment.json");
         itemEnchantability = read("/vanilla/item_enchantability.json");
         itemRepairable = read("/vanilla/item_repairable.json");
+        blockMapColors = read("/vanilla/block_map_colors.json");
         Recipes.index();
         Enchants.index();
         loaded = true;
@@ -120,6 +122,12 @@ public final class VanillaData {
 
     public static boolean blockHasTag(Block b, String tag) {
         return b != null && blockTag(tag).contains(b.key().asString());
+    }
+
+    /** block_map_colors.json[blockId] -> the MapColors enum-constant name, or null (NONE). */
+    public static String blockMapColorName(String blockId) {
+        JsonElement v = blockMapColors.get(blockId);
+        return v == null ? null : v.getAsString();
     }
 
     /** Damage-type tag membership by damage type id, e.g. damageTypeHasTag("minecraft:fall", "bypasses_armor"). */
