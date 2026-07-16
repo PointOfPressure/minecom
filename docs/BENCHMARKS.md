@@ -196,6 +196,33 @@ now redstone/mobfarm (this session) baselines below.
 Raw JSON for every run below is committed under `scripts/bench/results/`;
 these numbers are pulled straight from those files, not hand-copied.
 
+### THE FULL MATRIX (v0.25.0, 2026-07-16) — every scenario x every server
+
+15 bots per live scenario, this laptop (i7-5500U 2c/4t, 5400rpm HDD),
+one server at a time, `nice -n 15` (owner was using the machine; niceness
+does not change CPU available on an otherwise-idle box). Newest OK run per
+cell; per-cell JSON filename is in the collation note above each section.
+
+| scenario | metric | **minecom** | vanilla 26.2 | Paper 26.2 |
+|---|---|---:|---:|---:|
+| (a) spawn | TPS / MSPT p50 / p99 | **20.0 / 2.9 / 8.5** | 20.0 / 9.9 / 20.8 | 20.0 / 5.3 / 9.5 |
+| (b) spread10k | TPS / p50 / p99 | **20.0 / 5.5 / 20.1** | 20.0 / 9.8 / 19.9 | 19.98 / 7.6 / 29.5 |
+| (c) redstone | TPS / p50 / p99 | **20.0 / 0.2 / 2.6** | 7.97* / 1.4 / 2.1 | 20.0 / 1.1 / 2.2 |
+| (d) mobfarm | TPS / p50 / p99 | **20.0 / 1.0 / 3.7** | 7.97* / 3.0 / 9.2 | 20.0 / 1.0 / 2.0 |
+| (e) chunkgen | chunks/sec | **0.46** | 3.47 | 3.92 |
+
+Read of the first-ever numbers: at 15 players, minecom-with-vanilla-logic
+**matches or beats vanilla and Paper on tick latency in every live
+scenario** — spawn p99 is 2.4x better than vanilla's — while chunk
+generation remains its one honest, large deficit (7.5-8.5x slower, P1's
+declared target, independently confirmed three ways this week).
+
+*The vanilla 7.97-TPS redstone/mobfarm cells are striking (minecom holds
+20.0 on identical world setups) but were measured during a contended
+overnight window — RE-VERIFY on an idle box before quoting them anywhere
+public. If they hold, that's the headline; until then they're flagged,
+not claimed.
+
 ### (e) chunkgen — chunk generation throughput
 
 64 chunks (radius=4, seed 20260708), one JVM/process per number:

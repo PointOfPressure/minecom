@@ -1,0 +1,20 @@
+{
+  "bots_requested": 15,
+  "commit": "392c149da740afd0568f39922f88af49c68ab874",
+  "description": "N bots wandering at the default spawn point",
+  "duration_seconds": 150,
+  "failure_reason": "server exited:\n[20:04:34 ERROR]: \t\tjava.base@25.0.3/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)\n[20:04:34 ERROR]: \t\tjava.base@25.0.3/java.lang.Thread.runWith(Thread.java:1487)\n[20:04:34 ERROR]: \t\tjava.base@25.0.3/java.lang.Thread.run(Thread.java:1474)\n[20:04:34 ERROR]: ------------------------------\n[20:04:34 ERROR]: Current Thread: Async-profiler Timer\n[20:04:34 ERROR]: \tPID: 72 | Suspended: false | Native: false | State: RUNNABLE\n[20:04:34 ERROR]: \tStack:\n[20:04:34 ERROR]: ------------------------------\n[20:04:35 INFO]: Stopping server\n[20:04:36 INFO]: Saving players\n[20:04:36 INFO]: Saving worlds\n[20:04:36 INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:overworld\n[20:04:36 INFO]: [ChunkHolderManager] Waiting 60s for chunk system to halt for world 'minecraft:overworld'\n[20:04:36 INFO]: [ChunkHolderManager] Halted chunk system for world 'minecraft:overworld'\n[20:04:36 INFO]: [ChunkHolderManager] Saving all chunkholders for world 'minecraft:overworld'\n[20:04:41 INFO]: [ChunkHolderManager] Saved 1181 block chunks, 116 entity chunks, 2 poi chunks in world 'minecraft:overworld' in 5.09s\n[20:04:41 INFO]: [ChunkHolderManager] Waiting 60s for chunk I/O to halt for world 'minecraft:overworld'\n[20:04:41 INFO]: [ChunkHolderManager] Halted I/O scheduler for world 'minecraft:overworld'\n[20:04:42 INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:the_nether\n[20:04:42 INFO]: [ChunkHolderManager] Waiting 60s for chunk system to halt for world 'minecraft:the_nether'\n[20:04:42 INFO]: [ChunkHolderManager] Halted chunk system for world 'minecraft:the_nether'\n[20:04:42 INFO]: [ChunkHolderManager] Saving all chunkholders for world 'minecraft:the_nether'\n[20:04:43 INFO]: [ChunkHolderManager] Saved 428 block chunks, 0 entity chunks, 0 poi chunks in world 'minecraft:the_nether' in 0.99s\n[20:04:43 INFO]: [ChunkHolderManager] Waiting 60s for chunk I/O to halt for world 'minecraft:the_nether'\n[20:04:43 INFO]: [ChunkHolderManager] Halted I/O scheduler for world 'minecraft:the_nether'\n[20:04:44 INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:the_end\n[20:04:44 INFO]: [ChunkHolderManager] Waiting 60s for chunk system to halt for world 'minecraft:the_end'\n[20:04:44 INFO]: [ChunkHolderManager] Halted chunk system for world 'minecraft:the_end'\n[20:04:44 INFO]: [ChunkHolderManager] Saving all chunkholders for world 'minecraft:the_end'\n[20:04:44 INFO]: [ChunkHolderManager] Saved 428 block chunks, 0 entity chunks, 0 poi chunks in world 'minecraft:the_end' in 0.47s\n[20:04:44 INFO]: [ChunkHolderManager] Waiting 60s for chunk I/O to halt for world 'minecraft:the_end'\n[20:04:44 INFO]: [ChunkHolderManager] Halted I/O scheduler for world 'minecraft:the_end'\n[20:04:44 INFO]: ThreadedAnvilChunkStorage (world): All chunks are saved\n[20:04:44 INFO]: ThreadedAnvilChunkStorage (DIM-1): All chunks are saved\n[20:04:44 INFO]: ThreadedAnvilChunkStorage (DIM1): All chunks are saved\n[20:04:44 INFO]: ThreadedAnvilChunkStorage: All dimensions are saved\n[20:04:44 INFO]: Waiting for all RegionFile I/O tasks to complete...\n[20:04:44 INFO]: All RegionFile I/O tasks to complete\n[20:04:44 INFO]: [MoonriseCommon] Awaiting termination of worker pool for up to 60s...\n[20:04:44 INFO]: [MoonriseCommon] Awaiting termination of I/O pool for up to 60s...\n",
+  "hardware": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "hostname": "Inspiron-7548",
+    "java_version": "openjdk version \"25.0.3\" 2026-04-21",
+    "logical_cpus": 4,
+    "mem_total_mb": 15904,
+    "os": "Linux-6.17.0-40-generic-x86_64-with-glibc2.39"
+  },
+  "run_id": "spawn_paper_20260716T190125Z",
+  "scenario": "spawn",
+  "server": "paper",
+  "status": "failed",
+  "timestamp": "2026-07-16T19:01:25.462023+00:00"
+}

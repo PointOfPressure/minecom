@@ -1,0 +1,27 @@
+{
+  "bots_connected": 15,
+  "bots_requested": 15,
+  "commit": "392c149da740afd0568f39922f88af49c68ab874",
+  "description": "N bots spread across a pregenerated square of chunks (scaled down from 10k on this laptop \u2014 see comment)",
+  "duration_seconds": 180,
+  "hardware": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "hostname": "Inspiron-7548",
+    "java_version": "openjdk version \"25.0.3\" 2026-04-21",
+    "logical_cpus": 4,
+    "mem_total_mb": 15904,
+    "os": "Linux-6.17.0-40-generic-x86_64-with-glibc2.39"
+  },
+  "mspt_avg": 8.3,
+  "mspt_p50": 7.6,
+  "mspt_p95": 11.1,
+  "mspt_p99": 29.5,
+  "mspt_source": "/tick query console command",
+  "run_id": "spread10k_paper_20260716T194531Z",
+  "scenario": "spread10k",
+  "server": "paper",
+  "status": "ok",
+  "timestamp": "2026-07-16T19:45:31.194398+00:00",
+  "tps": 19.97961461882295,
+  "tps_source": "query_gametime delta / wall-clock elapsed, capped at 20 (no /metrics on this server)"
+}

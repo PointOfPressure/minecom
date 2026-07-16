@@ -1,0 +1,20 @@
+{
+  "bots_requested": 15,
+  "commit": "56ca5182fc973059fdd9cdbca0460841c0cdb6d7",
+  "description": "N bots wandering at the default spawn point",
+  "duration_seconds": 150,
+  "failure_reason": "bot swarm sanity check failed: players_online never reached 10 and held for 10s within 60s (last observed: 5). Not reporting scenario numbers from an unverified server population \u2014 see docs/HANDOFF.md's rust-mc-bot escalation entry (2026-07-15) if this is the known keep-alive drop.",
+  "hardware": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "hostname": "Inspiron-7548",
+    "java_version": "openjdk version \"25.0.3\" 2026-04-21",
+    "logical_cpus": 4,
+    "mem_total_mb": 15904,
+    "os": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39"
+  },
+  "run_id": "spawn_minecom_20260716T144538Z",
+  "scenario": "spawn",
+  "server": "minecom",
+  "status": "failed",
+  "timestamp": "2026-07-16T14:45:38.166083+00:00"
+}

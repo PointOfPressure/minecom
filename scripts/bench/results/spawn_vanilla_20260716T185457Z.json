@@ -1,0 +1,27 @@
+{
+  "bots_connected": 15,
+  "bots_requested": 15,
+  "commit": "392c149da740afd0568f39922f88af49c68ab874",
+  "description": "N bots wandering at the default spawn point",
+  "duration_seconds": 150,
+  "hardware": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "hostname": "Inspiron-7548",
+    "java_version": "openjdk version \"25.0.3\" 2026-04-21",
+    "logical_cpus": 4,
+    "mem_total_mb": 15904,
+    "os": "Linux-6.17.0-40-generic-x86_64-with-glibc2.39"
+  },
+  "mspt_avg": 37.8,
+  "mspt_p50": 29.1,
+  "mspt_p95": 103.9,
+  "mspt_p99": 135.9,
+  "mspt_source": "/tick query console command",
+  "run_id": "spawn_vanilla_20260716T185457Z",
+  "scenario": "spawn",
+  "server": "vanilla",
+  "status": "ok",
+  "timestamp": "2026-07-16T18:54:57.569028+00:00",
+  "tps": 20.0,
+  "tps_source": "query_gametime delta / wall-clock elapsed, capped at 20 (no /metrics on this server)"
+}

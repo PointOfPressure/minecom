@@ -21,11 +21,16 @@ refused to emit fake numbers through the entire 2026-07-15/16 bot-bug
 investigation — all five scenarios produce real numbers as of 2026-07-16;
 see docs/BENCHMARKS.md.)
 
-Live scenarios currently only support --server minecom: the vanilla/Paper
-baseline path is wired for chunkgen (scenario e) only this session — a live
-vanilla baseline needs either a console-driven players-online probe (no
-/metrics on vanilla) or a BenchSetup-equivalent world-setup mechanism for
-redstone/mobfarm, neither built yet (see MASTERPLAN §4 P0 checkbox notes).
+Live scenarios support --server vanilla/paper for all five scenarios
+(spawn, spread10k, redstone, mobfarm, chunkgen) as of v0.25.0 —
+run_live_vanilla drives vanilla/Paper via scripts/vanilla_oracle.Server: a
+console `list` for players-online, `/tick query` for MSPT, and console
+`/forceload`+`/setblock`+`/summon`+`/spreadplayers` for the world-setup
+BenchSetup.java does directly against the Minestom API on the minecom side.
+See docs/BENCHMARKS.md for the full baseline matrix and methodology notes
+(including the deliberate divergences: mobfarm's flat platform instead of
+real terrain height, spread10k's /spreadplayers minimum-separation vs
+minecom's independent-uniform placement).
 
 Work dirs are disposable, outside the repo: ~/minecom-bench/<run-id>/.
 Results land in scripts/bench/results/<run-id>.json (committed — this
@@ -423,9 +428,38 @@ def _forceload_square_vanilla(srv, radius_chunks):
     """Console equivalent of BenchSetup.forceloadSquare — see that method's
     class comment for why a bench swarm needs an explicit force-loaded margin
     that real organic player traffic gets for free. `/forceload add` takes a
-    block-coordinate rectangle, inclusive on both corners."""
-    srv.cmd(f"forceload add {-radius_chunks * 16} {-radius_chunks * 16} "
-            f"{radius_chunks * 16 - 1} {radius_chunks * 16 - 1}")
+    block-coordinate rectangle, inclusive on both corners.
+
+    Tiled, NOT one-shot (2026-07-16, first spawn-vs-paper attempt): vanilla's
+    own `net.minecraft.server.commands.ForceLoadCommand.changeForceLoad` calls
+    `Level.getChunk` -> `ServerChunkCache.syncLoad` for EVERY chunk in the
+    requested rectangle SYNCHRONOUSLY on the main tick thread before the
+    command returns — a radius-6 (13x13=169 chunk) one-shot square blocks long
+    enough (worse under any machine contention) to trip Paper's watchdog
+    (spigot.yml `timeout-time`, independent of vanilla's own `max-tick-time`
+    property — that's why the same one-shot call survived against plain
+    vanilla but killed+restarted the Paper run: vanilla's watchdog IS disabled
+    by `max-tick-time=-1` in server.properties, Paper's separate one isn't).
+    Same tiled forceload+barrier pattern `run_chunkgen`'s vanilla/paper path
+    already proved at 1,296+ chunks, just smaller tiles (this is a warm-margin
+    step for bots, not a throughput measurement, so there's no reason to push
+    tile size — small tiles keep every single command's synchronous window
+    short regardless of what's sharing the CPU) and no minecraft:full polling
+    (unlike chunkgen, nothing here is measuring generation throughput)."""
+    tile = 3  # chunks/tile — keeps each `forceload add` call's synchronous
+    # blocking window short even on a heavily-loaded machine (this whole
+    # script is meant to be launched as `nice -n 15 python3 run_scenario.py
+    # ...` when the owner is using the laptop interactively — niceness is
+    # inherited by every java/rust-mc-bot child process this script spawns,
+    # see docs/BENCHMARKS.md's methodology note — but low CPU priority only
+    # helps get SCHEDULED sooner; the work inside one command is still
+    # synchronous either way, so small tiles matter regardless).
+    for tx in range(-radius_chunks, radius_chunks + 1, tile):
+        ex = min(tx + tile - 1, radius_chunks)
+        for tz in range(-radius_chunks, radius_chunks + 1, tile):
+            ez = min(tz + tile - 1, radius_chunks)
+            srv.cmd(f"forceload add {tx * 16} {tz * 16} {ex * 16 + 15} {ez * 16 + 15}")
+            srv.barrier(f"forceload-tile-{tx}_{tz}")
 
 
 def _stamp_redstone_vanilla(srv, count):
@@ -517,6 +551,12 @@ def run_live_vanilla(cfg, server, rid):
         if not bc.PAPER_JAR.exists():
             result.update(status="failed", failure_reason=f"{bc.PAPER_JAR} missing")
             return result
+        # Paper's watchdog is spigot.yml timeout-time, INDEPENDENT of
+        # server.properties max-tick-time — without this it thread-dumps at
+        # 10s and kills the server at 60s during HDD-bound world setup
+        # (first spawn-vs-paper attempt died exactly this way)
+        (work / "spigot.yml").write_text(
+            "settings:\n  timeout-time: -1\n  restart-on-crash: false\n")
         launch_cmd = ["java", "-Xmx2048M", "-jar", str(bc.PAPER_JAR), "--nogui"]
 
     srv = vanilla_oracle.Server(work, xmx="2048M", launch_cmd=launch_cmd)
@@ -529,8 +569,15 @@ def run_live_vanilla(cfg, server, rid):
         srv.barrier("setup")
 
         scenario = cfg["name"]
+        spread_radius_blocks = None
         if scenario == "spawn":
-            radius = cfg.get("pregen_radius_chunks", 6)
+            # MINECOM_BENCH_FORCELOAD_RADIUS (6), NOT pregen_radius_chunks (14) —
+            # the latter is minecom-only margin against its own worldgen-on-
+            # carrier-pool read-stall (docs/HANDOFF.md 2026-07-16); vanilla/Paper
+            # don't share that bug, and forceloading 14's 29x29=841 chunks live
+            # at vanilla's own ~3.5 chunks/sec (chunkgen baseline) would blow the
+            # warm_settle_seconds window for no baseline-fidelity reason.
+            radius = int(cfg["bench_extra_env"]["MINECOM_BENCH_FORCELOAD_RADIUS"])
             _forceload_square_vanilla(srv, radius)
             srv.barrier("spawn-forceload")
         elif scenario == "redstone":
@@ -538,6 +585,11 @@ def run_live_vanilla(cfg, server, rid):
         elif scenario == "mobfarm":
             _stamp_mobfarm_vanilla(srv, int(cfg["bench_extra_env"]["MINECOM_BENCH_MOB_COUNT"]),
                                     cfg["bench_extra_env"].get("MINECOM_BENCH_MOB_KIND", "zombie"))
+        elif scenario == "spread10k":
+            radius = int(cfg["bench_extra_env"]["MINECOM_BENCH_SPREAD_RADIUS"])
+            _forceload_square_vanilla(srv, radius)
+            spread_radius_blocks = radius * 16
+            srv.barrier("spread-forceload")
 
         settle = cfg.get("warm_settle_seconds", 0)
         if settle:
@@ -551,6 +603,28 @@ def run_live_vanilla(cfg, server, rid):
             bots_connected = _join_paced_vanilla(
                 swarm, bots_target, batch_size, gap, srv,
                 cfg["join_hold_seconds"], cfg["join_timeout_seconds"])
+
+            if scenario == "spread10k":
+                # Console equivalent of BenchSetup.registerSpread's per-player
+                # PlayerSpawnEvent teleport: /spreadplayers scatters the whole
+                # swarm across the forceloaded square AND resolves each
+                # column's surface height itself (motion-blocking heightmap),
+                # so no separate topBlock query is needed. Documented
+                # divergence, not silent (CLAUDE.md rule 4, see
+                # docs/BENCHMARKS.md): spreadplayers enforces a minimum
+                # separation between players, where minecom's registerSpread
+                # picks each column independently and uniformly (columns CAN
+                # land close together there but never here).
+                srv.cmd(f"spreadplayers 0 0 8 {spread_radius_blocks} false @a")
+                srv.barrier("spread-teleported")
+                # rust-mc-bot's process_teleport re-homes bot.anchor_{x,y,z}
+                # on every position-sync packet, not just the first ("later
+                # syncs (scenario spread-teleports) re-home the anchor too" —
+                # scripts/bench/rust-mc-bot/src/states/play.rs) — this settle
+                # lets every bot receive and process that sync before the
+                # measurement window starts, so the window doesn't open
+                # mid-flight from spawn to the new column.
+                time.sleep(5)
 
         gt_before = srv.query_gametime()
         t0 = time.time()

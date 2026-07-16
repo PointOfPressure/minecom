@@ -50,6 +50,17 @@ public final class PlayTest {
     private static TestPlayer player;
     private static int passed, failed;
     private static final StringBuilder REPORT = new StringBuilder();
+    // MASTERPLAN §4 P0 item 4: the total check() count drifted 823/824/825 across
+    // recent runs with no FAIL reported — a scenario bailing early through an
+    // unguarded exception or a guard's early return can silently swallow the checks
+    // after it (scenario()'s catch turns a throw into exactly one FAIL, but a plain
+    // early `return` inside a scenario body loses every check downstream of it with
+    // no signal at all). This constant is compared against the actual total at
+    // suite end and prints a WARNING (not a FAIL) on mismatch — a check-count
+    // change is legitimate whenever a scenario is added/removed/restructured, so
+    // this is a loud "did you mean to change this?" flag, updated deliberately per
+    // release, not a gate that blocks a real behavior change.
+    private static final int EXPECTED_CHECK_COUNT = 822;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -284,6 +295,15 @@ public final class PlayTest {
         scenario("nether: portal ignites + travels + returns", PlayTest::scenarioPortal);
 
         emit(passed + " passed, " + failed + " failed\n");
+        int totalChecks = passed + failed;
+        // only meaningful on a full run — a section filter (--playtest <substring>
+        // or MINECOM_TEST_ONLY) legitimately runs a fraction of EXPECTED_CHECK_COUNT.
+        if (sectionFilter == null && totalChecks != EXPECTED_CHECK_COUNT) {
+            emit("WARNING: check count drifted — ran " + totalChecks + " checks, expected "
+                    + EXPECTED_CHECK_COUNT + " (see EXPECTED_CHECK_COUNT's comment: update it "
+                    + "deliberately when a scenario is added/removed, but a mismatch with no other "
+                    + "code change is a scenario silently bailing early — investigate before shipping)\n");
+        }
         if (failed > 0) {
             emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
         }
@@ -1767,14 +1787,18 @@ public final class PlayTest {
         check("a natural-spawn phantom group is 1-4 on Hard (getPhantomSize stays 0, 6 damage — real "
                 + "vanilla no longer scales size with insomnia; got " + spawnedAtNight + ")",
                 spawnedAtNight >= 1 && spawnedAtNight <= 4);
-        world.getEntities().stream().filter(e -> e.getEntityType() == EntityType.PHANTOM)
-                .forEach(e -> {
-                    if (e instanceof net.minestom.server.entity.LivingEntity le) {
-                        check("spawned phantom keeps real vanilla base stats (6 attack damage, got "
-                                + le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) + ")",
-                                le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 6.0);
-                    }
-                });
+        // ONE aggregate check regardless of how many phantoms spawned (1-4, real vanilla group-size
+        // randomness) — the previous per-phantom forEach check() call made this scenario's own total
+        // check count vary run-to-run with no FAIL and no other code change (root cause of the
+        // "823/824/825 checks" drift MASTERPLAN §4 P0 item 4's EXPECTED_CHECK_COUNT assertion exists
+        // to catch; see docs/HANDOFF.md). Same aggregate-over-a-random-count shape as
+        // scenarioMobEquipment's "some zombies spawn wearing armor (N/80)" check just above it.
+        boolean allPhantomsHaveBaseStats = world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.PHANTOM)
+                .allMatch(e -> e instanceof net.minestom.server.entity.LivingEntity le
+                        && le.getAttributeValue(net.minestom.server.entity.attribute.Attribute.ATTACK_DAMAGE) == 6.0);
+        check("every spawned phantom keeps real vanilla base stats (6 attack damage; "
+                + spawnedAtNight + " phantom(s) this run)", allPhantomsHaveBaseStats);
 
         dev.pointofpressure.minecom.Difficulty.set(savedDifficulty);
         clearEntitiesExceptPlayer();
