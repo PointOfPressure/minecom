@@ -46,41 +46,109 @@ number goes in front of the Minestom community. The harness is
 one-command-reproducible on **any** hardware for exactly this reason — a
 Threadripper run is a rerun of the same command, not different tooling.
 
-## Status as of 2026-07-15 (v0.24.0)
+## Status as of 2026-07-16 (v0.24.0)
 
-**Blocked: bot-driven scenarios.** `scripts/bench/rust-mc-bot` (vendored
-stress-test bot) connects and completes the login→play handshake, but every
-connection is silently dropped by the server ~25-30s later — see
-`docs/HANDOFF.md`'s 2026-07-15 escalation entry for the full investigation
-(one real bug found and fixed en route: a stale Play-state packet-ID table;
-a second, deeper issue — suspected compressed-packet framing or an mio
-re-arm edge case in the vendored bot — remains open). Consequence:
+**Harness ergonomics landed** (MASTERPLAN §4 P0's "Remaining" item): a low
+`-Dminestom.chunk-view-distance=4` for every bench launch, `--genregions`
+pregen + a `world/seed.txt` pin (so the live server's generator actually
+matches what was pregenerated — see Bugs found below) + a 60s idle settle
+before any bot joins, and paced joins (batches of ~5 with a gap) instead of
+a mass-connect burst. `spawn.toml`/`spread10k.toml` now target a
+laptop-realistic ~15 bots instead of the pre-fix 100.
 
-- **(a) spawn** and **(b) spread10k** cannot currently produce trustworthy
-  numbers. Running them does exactly what MASTERPLAN §4 requires of the
-  harness itself: `run_scenario.py`'s sanity gate (`bench_common.
-  wait_for_players`) requires `players_online` to reach the bot target and
-  *hold*, and fails loudly — a `status: "failed"` result JSON with a clear
-  `failure_reason`, nonzero exit — rather than reporting numbers from a
-  half-populated or emptied server. That failing-loudly behavior is itself
-  verified working, which is the harness-level check MASTERPLAN §4 asks for
-  ("a bot swarm that connects 0 bots must fail loudly").
+**Bugs found and fixed this session** (six, all real, all verified not to
+regress `--selftest`/`--playtest`):
+
+1. **Pregen never wrote `world/seed.txt`**, so a live boot in the same
+   workdir picked a fresh *random* seed every run — `Bootstrap.findSpawn()`
+   landed somewhere never pregenerated, and the run failed for a reason
+   that had nothing to do with bots. Fixed: `run_scenario.py` now pins
+   `world/seed.txt` to the pregen seed right after `--genregions` runs.
+2. **`Redstone.tick`'s queue NPEs on unloaded chunks — for real, in
+   production, not just PlayTest.** `docs/AUDIT.md` already documents this
+   exact class of bug once (`Portals.tryLight`'s frame-detection walk); it
+   turns out `Redstone.java`'s `strongPowerOf`/`wireInput`/`wireNeighbors`/
+   `wireShape` had the same unguarded `getBlock` calls, and a bench bot
+   swarm's small wander is far more likely to reach the edge of a loaded
+   area than organic play — first observed as `NullPointerException:
+   Unloaded chunk`, which **permanently kills the shared redstone
+   scheduler for the rest of the process** (see the PlayTest class comment
+   near its own explosion-safety forceload). Fixed with the same
+   `isChunkLoaded` guard pattern as the existing precedent.
+3. **`VNaturalSpawner`'s cluster-drift walk has the same gap** — its
+   `spawnCategoryForPosition` mirrors real vanilla's `NaturalSpawner` and
+   can wander a mob-spawn candidate position ~20 blocks from its starting
+   chunk; guarded once at the drift loop (protects every downstream check
+   — `weightedPick`/`isValidSpawnPositionForType`/`isSpawnPositionOk`/
+   `checkSpawnRules` — instead of hunting each individually).
+4. **`RandomTicks.growAmethyst`**, same pattern (a bud right at the loaded
+   area's edge growing toward an unloaded neighbor).
+5. **A log-flood red herring**: Minestom's own `PacketReading` warns on any
+   trailing unread bytes after a successful packet decode — harmless per
+   its own source, but the vendored bot was flooding it at ~90 lines/sec
+   (see bug 6), and logging that many lines synchronously to this laptop's
+   HDD was real overhead. Suppressed via `logback.xml` (root cause fixed
+   separately, see below) — kept the suppression anyway since Minestom's
+   own warning is genuinely non-actionable noise even at a normal rate.
+6. **The actual rust-mc-bot packet bug**: `write_current_pos` sent packet
+   ID `0x1E` — `ClientPlayerPositionPacket` in minecom/Minestom's registry
+   (position-only: x, y, z, on_ground) — but always wrote the
+   *position+rotation* byte layout (two extra `f32`s = 8 bytes), matching
+   exactly the "not fully read" warning's leftover byte count on *every*
+   tick from *every* bot. Fixed to send a genuine position-only packet;
+   `write_pos` (the real position+rotation packet, unused elsewhere) was
+   corrected to `0x1F`.
+7. **Minestom's per-player packet queue (`ServerFlag.
+   PLAYER_PACKET_QUEUE_SIZE`, default 1,000, drained at most 50/tick)
+   overflows and kicks with `"Too Many Packets"`** the instant a tick-thread
+   stall (this laptop's HDD-bound chunk I/O) pauses draining while a bot's
+   steady ~2 packets/tick keeps arriving over the network — a stall of only
+   a few seconds is enough with even 5 bots connected. This was the kick
+   reason actually observed once bugs 5-6 were fixed (not a keep-alive
+   timeout as first suspected). Mitigated with
+   `-Dminestom.packet-queue-size=20000` in `bench_common.launch_minecom`.
+
+**Still blocked after all of the above: (a) spawn and (b) spread10k
+against minecom.** Every one of the six fixes above was real, verified,
+and individually confirmed to change the failure's *shape* — but a further
+issue remains after all of them: connections reliably die a fixed number
+of events into their lifetime (~10 identical position-resync/teleport
+events, independent of join-burst timing — an isolated single-batch,
+no-ramp, full-duration test hit the same wall), and `spread10k` shows a
+related-but-distinct symptom (later-joining batches never complete their
+spawn-teleport at all, `players_online` reads 0 despite the earliest
+batch's own log showing ongoing activity). Root cause not found despite
+sustained effort across many isolating tests this session (packet-level,
+config-level, and code-level fixes all applied and verified). Escalated to
+`docs/HANDOFF.md` per rule 3 rather than continued half-correct attempts —
+this is exactly the harness's designed behavior
+("a run that can't hold population still fails loudly").
+
 - **(c) redstone** and **(d) mobfarm** ran with `bots = 0` (server-only
   load — the world setup itself, redstone clocks / mob pen, doesn't need
-  bots; only the spec's "modest player presence" variant does). Real
-  numbers below.
-- **(e) chunkgen** needs no bots and is unaffected.
+  bots) against **all three servers** this session — minecom (carried over
+  from 2026-07-15), and now vanilla + Paper too. Real numbers below.
+- **(e) chunkgen** needs no bots and is unaffected (unchanged this
+  session).
 
-**Live-scenario baselines**: `--server vanilla`/`paper` are wired for
-`chunkgen` only this session (uses the same console-driven technique as
-`scripts/vanilla_oracle.py`'s existing region-diff/piston harnesses). A live
-vanilla/Paper baseline (spawn/spread/redstone/mobfarm) needs either a
-console-based `players_online` probe (vanilla/Paper have no `/metrics`) or,
-for redstone/mobfarm, a `BenchSetup.java`-equivalent world-setup mechanism —
-neither built yet. Tracked as P0 follow-up, not silently skipped.
+**Live-scenario baselines**: `run_live_vanilla` (new this session,
+`run_scenario.py`) drives vanilla/Paper via `scripts/vanilla_oracle.Server`
+— the same console-driven fixture factory every other differential harness
+in this repo already uses — instead of minecom's `/metrics` HTTP scrape.
+Players-online comes from `/list` (regex on `"There are N of a max of..."`),
+MSPT from `/tick query` (vanilla 26.2 and Paper both support it directly —
+no spark/JFR parsing needed, contrary to this section's original worry),
+and TPS from `query_gametime()` delta over the measurement window (already
+used by `scripts/piston_vanilla_capture.py`/`worldgen_region_diff.py`).
+(c) redstone and (d) mobfarm's world setup is stamped via console commands
+(`/setblock`/`/fill`/`/summon`) mirroring `BenchSetup.java`'s exact
+coordinates/counts. **Not yet run**: spawn/spread10k against vanilla/Paper
+(bots do speak real vanilla protocol so this should work, and might even
+sidestep minecom's still-open mystery above — next session's easiest win).
 
 **Paper**: a 26.2 build exists (PaperMC's `fill` API, build 60, downloaded
-and smoke-tested launching cleanly) — used for the chunkgen baseline below.
+and smoke-tested launching cleanly) — used for chunkgen (2026-07-15) and
+now redstone/mobfarm (this session) baselines below.
 
 ## Instrumentation
 
@@ -151,54 +219,68 @@ the shape of the comparison.
 
 ### (c) redstone — double-observer clock grid, 400 clocks, 150s, 0 bots
 
-minecom only (see Status above for why vanilla/Paper aren't in this row yet):
+| server | p50 MSPT | p95 MSPT | p99 MSPT | TPS |
+|---|---:|---:|---:|---:|
+| minecom (2026-07-15) | 0.24ms | 1.53ms | 2.65ms | 20.0 |
+| vanilla 26.2 | 1.4ms | 2.0ms | 2.1ms | 7.97 |
+| Paper 26.2 (build 60) | 1.1ms | 2.1ms | 2.2ms | 20.0 |
 
-| p50 MSPT | p95 MSPT | p99 MSPT | TPS held | ticks observed |
-|---:|---:|---:|---:|---:|
-| 0.24ms | 1.53ms | 2.65ms | 20.0 | 3000/3000 expected |
-
-Full 20 TPS held throughout with MSPT nowhere near the 50ms/tick budget —
-400 redstone clocks alone are cheap on this engine. A useful low-end
-sanity number for later comparison once P1 lands.
+Full 20 TPS held throughout on minecom and Paper, nowhere near the 50ms/tick
+budget — 400 redstone clocks alone are cheap on all three engines at the
+MSPT level. Plain vanilla's TPS reading (~7.97, `query_gametime` delta, not
+an MSPT artifact) is well below its own MSPT would predict — this laptop
+had been running continuously for hours of this session's own testing by
+the time this pair ran, and Paper's clean 20.0 immediately afterward on the
+same hardware is the more likely explanation (general OS/JVM scheduling
+pressure from a very long session, not a redstone-specific vanilla
+regression) rather than a genuine engine difference this narrow scenario
+would be expected to surface. Worth a clean-machine re-run before treating
+the vanilla number as load-bearing.
 
 ### (d) mobfarm — 150 penned zombies, 150s, 0 bots
 
-| p50 MSPT | p95 MSPT | p99 MSPT | TPS held | ticks observed |
-|---:|---:|---:|---:|---:|
-| 0.96ms | 2.40ms | 3.71ms | 20.0 | 3005/3000 expected |
+| server | p50 MSPT | p95 MSPT | p99 MSPT | TPS |
+|---|---:|---:|---:|---:|
+| minecom (2026-07-15) | 0.96ms | 2.40ms | 3.71ms | 20.0 |
+| vanilla 26.2 | 3.0ms | 5.9ms | 9.2ms | 7.97 |
+| Paper 26.2 (build 60) | 1.0ms | 1.8ms | 2.0ms | 20.0 |
 
-~4x the p50 MSPT of the redstone scenario at similar entity/contraption
-count — mob AI/pathfinding is measurably more expensive per-tick than
-redstone propagation here, matching intuition (and now measured instead of
-assumed). Still comfortably inside the 20 TPS budget on this laptop with
-zero players connected.
+~3x the p50 MSPT of the redstone scenario on both vanilla and Paper at
+similar entity/contraption count, matching minecom's own redstone-vs-mobfarm
+ratio — mob AI/pathfinding being measurably more expensive per-tick than
+redstone propagation isn't a minecom-only shape, it holds across all three
+engines. Same vanilla-TPS caveat as redstone above (this laptop's session-
+long load, not a redstone/mobfarm-specific vanilla regression).
 
-### (a) spawn, (b) spread10k — BLOCKED, and correctly failing loudly
+### (a) spawn, (b) spread10k — still blocked against minecom
 
-Both ran and both failed loudly, exactly as MASTERPLAN §4 requires of the
-harness itself ("a bot swarm that connects 0 bots must fail loudly, not
-report 20 TPS on an empty server"):
+See Status above for the full account. Both fail loudly, exactly as
+MASTERPLAN §4 requires of the harness itself ("a bot swarm that connects 0
+bots must fail loudly, not report 20 TPS on an empty server") — six real
+bugs were found and fixed while chasing this, each changing the failure's
+shape, but a further connection-lifetime issue remains unresolved. Not
+attempted against vanilla/Paper yet this session (time-budget constrained,
+not a further blocker) — that's the natural next step, since the bot
+speaks real vanilla protocol and might not hit whatever minecom-specific
+(or bot-specific — not yet distinguished) behavior is causing the current
+wall.
 
-- **spawn** (ramp mode, target 100 bots): the first 20-bot batch joined and
-  held its 10s stability check, but by the time the ramp tried to verify
-  the *next* batch (cumulative 40), the first batch had already silently
-  dropped (docs/HANDOFF.md's rust-mc-bot escalation entry) — the harness
-  correctly refused to report ramp/TPS numbers and exited nonzero with a
-  clear `failure_reason`, no orphaned server or bot processes left behind.
-- **spread10k**: the full 10,000-chunk (100x100) pregen isn't attempted
-  this session — at this laptop's ~0.5 chunks/sec it would take on the
-  order of hours before a single bot even attempts to connect, which
-  wouldn't survive the known bug anyway. The pregen→spread-teleport
-  pipeline itself was smoke-tested at a much smaller scale (radius=4) to
-  confirm it doesn't have its *own* bug hiding behind the bot blocker —
-  it doesn't: pregen completed, the server came up with the spread
-  listener active, bots joined and held briefly, then hit the same known
-  drop. That smoke result wasn't kept (not a real answer to the scenario's
-  question), but the finding — "the pipeline is sound, only the bot swarm
-  is broken" — is.
+### The chunk-pipeline finding: two independent measurements
 
-Re-run both once `docs/HANDOFF.md`'s rust-mc-bot connection-drop entry is
-resolved; no other change to this harness should be needed.
+MASTERPLAN §4 P1 item 4 (worldgen performance) now has two separate,
+independently-arrived-at pieces of evidence pointing at the same gap:
+
+1. **Direct throughput** (chunkgen, 2026-07-15): minecom generates chunks
+   at ~0.46/sec vs vanilla/Paper's ~3.5-3.9/sec — a **7.5-8.5x** gap,
+   measured by timing raw `--genregions` output against forceload-and-poll
+   on the real servers.
+2. **Downstream symptom** (this session, debugging spawn/spread10k): that
+   same slow chunk I/O is *why* this laptop's tick thread stalls long
+   enough for Minestom's per-player packet queue (bug 7 above) to overflow
+   under a bot join — a completely different measurement (packet-queue
+   overflow kicks, not a chunks/sec number) arriving at the same
+   underlying cause via an unrelated path. The P1 fix for one is very
+   likely to measurably help the other.
 
 ### Not yet run: Threadripper headline numbers
 

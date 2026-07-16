@@ -187,16 +187,27 @@ itself is a deliverable nobody else has [PERF Top-10 #1].
   JFR capture wired (`--jfr` flag) but not yet auto-parsed into results
   (deliberately coarse per this section's own instrumentation-surface
   bullet — the per-system breakdown is P1's job).
-- **[PARTIAL 2026-07-15]** **Baselines**: `chunkgen` runs against vanilla
-  26.2 and Paper 26.2 (build 60, downloaded via PaperMC's `fill` API) —
-  same box, same seed, real numbers in docs/BENCHMARKS.md (minecom is
-  currently ~7.5-8x slower at raw chunk generation than either, the exact
-  gap P1 item 4 exists to close). The other four scenarios' vanilla/Paper
-  baselines aren't wired yet — needs either a console-driven
-  `players_online` probe (vanilla/Paper have no `/metrics`) or, for
-  redstone/mobfarm, a `BenchSetup.java`-equivalent world-setup mechanism.
-  Threadripper headline numbers (§11.1) not run — not reachable this
-  session.
+- **[UPDATED 2026-07-16]** **Harness ergonomics + baselines**: low
+  chunk-view-distance + pregen/forceload warm-world step + paced/ramped
+  joins landed for weak hardware (see HANDOFF's 2026-07-16 entry); six
+  real bugs found and fixed while chasing (a)/(b) to real numbers
+  (three chunk-load NPE guards extending the existing Portals.tryLight
+  precedent, a log-flood suppression, a rust-mc-bot packet-encoding fix,
+  a Minestom packet-queue-size tuning) — all verified against a clean
+  228/228 selftest + 824/824 playtest. **(c) redstone and (d) mobfarm now
+  have real vanilla AND Paper baselines** (docs/BENCHMARKS.md), alongside
+  minecom's own 2026-07-15 numbers — `run_live_vanilla` in
+  `run_scenario.py` drives them via `scripts/vanilla_oracle.Server`
+  (console `/list` for players-online, `/tick query` for MSPT — no
+  spark/JFR parsing needed after all). **(a) spawn and (b) spread10k
+  against minecom remain blocked** despite all six fixes — a further,
+  now precisely-characterized connection-lifetime issue (not load- or
+  join-burst-related) is open, escalated per rule 3 in HANDOFF's newest
+  entry. Against vanilla/Paper: untried this session (the harness
+  supports it; next session's highest-value move, since it would
+  immediately tell whether the remaining issue is minecom-specific or
+  bot-specific). Threadripper headline numbers (§11.1) still not run —
+  not reachable from this sandbox.
 - **[LANDED 2026-07-15]** **Instrumentation surface**: `bench/Metrics.java`
   — Prometheus `/metrics` backed by Minestom's `ServerTickMonitorEvent`
   (true per-tick MSPT as `quantile="0.5"/"0.95"/"0.99"`), TPS, GC

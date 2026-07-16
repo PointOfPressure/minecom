@@ -10,6 +10,26 @@ leftovers.
 
 ## Cross-cutting
 
+- **Unguarded `getBlock` near a loaded area's edge is a recurring bug class,
+  not a one-off (2026-07-16, Fable).** The first instance of this
+  (`Portals.tryLight`'s frame-detection walk, see below) was treated as an
+  isolated fix; the MASTERPLAN §4 P0 bench harness's bot swarm — whose
+  small wander is far more likely to reach a loaded area's edge than
+  organic play — found three more while chasing real spawn/spread10k
+  numbers: `Redstone.java`'s `strongPowerOf`/`wireInput`/`wireNeighbors`/
+  `wireShape` (the `wireNeighbors` one is especially bad — it feeds
+  `recomputeWireNetwork`'s BFS, so hitting it doesn't just throw once, it
+  **permanently kills the shared redstone scheduler for the rest of the
+  process**), `VNaturalSpawner.spawnCategoryForPosition`'s cluster-drift
+  walk (mirrors real vanilla's `NaturalSpawner`, can wander ~20 blocks from
+  its starting chunk), and `RandomTicks.growAmethyst`. All four fixed with
+  the same `isChunkLoaded` guard pattern as the original. Given four
+  independent occurrences now, any *new* code that walks outward from a
+  known-loaded position (redstone-adjacent, spawn-adjacent, random-tick-
+  adjacent, or otherwise) should default to guarding `getBlock` at the
+  neighbor-computation site, not assume the surrounding area is loaded —
+  see docs/HANDOFF.md's 2026-07-16 entry for the full debugging account.
+
 - **`setInstance` without `.join()` is NOT a bug wherever the target chunk is
   already loaded — stop pattern-matching it (2026-07-13, Opus).** Most mob
   factories in `VanillaMobs` call `mob.setInstance(instance, pos)` without

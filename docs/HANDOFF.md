@@ -14,6 +14,133 @@ of what got escalated and why.
 
 ---
 
+## ESCALATION: minecom bot-scenario connections still die mid-run after six real fixes (2026-07-16, Fable) — blocks MASTERPLAN §4 P0's spawn/spread10k numbers against minecom
+
+Picked up the "Remaining" section of the entry below (harness ergonomics +
+running (a)/(b) to real numbers). Landed all of the harness ergonomics
+(low chunk-view-distance, pregen+forceload warm-world step, paced/ramped
+joins) and found six distinct, real, individually-verified bugs while
+trying to get a clean run — each one changed the failure's *shape*, which
+is how this took so long to fully characterize:
+
+1. **Pregen never wrote `world/seed.txt`.** `GenRegions` takes its seed as
+   a bare CLI arg and never persists it; a subsequent normal boot's
+   `Bootstrap.worldSeed()` found no `seed.txt` and picked a fresh *random*
+   seed, so `findSpawn()` landed somewhere that was never pregenerated —
+   the run failed for a reason with nothing to do with bots at all. Fixed:
+   `run_scenario.py`'s pregen step now pins `world/seed.txt` to the pregen
+   seed immediately after `--genregions` succeeds.
+2. **`Redstone.tick`'s queue NPEs on unloaded chunks in *production*, not
+   just PlayTest.** `docs/AUDIT.md` already has this exact bug class
+   documented once (`Portals.tryLight`'s unguarded frame-detection walk,
+   fixed with `isChunkLoaded` checks). Turns out `Redstone.java`'s
+   `strongPowerOf`, `wireInput`, `wireNeighbors`, and `wireShape` all have
+   the same unguarded `getBlock` pattern — and a bench bot swarm's small
+   wander is far more likely to reach a loaded area's edge than organic
+   play ever is. Symptom: `NullPointerException: Unloaded chunk` inside a
+   scheduled-task exception, which **permanently kills the shared redstone
+   scheduler for the rest of the process** (see the exact same failure
+   mode already called out in `PlayTest.java`'s explosion-safety-forceload
+   comment). Fixed with the established guard pattern at all four sites.
+3. **`VNaturalSpawner.spawnCategoryForPosition`'s cluster-drift walk has
+   the identical gap** — it mirrors real vanilla's `NaturalSpawner` and can
+   wander a spawn-candidate position ~20 blocks from its starting chunk.
+   One guard at the drift loop itself (not each downstream helper)
+   protects the whole chain: `weightedPick` →
+   `isValidSpawnPositionForType` → `isSpawnPositionOk` → `checkSpawnRules`.
+4. **`RandomTicks.growAmethyst`**, same pattern again (a bud at the edge of
+   a loaded area growing toward an unloaded neighbor chunk).
+5. **A real log-flood, but a red herring for the actual disconnects**:
+   Minestom's `PacketReading.readPayload` warns on any trailing unread
+   bytes after a packet decodes successfully (harmless by its own design —
+   the packet still deserializes fine). The vendored bot was triggering
+   this on *every* tick from *every* bot (~90 lines/sec once traced down —
+   see bug 6), and logging that many lines synchronously to this laptop's
+   HDD is real overhead on its own. Suppressed via `logback.xml`
+   (`net.minestom.server.network.packet.PacketReading` → `ERROR`). Kept
+   even after finding the real cause, since Minestom's own warning stays
+   genuinely non-actionable noise at any rate.
+6. **The actual rust-mc-bot bug**: `write_current_pos`
+   (`scripts/bench/rust-mc-bot/src/states/play.rs`) sent packet ID `0x1E`
+   — confirmed via `PacketVanilla.CLIENT_PLAY` entry-counting to be
+   `ClientPlayerPositionPacket` (position-only: 3×`f64` + 1 `bool`) — but
+   always wrote the *position+rotation* packet's byte layout (2 extra
+   `f32`s, 8 bytes), matching **exactly** the "not fully read" leftover
+   byte count from bug 5. Fixed `write_current_pos` to build a genuine
+   position-only packet; `write_pos` (the real position+rotation packet,
+   unused elsewhere in the vendored bot) was corrected to `0x1F` for when
+   it's needed again.
+7. **Minestom's per-player packet queue overflow — the actual kick
+   reason, once 5 and 6 were fixed**: `ServerFlag.PLAYER_PACKET_QUEUE_SIZE`
+   defaults to 1,000, drained at most `PLAYER_PACKET_PER_TICK`=50/tick
+   (`Player.addPacketToQueue`/`interpretPacketQueue`). A tick-thread stall
+   from this laptop's HDD-bound chunk I/O pauses draining while a bot's
+   steady ~2 packets/tick keeps arriving over the network at its own pace
+   — a stall of only a few seconds overflows the queue with even 5 bots
+   connected, and the kick reason is a plain `"Too Many Packets"` (this
+   was the actual, readable kick text once the earlier bugs stopped
+   masking it — not a keep-alive timeout as first suspected from the
+   original 2026-07-15 investigation). Mitigated with
+   `-Dminestom.packet-queue-size=20000` added to
+   `bench_common.launch_minecom`'s JVM flags.
+
+**All six fixes are real, kept, and verified**: `--selftest` 228/228 and
+`--playtest` 824/824, both 0 failed, confirmed clean *after* every source
+change this session (not just once at the end).
+
+**What's still open, despite all of the above**: `spawn.toml` (ramp mode,
+target 15 bots) and `spread10k.toml` (paced joins, target 15 bots) still
+fail loudly:
+
+- **spawn**: connections reliably die after **exactly ~10 identical
+  position-resync (`process_teleport`) events** — the bot's own debug
+  print (`println!("{x}, {y}, {z}")` in `play.rs`'s teleport handler) shows
+  the *same* spawn coordinates every time, meaning the server keeps
+  re-syncing the player back to the exact same position, ten times, then
+  the connection dies (`Broken pipe`/`Connection reset by peer`/`Too Many
+  Packets`, inconsistently — the *symptom* varies but the "~10 identical
+  resyncs first" pattern doesn't). An isolated single-batch, no-ramp,
+  full-150s-duration test (no concurrent join burst at all) hit the exact
+  same wall, which rules out join-burst contention as the root cause —
+  this is a connection-*lifetime* issue, not a load issue.
+- **spread10k**: a related but distinct symptom — the *first*-joined batch
+  shows real spread-teleport activity (varied coordinates, not stuck at
+  spawn) and appears to run for the full scenario without an explicit
+  disconnect in its own log, but *later*-joining batches show zero
+  position-sync lines at all (never even complete their first
+  `PlayerSpawnEvent`-triggered teleport), and the server's own
+  `players_online` metric reads 0 by the final check despite the first
+  batch's apparent ongoing activity — a discrepancy between what the bot
+  logs show and what minecom's `/metrics` reports that wasn't resolved
+  this session either.
+
+**Leading hypotheses, none confirmed**: (a) something in minecom's own
+per-tick player-position handling (`Persist.savedPosition`? some other
+per-connection scheduled task?) that degrades or breaks after a fixed
+number of iterations rather than a fixed time; (b) a subtler protocol
+issue in the bot beyond bug 6 above — the repeated identical-position
+resync pattern itself is unexplained (why would the server re-sync a
+stationary-looking player ten times in a row at all?); (c) the
+`players_online`-vs-bot-logs discrepancy in spread10k could be a metrics-
+reporting bug independent of the connection issue rather than the same
+root cause. **Not yet tried**: running the SAME bot against real vanilla
+26.2 or Paper directly (`run_scenario.py spawn --server vanilla`, now
+wired — see docs/BENCHMARKS.md) — since the bot speaks real vanilla
+protocol, this would immediately tell you whether the remaining issue is
+minecom-specific (only vanilla/Paper succeed) or bot-specific (all three
+fail identically). That's the highest-value next step, not repeating any
+of the diagnostics already exhausted this session (packet-level,
+config-level, and code-level fixes were all tried and verified working
+individually — this is a genuine rule-3 stronger-model/sustained-
+instrumentation case, not a "try one more thing").
+
+**Impact**: (c) redstone and (d) mobfarm are unaffected (bots=0, always
+were) and now have real vanilla+Paper baselines alongside minecom's own
+(docs/BENCHMARKS.md). (e) chunkgen is unaffected. (a) spawn and (b)
+spread10k against minecom remain blocked; against vanilla/Paper, untried.
+
+---
+
 ## ~~ESCALATION: rust-mc-bot connections silently die ~25-30s after join~~ — DONE (2026-07-15, Fable): protocol fixed, residual limits are the product's own chunk pipeline
 
 Root-cause chain (TCP forensics via `ss -tin`, then send/dispatch tracing —
