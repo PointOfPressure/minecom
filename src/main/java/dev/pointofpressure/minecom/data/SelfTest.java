@@ -1544,6 +1544,83 @@ public final class SelfTest {
                 + "(the id<<2|brightness byte packing every map pixel uses)",
                 packedIdRoundTrips());
 
+        // Bundles: pure weight/insert/remove math (BundleContents port), decompile-verified
+        // against BundleContents/BundleContents.Mutable (26.2). Capacity is 64 "weight units"
+        // (== vanilla's Fraction 1.0), one item's unit weight being 64/maxStackSize.
+        check("Bundles.isBundle: any color + the plain bundle match, unrelated items don't",
+                dev.pointofpressure.minecom.survival.Bundles.isBundle(ItemStack.of(Material.BUNDLE))
+                        && dev.pointofpressure.minecom.survival.Bundles.isBundle(ItemStack.of(Material.RED_BUNDLE))
+                        && dev.pointofpressure.minecom.survival.Bundles.isBundle(ItemStack.of(Material.CYAN_BUNDLE))
+                        && !dev.pointofpressure.minecom.survival.Bundles.isBundle(ItemStack.of(Material.CHEST))
+                        && !dev.pointofpressure.minecom.survival.Bundles.isBundle(ItemStack.AIR));
+        {
+            var afterFull = dev.pointofpressure.minecom.survival.Bundles.insert(List.of(), ItemStack.of(Material.ARROW, 64));
+            check("Bundles.insert: 64 arrows (maxStackSize 64 -> unit weight 1) exactly fill the 64-unit capacity",
+                    afterFull.inserted() == 64
+                            && dev.pointofpressure.minecom.survival.Bundles.totalWeight(afterFull.contents()) == 64);
+            var overflow = dev.pointofpressure.minecom.survival.Bundles.insert(afterFull.contents(), ItemStack.of(Material.ARROW, 1));
+            check("Bundles.insert: a full bundle rejects any further item (inserted 0, contents unchanged)",
+                    overflow.inserted() == 0 && overflow.contents().equals(afterFull.contents()));
+        }
+        {
+            var pearls = dev.pointofpressure.minecom.survival.Bundles.insert(List.of(), ItemStack.of(Material.ENDER_PEARL, 20));
+            check("Bundles.insert: ender pearls (maxStackSize 16 -> unit weight 4) cap at 16 despite 20 offered "
+                    + "(64 units / 4-per-pearl = 16)",
+                    pearls.inserted() == 16
+                            && dev.pointofpressure.minecom.survival.Bundles.totalWeight(pearls.contents()) == 64);
+        }
+        {
+            var tool = dev.pointofpressure.minecom.survival.Bundles.insert(List.of(), ItemStack.of(Material.DIAMOND_PICKAXE, 1));
+            check("Bundles.insert: an unstackable tool (maxStackSize 1 -> unit weight 64) takes the WHOLE bundle by itself",
+                    tool.inserted() == 1 && dev.pointofpressure.minecom.survival.Bundles.totalWeight(tool.contents()) == 64);
+            var second = dev.pointofpressure.minecom.survival.Bundles.insert(tool.contents(), ItemStack.of(Material.DIAMOND_AXE, 1));
+            check("Bundles.insert: no room left for a second unstackable tool once the first fills the bundle",
+                    second.inserted() == 0);
+        }
+        {
+            var ten = dev.pointofpressure.minecom.survival.Bundles.insert(List.of(), ItemStack.of(Material.ARROW, 10));
+            var fifteen = dev.pointofpressure.minecom.survival.Bundles.insert(ten.contents(), ItemStack.of(Material.ARROW, 5));
+            check("Bundles.insert: inserting more of the SAME item merges into the existing entry rather than "
+                    + "adding a second one (BundleContents.findStackIndex)",
+                    fifteen.contents().size() == 1 && fifteen.contents().get(0).amount() == 15);
+        }
+        {
+            var a = dev.pointofpressure.minecom.survival.Bundles.insert(List.of(), ItemStack.of(Material.STICK, 1));
+            var ab = dev.pointofpressure.minecom.survival.Bundles.insert(a.contents(), ItemStack.of(Material.STRING, 1));
+            var popped = dev.pointofpressure.minecom.survival.Bundles.removeTop(ab.contents());
+            check("Bundles.removeTop: LIFO — the most-recently-inserted entry (string) comes out first, matching "
+                    + "vanilla's un-selected fallback to index 0",
+                    popped.removed().material() == Material.STRING
+                            && popped.contents().size() == 1
+                            && popped.contents().get(0).material() == Material.STICK);
+            var emptied = dev.pointofpressure.minecom.survival.Bundles.removeTop(popped.contents());
+            check("Bundles.removeTop: popping the last entry leaves the bundle empty",
+                    emptied.removed().material() == Material.STICK && emptied.contents().isEmpty());
+            var fromEmpty = dev.pointofpressure.minecom.survival.Bundles.removeTop(emptied.contents());
+            check("Bundles.removeTop: on an already-empty bundle returns AIR and doesn't throw",
+                    fromEmpty.removed().isAir());
+        }
+        {
+            var shulker = dev.pointofpressure.minecom.survival.Bundles.insert(List.of(), ItemStack.of(Material.SHULKER_BOX, 1));
+            check("Bundles.insert: shulker boxes can never go in a bundle (BundleItem.canFitInsideContainerItems), "
+                    + "any color",
+                    shulker.inserted() == 0 && shulker.contents().isEmpty());
+        }
+        {
+            var nestedArrows = dev.pointofpressure.minecom.survival.Bundles.insert(List.of(), ItemStack.of(Material.ARROW, 32));
+            ItemStack nestedBundle = ItemStack.of(Material.BUNDLE).with(
+                    net.minestom.server.component.DataComponents.BUNDLE_CONTENTS, nestedArrows.contents());
+            var outer = dev.pointofpressure.minecom.survival.Bundles.insert(List.of(), nestedBundle);
+            check("Bundles.insert: a bundle-in-bundle's unit weight is 4 + the nested bundle's own weight "
+                    + "(BUNDLE_IN_BUNDLE_WEIGHT=1/16 -> 4 of 64 units; the 32-arrow bundle inside is 32/64 -> "
+                    + "total 36, so exactly one fits, a second would overflow past 64)",
+                    outer.inserted() == 1
+                            && dev.pointofpressure.minecom.survival.Bundles.totalWeight(outer.contents()) == 36);
+            var secondNested = dev.pointofpressure.minecom.survival.Bundles.insert(outer.contents(), nestedBundle);
+            check("Bundles.insert: a second identical nested bundle (36 units) would push total to 72 > 64, rejected",
+                    secondNested.inserted() == 0);
+        }
+
         emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
             emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");

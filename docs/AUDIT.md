@@ -1027,8 +1027,38 @@ leftovers.
   already run that physics locally and just report position, so only the
   parts a client can't authoritatively decide were modeled server-side).
   no eye of ender flight (locatestronghold
-  command instead), no bundles, no spyglass, no goat horns, no
+  command instead), no spyglass, no
   shields BANNER patterns (see banners entry below), no totem. (each S-M)
+  ~~no bundles~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 4,
+  `survival/Bundles.java`, new file)** — decompile-verified against
+  `BundleItem`/`BundleContents`/`BundleContents.Mutable` (26.2, freshly
+  decompiled). Vanilla's `overrideStackedOnOther`/`overrideOtherStackedOnMe`
+  hooks let a bundle intercept the generic inventory-click pipeline
+  regardless of which menu it's in; this project has no per-item
+  click-override hook, so a global `InventoryPreClickEvent` listener checks
+  whether the cursor or the clicked slot holds a bundle and, if so, cancels
+  the default click and runs the insert/remove logic itself (the same
+  "cancel + hand-roll" shape `blocks/Crafting.java` already uses for its
+  result slot). Capacity rides `DataComponents.BUNDLE_CONTENTS` — a native
+  Minestom component (a plain `List<ItemStack>`) — so the client already
+  renders the fullness bar and contents tooltip with zero extra wiring, and
+  persistence is free too (`Persist.java`'s item round-trip already walks
+  every component via `ItemStack#toItemNBT`). Weight math (1/maxStackSize
+  per item, 1/16+nested-weight for a bundle-in-a-bundle, shulker boxes
+  categorically rejected) is re-derived as exact-integer "weight units out
+  of 64" instead of vanilla's `Fraction` type, since every real stack size
+  (1/16/64) divides 64 evenly — an exact re-encoding, not an approximation.
+  Not modeled: the sub-item click-to-select-before-removing UI (needs the
+  client to report which icon inside the bundle's own tooltip grid was
+  clicked, a precision Minestom's click protocol doesn't expose — the
+  un-selected fallback, index 0/most-recently-added, is used unconditionally,
+  which is itself real vanilla behavior, not an approximation); holding
+  right-click to continuously spill contents (vanilla's `onUseTick`, the
+  same per-tick-callback engine gap `Archaeology.java`'s own entry below
+  documents) collapses to a single tap-to-pop-one-entry. 13 SelfTest checks
+  (pure insert/remove/weight math) + 12 PlayTest checks (`scenarioBundle` —
+  the real click-event integration in both directions, shulker rejection,
+  the bare-right-click drop).
   ~~no maps~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 2)** —
   `survival/Maps.java` (decompile-verified against `EmptyMapItem`/`MapItem`/
   `MapItemSavedData`, 26.2) + `data/MapColors.java` (the ported `MapColor`

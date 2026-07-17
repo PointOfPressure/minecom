@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 914;
+    private static final int EXPECTED_CHECK_COUNT = 926;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -249,6 +249,7 @@ public final class PlayTest {
         scenario("copper waxing: honeycomb applies wax (blocking further oxidation), axe scrapes or strips it back off", PlayTest::scenarioCopperWaxing);
         scenario("fire spread: player-lit flint and steel burns down flammable planks, self-extinguishes unsupported, spreads to a neighbor", PlayTest::scenarioFireSpread);
         scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
+        scenario("bundle: cursor-holds-bundle and slot-holds-bundle click insert/remove, shulker boxes rejected, a bare right-click pops and drops the top entry", PlayTest::scenarioBundle);
         scenario("structure loot: chest/barrel/dispenser roll a real vanilla loot table on first open, not before, not twice; barrel lid blockstate toggles open/close", PlayTest::scenarioStructureLoot);
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
@@ -776,6 +777,86 @@ public final class PlayTest {
                         && s.get(DataComponents.LODESTONE_TRACKER) != null
                         && s.get(DataComponents.LODESTONE_TRACKER).tracked());
         check("splitting off a bound compass adds exactly one new bound copy to the inventory", gotBoundCopy);
+        resetPlayer();
+    }
+
+    /**
+     * Bundles (survival/Bundles.java): the live click-event integration on top of the pure
+     * insert/remove/weight math SelfTest already covers. Both "self" shapes real vanilla's
+     * {@code overrideStackedOnOther}/{@code overrideOtherStackedOnMe} split on: cursor holds
+     * the bundle (clicking into the inventory grid), and the inventory grid holds the bundle
+     * (clicking with an item on the cursor). Runs entirely inside the player's own inventory —
+     * bundle interception is global (any {@code InventoryPreClickEvent}), not tied to a
+     * specific window, so the player's own 36-slot inventory already exercises the exact same
+     * code path a chest window would.
+     */
+    private static void scenarioBundle() {
+        clearEntitiesExceptPlayer();
+        var inv = player.getInventory();
+
+        // --- cursor holds the bundle: left-click an item slot inserts, right-click an empty slot removes ---
+        inv.setCursorItem(ItemStack.of(Material.BUNDLE));
+        inv.setItemStack(0, ItemStack.of(Material.ARROW, 10));
+        click(inv, 0);
+        List<ItemStack> cursorContents = inv.getCursorItem().get(DataComponents.BUNDLE_CONTENTS);
+        check("left-clicking a slot with a bundle on the cursor inserts the WHOLE stack",
+                cursorContents != null && cursorContents.size() == 1
+                        && cursorContents.get(0).material() == Material.ARROW && cursorContents.get(0).amount() == 10);
+        check("the source slot is emptied by the insert", inv.getItemStack(0).isAir());
+
+        rightClick(inv, 1); // slot 1 is empty
+        check("right-clicking an empty slot with a bundle on the cursor pulls the top entry out",
+                inv.getItemStack(1).material() == Material.ARROW && inv.getItemStack(1).amount() == 10);
+        check("the bundle on the cursor is empty again after giving its only entry back",
+                dev.pointofpressure.minecom.survival.Bundles.contentsOf(inv.getCursorItem()).isEmpty());
+        inv.setCursorItem(ItemStack.AIR);
+        inv.setItemStack(1, ItemStack.AIR);
+
+        // --- the bundle sits in a slot: left-click with an item on the cursor inserts, right-click with an empty cursor removes ---
+        inv.setItemStack(2, ItemStack.of(Material.BUNDLE));
+        inv.setCursorItem(ItemStack.of(Material.STICK, 5));
+        click(inv, 2);
+        List<ItemStack> slotContents = inv.getItemStack(2).get(DataComponents.BUNDLE_CONTENTS);
+        check("left-clicking a bundle IN A SLOT with an item on the cursor inserts it",
+                slotContents != null && slotContents.size() == 1
+                        && slotContents.get(0).material() == Material.STICK && slotContents.get(0).amount() == 5);
+        check("the cursor is emptied by the insert (5 sticks fit easily under 64 units)", inv.getCursorItem().isAir());
+
+        rightClick(inv, 2);
+        check("right-clicking a bundle in a slot with an empty cursor pulls its entry onto the cursor",
+                inv.getCursorItem().material() == Material.STICK && inv.getCursorItem().amount() == 5);
+        check("the bundle's own slot contents are empty again",
+                dev.pointofpressure.minecom.survival.Bundles.contentsOf(inv.getItemStack(2)).isEmpty());
+        inv.setCursorItem(ItemStack.AIR);
+        inv.setItemStack(2, ItemStack.AIR);
+
+        // --- shulker boxes can never go in (BundleItem.canFitInsideContainerItems) ---
+        inv.setCursorItem(ItemStack.of(Material.BUNDLE));
+        inv.setItemStack(3, ItemStack.of(Material.SHULKER_BOX));
+        click(inv, 3);
+        check("a shulker box offered to a bundle is rejected: the slot still holds it",
+                inv.getItemStack(3).material() == Material.SHULKER_BOX);
+        check("...and nothing landed in the bundle",
+                dev.pointofpressure.minecom.survival.Bundles.contentsOf(inv.getCursorItem()).isEmpty());
+        inv.setCursorItem(ItemStack.AIR);
+        inv.setItemStack(3, ItemStack.AIR);
+
+        // --- standalone right-click (no target block/entity): single-tap pop-and-drop the top entry ---
+        ItemStack loadedBundle = ItemStack.of(Material.BUNDLE).with(DataComponents.BUNDLE_CONTENTS,
+                List.of(ItemStack.of(Material.GLASS_BOTTLE, 3), ItemStack.of(Material.PAPER, 7)));
+        player.setItemInMainHand(loadedBundle);
+        Pos dropAt = player.getPosition();
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+        tick(1);
+        List<ItemStack> afterTap = player.getItemInMainHand().get(DataComponents.BUNDLE_CONTENTS);
+        check("a bare right-click (no block/entity target) pops exactly the top entry, leaving the other behind",
+                afterTap != null && afterTap.size() == 1
+                        && afterTap.get(0).material() == Material.PAPER && afterTap.get(0).amount() == 7);
+        boolean bottlesLanded = waitFor(() -> countItems(dropAt, 3, Material.GLASS_BOTTLE) >= 1, 1000);
+        check("the popped entry (3 glass bottles, the top/most-recently-added one) is dropped on the ground",
+                bottlesLanded);
+
         resetPlayer();
     }
 
@@ -4147,6 +4228,18 @@ public final class PlayTest {
         if (!pre.isCancelled()) {
             if (inv instanceof net.minestom.server.inventory.PlayerInventory pi) pi.leftClick(player, slot);
             else if (inv instanceof Inventory window) window.leftClick(player, slot);
+        }
+        tick(1);
+    }
+
+    /** Right-click variant of {@link #click} (Bundles' remove-one path needs SECONDARY clicks). */
+    private static void rightClick(net.minestom.server.inventory.AbstractInventory inv, int slot) {
+        var pre = new net.minestom.server.event.inventory.InventoryPreClickEvent(inv, player,
+                new net.minestom.server.inventory.click.Click.Right(slot));
+        EventDispatcher.call(pre);
+        if (!pre.isCancelled()) {
+            if (inv instanceof net.minestom.server.inventory.PlayerInventory pi) pi.rightClick(player, slot);
+            else if (inv instanceof Inventory window) window.rightClick(player, slot);
         }
         tick(1);
     }
