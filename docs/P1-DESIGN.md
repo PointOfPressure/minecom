@@ -241,3 +241,54 @@ session). Any step that misses its bar reverts.
   change is invisible to the suites by definition of done.
 - **No new benchmark scenarios mid-era** (matrix comparability): scenario
   changes happen at era boundaries, versioned in BENCHMARKS.md.
+
+---
+
+## STEP 0 — profile results (2026-07-17, Fable) — corrects the §2.1 hypothesis ranking
+
+Ran the profiled genregions from §2.2: `java -XX:StartFlightRecording=...profile
+-jar target/minecom.jar --genregions 20260708 6` (144 chunks, 138.8s, JFR at
+test-logs/genregions_p1_baseline.jfr). 45,163 execution samples, leaf-frame
+distribution:
+
+| method | samples | % |
+|---|---:|---:|
+| `VNoise$Improved.p` (perm lookup) | 18,372 | **40.7%** |
+| `VNoise$Improved.noise` | 4,421 | 9.8% |
+| `VNoise$Perlin.getValue` | 1,744 | 3.9% |
+| **noise sampling total** | **~24,500** | **~54%** |
+| `HashMap$TreeNode.find` (a degenerate map) | 3,543 | 7.8% |
+| `VBiome$SubTree.search` (multi-noise biome) | 3,534 | 7.8% |
+| `ImmutableCollections$List12.get` | 3,101 | 6.9% |
+| `LinkedHashMap.get` (an LRU cache) | 1,611 | 3.6% |
+| `ThreadLocal$ThreadLocalMap.getEntry` | 1,090 | 2.4% |
+| `VDensity$Interpolated.compute` | 484 | **1.1%** |
+
+**The §2.1 ranking was wrong.** Hypothesis #1 (the boxed
+`HashMap<Long,Double>` density-interpolation cache in `Interpolated.compute`)
+is **1.1%**, not the bottleneck. The real cost is **noise sampling at ~54%**,
+dominated by `VNoise$Improved.p` — a trivial `p[index & 0xFF] & 0xFF` lookup
+whose cost is pure CALL VOLUME (6+ per `sampleAndLerp`, many octaves, many
+evaluations).
+
+**Corrected P1 target order:**
+1. **Cut noise call volume (~54%).** The interpolation layer that should
+   amortize noise (`Interpolated.compute`) is only 1.1% active — strong
+   evidence noise is evaluated near-per-block instead of at cell corners +
+   interpolated (the ~8x-vs-vanilla cost). First move: make density/noise
+   evaluate at cell corners and interpolate, cutting `p` calls by the
+   cell-volume factor. Validate by re-profiling (noise % must drop, Interpolated
+   % must rise). This REPLACES §2.1's boxed-cache work as P1's opening move.
+2. **The degenerate `HashMap$TreeNode.find` (7.8%)** — a map whose buckets
+   turned into red-black trees = pathological hash collisions (likely a
+   coord-keyed cache with a weak Long hash). Find it (grep density/biome
+   caches), fix the key hashing or switch to a primitive-keyed map (fastutil).
+   This is the grain of truth in §2.1's #1, but the mechanism is hash
+   distribution, not boxing.
+3. **Biome multi-noise search `VBiome$SubTree.search` (7.8%)** + the density-
+   graph collection lookups (`List12.get` 6.9%, `LinkedHashMap.get` 3.6%) —
+   these are the interpreter-dispatch overhead §2.1 hypothesis #3 predicted,
+   showing up as node-graph traversal. Attack after (1)+(2), profile-guided.
+
+Method held: measure, don't guess — step 0 moved the target from a 1% path to
+a 54% one before a line was written.
