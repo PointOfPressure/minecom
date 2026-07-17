@@ -14,6 +14,48 @@ of what got escalated and why.
 
 ---
 
+## P1 opening move landed on the Threadripper — what's left in the noise era (2026-07-17, Fable)
+
+Four commits on `p1-noise` (c5eaaba, 3dbd9d9, d31494b, 0145e10), each gated
+by a full-NBT bit-identical 144-chunk region compare against the pre-change
+build on the Threadripper (WSL2). Gate area 96.8s → 15.0s there (1.49 →
+9.58 chunks/sec, 6.4×); noise-leaf samples 43.4% → 4.8% with
+`Interpolated.corner` now 66.8% of what remains (the amortized state the
+design doc asked for). Full numbers + method in P1-DESIGN.md's results
+section. **Laptop next**: pull `p1-noise`, run the vs-vanilla region-diff
+(must hold ≥ 99.3613%), merge, and re-measure laptop chunkgen vs the 3.5
+exit bar.
+
+Profile-guided leftovers, in current-cost order (Threadripper after-profile):
+
+1. **`VBiome$SubTree.search` 31.1%** — now the single biggest wall. It is
+   parity-sensitive: the ThreadLocal warm-start decides exact-tie boundary
+   points (VBiome's own header comment), so memoizing biome results or
+   deduping searches CHANGES the search-call sequence and risks moving the
+   99.3613% baseline. Any attack needs either a sequence-preserving design
+   (e.g. cache keyed so every historical search still happens — hard) or a
+   deliberate decision to accept tie drift and let the laptop gate
+   arbitrate. Not attempted this pass on purpose.
+2. **`VSurface.biomeAt` 5.9% + `HashMap.getNode` 7.6%** — surface-rule
+   biome lookups and assorted map traffic during buildSurface/decoration;
+   plausibly another VBiome-column-cache-shaped win inside VSurface's
+   Context, unexamined.
+3. **`VJigsaw$Placer.tryPlacingChildren` 6.6%** — structure placement,
+   untouched by this pass.
+4. **`Interpolated.compute` 5.2%** — the remaining per-block trilerp. The
+   deep fix is §2.3(a)'s real GenContext + primitive slice arrays with
+   incremental lerp (vanilla's exact shape); the cheap 80% (last-cell memo)
+   is already landed, so only do the rewrite if the exit numbers demand it.
+
+Flake note for the fragile-check log: one full-suite playtest run on the
+final `p1-noise` state failed exactly one check (986/987); the invocation
+grepped only the summary so the FAIL line was not captured (lesson: always
+capture `^FAIL`). Two other full runs on the same jar were 987/987, all
+four worldgen gates were bit-identical, and the pattern (full-suite-only,
+non-reproducing) matches the fragile-check population in the batch-4 entry
+below. If it recurs, root-cause per CONVENTIONS §10 — the check identity is
+the missing datum.
+
 ## Tier 3 batch 6: stonecutter + loom + cartography table (2026-07-17, Sonnet 5)
 
 Closes 3 of the 4 items this file's own v0.18.0-era entry ("Not touched,

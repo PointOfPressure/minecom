@@ -292,3 +292,54 @@ evaluations).
 
 Method held: measure, don't guess — step 0 moved the target from a 1% path to
 a 54% one before a line was written.
+
+---
+
+## P1 opening move — results (2026-07-17, Fable, Threadripper/WSL2)
+
+Ran on the Threadripper (1920X, WSL2 Debian 13, JDK 25.0.3) per the P1
+setup guide; four commits on `p1-noise`, every one gated by a full-NBT
+bit-identical region compare (seed 20260708, radius 6, 144 chunks,
+`LastUpdate`/`InhabitedTime` save timestamps excluded) against the
+pre-change build. The laptop's vs-vanilla region-diff (≥ 99.3613%) remains
+the final gate before merge.
+
+**Caller attribution corrected step 0's inference.** A stack-walking
+attribution of the step-0-style JFR (this box, 31,855 samples) showed the
+noise leaves (43.4% of samples here) were NOT the cell-mode fill: 98.5% of
+noise-leaf samples sat under `VBiome.biomeAt`, which forces cell mode OFF
+and re-walks six full climate graphs per quart — the five y-independent
+ones ~96× per column during the per-chunk biome pass. The interpolated
+terrain fill was already amortizing correctly (1.1% of noise samples).
+Two more non-noise towers: the synchronized chunk LRU + degenerate cx^cz
+Long hash under `VanillaGen.cachedData` (~31% of samples, hit per block
+read during decoration), and the boxed corner caches (the original H1,
+real but secondary).
+
+The four commits (each output-preserving by construction AND by gate):
+
+| commit | change | gate area wall clock |
+|---|---|---|
+| `c5eaaba` | VBiome per-column climate cache (5 y-independent params + depth split into y-gradient + cached 2D rest; assumptions verified bitwise at boot; RTree warm-start sequence untouched) | 96.8s → ~21s (with next) |
+| `3dbd9d9` | canvases memoize last chunk ref; fmix64 chunk-LRU keys | 20.8s |
+| `d31494b` | primitive open-addressing corner caches (no boxing, spread hashes) | 16.1s |
+| `0145e10` | last-cell 8-corner memo in `Interpolated` | 15.0s |
+
+**Numbers (this box; laptop's 0.46 was HDD-bound, not comparable):**
+- chunks/sec: **1.49 → 9.58 (6.4×)** — 144 chunks 96.8s → 15.0s.
+- noise-related samples: **43.4% → 4.8%**; within them, `Interpolated.corner`
+  rose 1.1% → 66.8% (the validation §"STEP 0" asked for: noise% down,
+  Interpolated% up — noise is now evaluated at cell corners and amortized).
+- After-profile top: `VBiome$SubTree.search` 31.1%, `HashMap.getNode` 7.6%,
+  `VJigsaw$Placer.tryPlacingChildren` 6.6%, `VSurface.biomeAt` 5.9%,
+  `Interpolated.compute` 5.2% — the RTree search is now the wall, and it is
+  parity-sensitive (warm-start decides exact-tie boundary points), so it was
+  deliberately NOT touched in this pass.
+- Suites: selftest 258/258. Playtest: 987/987 on two of three post-change
+  full runs; the middle run hit exactly one failing check (986/987) whose
+  FAIL line the harness invocation failed to capture (only the summary was
+  grepped — capture `^FAIL` lines in future runs). It did not reproduce.
+  Worldgen output is provably unchanged (four bit-identical gates), and the
+  pattern matches the fragile-check population documented in HANDOFF
+  (2026-07-17 batch-4 entry: full-suite-only, clean in isolation). Logged
+  there rather than re-run-until-green-and-forgotten.
