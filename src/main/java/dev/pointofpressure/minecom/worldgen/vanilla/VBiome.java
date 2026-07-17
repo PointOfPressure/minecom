@@ -21,8 +21,27 @@ import java.util.List;
  */
 public final class VBiome {
     private final VDensity.DF temperature, humidity, continentalness, erosion, depth, weirdness;
+    // depth = add(y_clamped_gradient, <2D offset stack>) in the overworld data; the gradient is the
+    // only y-dependent part, so the expensive offset half can be cached per column (see biomeAt).
+    // Both null when the data's depth graph doesn't match that shape (then depth runs uncached).
+    private final VDensity.DF depthGradient, depthRest;
     private final Node root;
     private final ThreadLocal<Leaf> lastResult = new ThreadLocal<>();
+
+    /** Cached per-column climate state: the five y-independent quantized params + depth's 2D half. */
+    private static final class ColumnClimate {
+        long temperature, humidity, continentalness, erosion, weirdness;
+        double depthRest;
+    }
+
+    private static final int COLUMN_CACHE_MAX = 4096;
+    private final ThreadLocal<java.util.LinkedHashMap<Long, ColumnClimate>> columnCache =
+            ThreadLocal.withInitial(() -> new java.util.LinkedHashMap<>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<Long, ColumnClimate> eldest) {
+                    return size() > COLUMN_CACHE_MAX;
+                }
+            });
 
     public VBiome(VDensity.Builder builder, JsonObject noiseRouter) {
         this.temperature = builder.build(noiseRouter.get("temperature"));
@@ -31,6 +50,27 @@ public final class VBiome {
         this.erosion = builder.build(noiseRouter.get("erosion"));
         this.depth = builder.build(noiseRouter.get("depth"));
         this.weirdness = builder.build(noiseRouter.get("ridges"));
+
+        // Try to split depth into y-only gradient + y-independent rest for column caching.
+        com.google.gson.JsonElement depthJson = resolveRefs(builder, noiseRouter.get("depth"));
+        VDensity.DF gradient = null, rest = null;
+        if (depthJson != null && depthJson.isJsonObject()) {
+            JsonObject o = depthJson.getAsJsonObject();
+            if (VDensity.path(o.get("type").getAsString()).equals("add")) {
+                com.google.gson.JsonElement a1 = o.get("argument1"), a2 = o.get("argument2");
+                com.google.gson.JsonElement r1 = resolveRefs(builder, a1), r2 = resolveRefs(builder, a2);
+                if (isYGradient(r1)) {
+                    gradient = builder.build(a1);
+                    rest = builder.build(a2);
+                } else if (isYGradient(r2)) {
+                    gradient = builder.build(a2);
+                    rest = builder.build(a1);
+                }
+            }
+        }
+        this.depthGradient = gradient;
+        this.depthRest = rest;
+        verifyColumnCacheAssumptions();
 
         JsonArray list;
         try (var in = VBiome.class.getResourceAsStream("/vanilla/biome_parameters_overworld.json")) {
@@ -58,6 +98,80 @@ public final class VBiome {
         return (long) ((float) value * 10000.0F);
     }
 
+    /** Follow string refs (named function ids) to the defining JSON; null if unresolvable. */
+    private static com.google.gson.JsonElement resolveRefs(VDensity.Builder builder,
+                                                           com.google.gson.JsonElement json) {
+        int hops = 0;
+        while (json != null && json.isJsonPrimitive() && json.getAsJsonPrimitive().isString()
+                && hops++ < 16) {
+            json = builder.namedFunctionJson(json.getAsString());
+        }
+        return json;
+    }
+
+    private static boolean isYGradient(com.google.gson.JsonElement json) {
+        return json != null && json.isJsonObject() && json.getAsJsonObject().has("type")
+                && VDensity.path(json.getAsJsonObject().get("type").getAsString()).equals("y_clamped_gradient");
+    }
+
+    /**
+     * The column cache assumes the five non-depth climate functions are y-independent and that
+     * depth == depthGradient + depthRest with depthRest y-independent. Those hold for the shipped
+     * overworld data (y_scale=0 / constant shift_y everywhere); verify BITWISE at fixed probe
+     * points so any future data change fails loudly at boot instead of silently corrupting biomes.
+     */
+    private void verifyColumnCacheAssumptions() {
+        boolean was = VDensity.cellMode();
+        VDensity.cellModeRaw(false);
+        try {
+            verifyColumnCacheProbes();
+        } finally {
+            VDensity.cellModeRaw(was);
+        }
+    }
+
+    private void verifyColumnCacheProbes() {
+        int[][] xzProbes = {{0, 0}, {4, -4}, {-64, 64}, {1024, -4096}, {-100000, 100000}};
+        int[] yProbes = {-64, 0, 156, 316};
+        for (int[] xz : xzProbes) {
+            int x = xz[0], z = xz[1];
+            double t0 = temperature.compute(x, yProbes[0], z);
+            double h0 = humidity.compute(x, yProbes[0], z);
+            double c0 = continentalness.compute(x, yProbes[0], z);
+            double e0 = erosion.compute(x, yProbes[0], z);
+            double w0 = weirdness.compute(x, yProbes[0], z);
+            Double r0 = depthRest == null ? null : depthRest.compute(x, yProbes[0], z);
+            for (int y : yProbes) {
+                if (Double.doubleToLongBits(temperature.compute(x, y, z)) != Double.doubleToLongBits(t0)
+                        || Double.doubleToLongBits(humidity.compute(x, y, z)) != Double.doubleToLongBits(h0)
+                        || Double.doubleToLongBits(continentalness.compute(x, y, z)) != Double.doubleToLongBits(c0)
+                        || Double.doubleToLongBits(erosion.compute(x, y, z)) != Double.doubleToLongBits(e0)
+                        || Double.doubleToLongBits(weirdness.compute(x, y, z)) != Double.doubleToLongBits(w0)) {
+                    throw new IllegalStateException("VBiome column cache: climate function is y-dependent at ("
+                            + x + "," + y + "," + z + ") — worldgen data changed; remove the column cache");
+                }
+                if (r0 != null) {
+                    double recomposed = depthGradient.compute(x, y, z) + depthRest.compute(x, y, z);
+                    if (Double.doubleToLongBits(depthRest.compute(x, y, z)) != Double.doubleToLongBits(r0)
+                            || Double.doubleToLongBits(recomposed) != Double.doubleToLongBits(depth.compute(x, y, z))) {
+                        throw new IllegalStateException("VBiome column cache: depth decomposition mismatch at ("
+                                + x + "," + y + "," + z + ") — worldgen data changed; remove the column cache");
+                    }
+                }
+            }
+        }
+    }
+
+    /** Murmur3 fmix64 — bijective, so packed column keys stay unique but hash well. */
+    private static long mixColumnKey(long k) {
+        k ^= k >>> 33;
+        k *= 0xFF51AFD7ED558CCDL;
+        k ^= k >>> 33;
+        k *= 0xC4CEB9FE1A85EC53L;
+        k ^= k >>> 33;
+        return k;
+    }
+
     /** Diagnostic: the raw (unquantized) 6 climate parameters at a block position. */
     public double[] rawParamsAt(int blockX, int blockY, int blockZ) {
         boolean was = VDensity.cellMode();
@@ -72,19 +186,42 @@ public final class VBiome {
         }
     }
 
-    /** Biome id at quart coords (block >> 2): Climate.Sampler.sample + RTree search. */
+    /**
+     * Biome id at quart coords (block >> 2): Climate.Sampler.sample + RTree search.
+     *
+     * The five y-independent climate params (and depth's y-independent half, when the data's
+     * depth graph decomposes) are cached per column — verified bit-identical to direct
+     * evaluation at construction time — so a column's y-sweep pays the full climate graphs
+     * once instead of per quart. The RTree search still runs once per call, preserving the
+     * warm-start sequence exactly (it decides exact-tie boundary points).
+     */
     public String biomeAt(int quartX, int quartY, int quartZ) {
         int blockX = quartX << 2, blockY = quartY << 2, blockZ = quartZ << 2;
         boolean was = VDensity.cellMode();
         VDensity.cellModeRaw(false);
         long[] target = new long[7];
         try {
-            target[0] = quantize(temperature.compute(blockX, blockY, blockZ));
-            target[1] = quantize(humidity.compute(blockX, blockY, blockZ));
-            target[2] = quantize(continentalness.compute(blockX, blockY, blockZ));
-            target[3] = quantize(erosion.compute(blockX, blockY, blockZ));
-            target[4] = quantize(depth.compute(blockX, blockY, blockZ));
-            target[5] = quantize(weirdness.compute(blockX, blockY, blockZ));
+            long colKey = mixColumnKey(((long) quartX << 32) ^ (quartZ & 0xFFFFFFFFL));
+            var cache = columnCache.get();
+            ColumnClimate col = cache.get(colKey);
+            if (col == null) {
+                col = new ColumnClimate();
+                col.temperature = quantize(temperature.compute(blockX, blockY, blockZ));
+                col.humidity = quantize(humidity.compute(blockX, blockY, blockZ));
+                col.continentalness = quantize(continentalness.compute(blockX, blockY, blockZ));
+                col.erosion = quantize(erosion.compute(blockX, blockY, blockZ));
+                col.weirdness = quantize(weirdness.compute(blockX, blockY, blockZ));
+                if (depthRest != null) col.depthRest = depthRest.compute(blockX, blockY, blockZ);
+                cache.put(colKey, col);
+            }
+            target[0] = col.temperature;
+            target[1] = col.humidity;
+            target[2] = col.continentalness;
+            target[3] = col.erosion;
+            target[4] = depthRest != null
+                    ? quantize(depthGradient.compute(blockX, blockY, blockZ) + col.depthRest)
+                    : quantize(depth.compute(blockX, blockY, blockZ));
+            target[5] = col.weirdness;
             target[6] = 0L;
         } finally {
             VDensity.cellModeRaw(was);

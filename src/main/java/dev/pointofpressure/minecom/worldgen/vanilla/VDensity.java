@@ -93,6 +93,11 @@ public final class VDensity {
         public XRandom.Positional seedRandom() {
             return random;
         }
+
+        /** Raw JSON of a named density function (for callers that need graph shape, e.g. VBiome). */
+        JsonElement namedFunctionJson(String name) {
+            return namedFunctions.get(path(name));
+        }
     }
 
     static String path(String id) {
