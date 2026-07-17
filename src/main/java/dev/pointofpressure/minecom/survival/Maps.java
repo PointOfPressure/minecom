@@ -160,6 +160,59 @@ public final class Maps {
         return create(d.centerX, d.centerZ, (byte) (d.scale + 1), d.trackPosition, d.unlimitedTracking);
     }
 
+    /** CartographyTableMenu's paper branch: zoom out one scale level (capped at {@link #MAX_SCALE}),
+     * scale must be strictly below the cap and the map must not be locked. Null if ineligible. */
+    public static ItemStack tryCartographyZoom(ItemStack mapStack) {
+        MapData d = dataOf(mapStack);
+        if (d == null || d.locked || d.scale >= MAX_SCALE) return null;
+        return create(d.centerX, d.centerZ, (byte) (d.scale + 1), d.trackPosition, d.unlimitedTracking);
+    }
+
+    /**
+     * CartographyTableMenu's glass-pane branch: PREVIEW only — a copy of the item carrying the
+     * {@code LOCKED} tag, null if already locked (real vanilla's {@code !mapData.locked} guard).
+     * Deliberately does NOT flip {@code d.locked} itself: real vanilla's own lock doesn't fire
+     * at menu-preview time either, only once the result is actually taken
+     * (MapItem.onCraftedPostProcess, deferred via the {@code MAP_POST_PROCESSING} component) —
+     * {@link #commitLock} is that commit step, called once from the take handler. Real vanilla
+     * additionally mints the locked copy a brand-new saved-data id (so a locked map is an
+     * independent snapshot, decoupled from the source), which this project's identity scheme
+     * can't express — map ids here are derived from (centerX, centerZ, scale)
+     * (see {@link #idOf}), not an insertion-order counter, so there's no separate "snapshot"
+     * slot to hand the lock its own storage. Accepted as a documented gap (AUDIT), not silently
+     * faked: locking here freezes the SAME shared id in place (no more live recompute —
+     * {@link #tickHeldMaps} already skips locked maps), so any other still-held copy of the
+     * exact same id/scale/center locks too, where real vanilla would leave it live.
+     */
+    public static ItemStack tryLock(ItemStack mapStack) {
+        MapData d = dataOf(mapStack);
+        if (d == null || d.locked) return null;
+        return mapStack.withAmount(1).withTag(LOCKED, true);
+    }
+
+    /** Commits a pending lock preview (see {@link #tryLock}'s doc for the real-vanilla timing
+     * this mirrors) — call exactly once, when the previewed locked copy is actually taken. */
+    public static void commitLock(ItemStack lockedStack) {
+        MapData d = dataOf(lockedStack);
+        if (d != null) d.locked = true;
+    }
+
+    /** CartographyTableMenu's map branch: a plain clone sharing the same id/scale/center — real
+     * vanilla's {@code MapItemSavedData} is a single shared saved-data object, so a "copy" is
+     * just another item referencing the same id, not a new map. */
+    public static ItemStack tryClone(ItemStack mapStack) {
+        MapData d = dataOf(mapStack);
+        if (d == null) return null;
+        return mapStack.withAmount(2);
+    }
+
+    /** Whether this specific item's LOCKED tag matches its shared MapData (rehydrates from the
+     * tag on a fresh reference, same as {@link #dataOf}) — CartographyTable playtest hook. */
+    public static boolean isLocked(ItemStack mapStack) {
+        MapData d = dataOf(mapStack);
+        return d != null && d.locked;
+    }
+
     // ------------------------------------------------------------------ recompute
 
     /** Test hook: force one recompute+send cycle for a specific held map without waiting

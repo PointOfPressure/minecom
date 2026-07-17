@@ -33,6 +33,11 @@ public final class Recipes {
     private record Shaped(int width, int height, Ingredient[] cells, ItemStack result) {}
     private record Shapeless(List<Ingredient> ingredients, ItemStack result) {}
 
+    /** One stonecutting recipe's result, plus its own recipe id — kept alongside the result so
+     * {@link #indexStonecutting} can sort each ingredient's candidate list into a stable order
+     * once every recipe has been collected (see that method's doc for why). */
+    public record Stonecut(String id, ItemStack result) {}
+
     private static final List<Shaped> SHAPED = new ArrayList<>();
     private static final List<Shapeless> SHAPELESS = new ArrayList<>();
     private static final Map<String, Smelt> SMELTING = new HashMap<>();
@@ -40,6 +45,7 @@ public final class Recipes {
     private static final Map<String, Smelt> SMOKING = new HashMap<>();
     private static final Map<String, Cook> CAMPFIRE = new HashMap<>();
     private static final Map<String, Integer> FUEL = new HashMap<>();
+    private static final Map<String, List<Stonecut>> STONECUTTING = new HashMap<>();
 
     static void index() {
         SHAPED.clear();
@@ -48,6 +54,7 @@ public final class Recipes {
         BLASTING.clear();
         SMOKING.clear();
         CAMPFIRE.clear();
+        STONECUTTING.clear();
         for (Map.Entry<String, JsonElement> e : VanillaData.recipes.entrySet()) {
             JsonObject r = e.getValue().getAsJsonObject();
             switch (VanillaData.path(r.get("type").getAsString())) {
@@ -57,10 +64,48 @@ public final class Recipes {
                 case "blasting" -> indexBlasting(r);
                 case "smoking" -> indexSmoking(r);
                 case "campfire_cooking" -> indexCampfireCooking(r);
-                default -> { /* stonecutting, smithing, special: not supported */ }
+                case "stonecutting" -> indexStonecutting(e.getKey(), r);
+                default -> { /* smithing, special: not supported */ }
             }
         }
+        // Sort each ingredient's candidate list by recipe id: this list's order is directly
+        // player-visible (it's the stonecutter's button index, see Stonecutter.java), unlike
+        // every other recipe kind here where matching is order-independent, so it's worth an
+        // explicit, self-documenting sort rather than leaning on Gson's LinkedTreeMap happening
+        // to preserve recipes.json's on-disk key order. Alphabetical-by-id isn't bit-identical
+        // to real vanilla's actual registration order (no differential oracle for this
+        // subsystem, same documented simplification Anvils.java's enchanting-table candidate
+        // ordering already accepted), but it IS deterministic and — critically — self-consistent
+        // with the client: Stonecutter.java declares this exact same list, in this exact same
+        // order, to Minestom's RecipeManager, which is what the client actually renders buttons
+        // from, so "button 3" always means the same recipe on both sides regardless of true
+        // vanilla order.
+        for (List<Stonecut> list : STONECUTTING.values()) {
+            list.sort(java.util.Comparator.comparing(Stonecut::id));
+        }
         indexFuels();
+    }
+
+    private static void indexStonecutting(String id, JsonObject r) {
+        ItemStack result = result(r);
+        if (result.isAir()) return;
+        Ingredient in = ingredient(r.get("ingredient"));
+        for (String key : in.allowed()) {
+            STONECUTTING.computeIfAbsent(key, k -> new ArrayList<>()).add(new Stonecut(id, result));
+        }
+    }
+
+    /** Every stonecutting recipe whose ingredient matches this input material, in the stable
+     * (alphabetical-by-id) order {@link Stonecutter} declares to the client — empty if none. */
+    public static List<Stonecut> stonecuttingFor(Material input) {
+        if (input == null) return List.of();
+        return STONECUTTING.getOrDefault(input.key().asString(), List.of());
+    }
+
+    /** Every distinct input material that has at least one stonecutting recipe — used once, at
+     * startup, to declare the full recipe set to Minestom's client-facing RecipeManager. */
+    public static java.util.Set<String> stonecuttingInputs() {
+        return STONECUTTING.keySet();
     }
 
     private static ItemStack result(JsonObject recipe) {

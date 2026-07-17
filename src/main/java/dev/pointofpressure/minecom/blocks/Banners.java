@@ -41,14 +41,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * blank) banner + one pattern-free shield, both fully consumed, producing a shield carrying
  * the banner's base color + pattern layers.
  *
- * Simplifications (AUDIT): the Loom UI/mechanic itself — the only way real vanilla lets a
- * player ORIGINATE a pattern layer onto a banner (choosing a pattern+dye combination and
- * previewing the result) — is not modeled; this project has no loom menu at all. The two
- * recipes above are real and correct once a patterned banner exists by some other means (loot,
- * a command, or a future loom pass), which is exactly the scope this batch's "if cheap"
- * framing asked for. No custom name (Nameable), no wall-vs-ground attachment-type distinction
- * beyond the block's own placement (already generic block behavior), no explosion/fire
- * interactions beyond the generic block-break path.
+ * Simplifications (AUDIT): ~~the Loom UI/mechanic itself~~ **done 2026-07-17 (Sonnet 5, Tier 3
+ * batch 6, {@code blocks/Loom.java}, new file)** — see that file's own doc. No custom name
+ * (Nameable), no wall-vs-ground attachment-type distinction beyond the block's own placement
+ * (already generic block behavior), no explosion/fire interactions beyond the generic
+ * block-break path.
  */
 public final class Banners {
     private Banners() {}

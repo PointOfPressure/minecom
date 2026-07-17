@@ -1051,9 +1051,42 @@ leftovers.
   listing order) rather than the real in_enchanting_table tag's declared
   file order — internally deterministic (same seed -> same result) but not
   bit-identical to a live vanilla server, since no differential oracle
-  exists for this subsystem (unlike piston/worldgen). Smithing table
-  (netherite + trims), stonecutter, loom, cartography table: still none.
-  (M-L)
+  exists for this subsystem (unlike piston/worldgen). ~~Smithing table
+  (netherite + trims), stonecutter, loom, cartography table: still none.~~
+  **Stonecutter/loom/cartography table done 2026-07-17 (Sonnet 5, Tier 3
+  batch 6)** — `blocks/Stonecutter.java`, `blocks/Loom.java`,
+  `blocks/CartographyTable.java` (all new files), decompile-verified against
+  freshly-decompiled `StonecutterMenu`/`LoomMenu`/`CartographyTableMenu`
+  (26.2). Stonecutter registers all 319 bundled `stonecutting` recipes with
+  Minestom's `RecipeManager`/`DeclareRecipesPacket` at startup (real
+  vanilla's button UI is built client-side from its own recipe registry —
+  without declaring them the client renders zero buttons regardless of
+  server-side matching), matches by button-click index into
+  `Recipes.stonecuttingFor`'s alphabetical-by-id-sorted list (documented
+  approximation of true vanilla registration order — same class of gap as
+  the enchanting-table candidate ordering above — but self-consistent with
+  the client since it learns the order FROM this declaration). Loom sources
+  its pattern-button lists straight from Minestom's own built-in
+  `BannerPatternTags`/registry (real Mojang data, no server declaration
+  needed there), carries a selection across a pattern-slot change by VALUE
+  not index (LoomMenu.slotsChanged's `previousSelectablePatterns.get(...)`
+  dance, ported faithfully), and confirms real vanilla's pattern-item
+  reusability (LoomMenu's result-slot `onTake` only decrements the
+  banner/dye slots, never the stencil). Cartography table's lock/zoom
+  mutation is deliberately deferred to actual-take time, never
+  menu-preview recompute (mirrors `MapItem.onCraftedPostProcess`'s real
+  timing — an earlier draft of this batch mutated on preview and would
+  have locked a map the instant a glass pane merely touched the slot,
+  caught before landing); its one accepted gap versus real vanilla is that
+  locking reuses the source map's own id instead of minting a fresh
+  snapshot id (this project's map identity is `hash(centerX,centerZ,scale)`,
+  not an insertion counter — see `Maps.tryLock`'s doc). Smithing table
+  (netherite upgrade + the 18 armor-trim recipes) is the one station still
+  unbuilt — recipe data for both is already bundled
+  (`minecraft:smithing_transform`/`minecraft:smithing_trim` in
+  `recipes.json`) and Minestom's `RecipeDisplay.Smithing` +
+  `DataComponents.TRIM`/`ArmorTrim` exist, so the remaining work is UI
+  wiring analogous to this batch, not data plumbing. (M-L)
 - Potions.java — 13 effect cases handled on drink; missing: splash potion AoE
   scaling by distance, lingering clouds, tipped arrows, turtle master, slow
   falling (check), levitation via potion, bad omen bottle (ominous bottle item

@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 960;
+    private static final int EXPECTED_CHECK_COUNT = 987;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -206,6 +206,7 @@ public final class PlayTest {
         scenario("anvil rename costs exactly 1 level via PlayerAnvilInputEvent", PlayTest::scenarioAnvilRename);
         scenario("enchanting table: real block flow, seed-deterministic offer, buttonId+1 xp cost", PlayTest::scenarioEnchantingTable);
         scenario("grindstone: disenchant keeps curses, refunds xp", PlayTest::scenarioGrindstone);
+        scenario("stonecutter: material change resets the recipe selection, a button click previews the exact result, taking leaves a same-material remainder ready for a repeat take", PlayTest::scenarioStonecutter);
         scenario("fishing loot from real tables", PlayTest::scenarioFishing);
         scenario("fishing: treasure requires real open water, not just any fishable puddle", PlayTest::scenarioFishingOpenWater);
         scenario("vanilla-ai: hurt zombie alerts the pack", PlayTest::scenarioZombieAlert);
@@ -261,7 +262,9 @@ public final class PlayTest {
         scenario("bee + beehive: pollination gains nectar, hive delivery advances honey, shears/bottle harvest at level 5, campfire sedation, anger + sting-once-then-die", PlayTest::scenarioBee);
         scenario("allay: give/take remembers a liked player, collects + deposits matching items, dances near a playing jukebox, duplicates via amethyst shard, hears note blocks", PlayTest::scenarioAllay);
         scenario("map: empty map -> filled on use, live color sampling from the world, the holder's own player marker + heading, zoom crafting", PlayTest::scenarioMap);
+        scenario("cartography table: paper zooms, glass pane locks (only once actually taken, never during preview), another filled map clones", PlayTest::scenarioCartographyTable);
         scenario("signs + banners: front/back text edit/persistence, dye color, glow, wax-lock; banner duplicate + shield decoration crafting-special recipes", PlayTest::scenarioSignsAndBanners);
+        scenario("loom: a base pattern needs a button click, a stencil item auto-selects and isn't consumed, the 6-layer cap holds, and a stale selection resets across a pattern-slot round trip", PlayTest::scenarioLoom);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -1795,6 +1798,86 @@ public final class PlayTest {
     }
 
     /**
+     * Cartography table: paper zooms out, a glass pane locks (deferred to take-time, not
+     * menu-preview — the specific bug class this scenario exists to catch), another filled map
+     * clones. CartographyTableMenu, decompile-verified (26.2, freshly decompiled).
+     */
+    private static void scenarioCartographyTable() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(170, Y + 1, 170);
+        world.setBlock(pos, Block.CARTOGRAPHY_TABLE);
+        interact(pos);
+        boolean opened = player.getOpenInventory() instanceof Inventory;
+        check("cartography table opens window", opened);
+        if (!opened) { world.setBlock(pos, Block.AIR); resetPlayer(); return; }
+        Inventory cart = (Inventory) player.getOpenInventory();
+
+        // --- paper: zoom out one scale level ---
+        ItemStack map = dev.pointofpressure.minecom.survival.Maps.create(170, 170, (byte) 0, true, false);
+        cart.setItemStack(0, map);
+        cart.setItemStack(1, ItemStack.of(Material.PAPER));
+        tick(1);
+        ItemStack zoomPreview = cart.getItemStack(2);
+        check("cartography table + paper previews a scale+1 result",
+                !zoomPreview.isAir() && Byte.valueOf((byte) 1).equals(
+                        zoomPreview.getTag(dev.pointofpressure.minecom.survival.Maps.SCALE)));
+        click(cart, 2);
+        ItemStack zoomedTaken = cart.getCursorItem(player);
+        check("cartography table: taking the zoom result yields scale 1 ("
+                + zoomedTaken.getTag(dev.pointofpressure.minecom.survival.Maps.SCALE) + ")",
+                Byte.valueOf((byte) 1).equals(zoomedTaken.getTag(dev.pointofpressure.minecom.survival.Maps.SCALE)));
+        check("cartography table: taking consumed exactly 1 map and 1 paper",
+                cart.getItemStack(0).isAir() && cart.getItemStack(1).isAir());
+        cart.setCursorItem(player, ItemStack.AIR);
+
+        // --- glass pane: locks, but ONLY once actually taken, never during menu preview ---
+        ItemStack freshMap = dev.pointofpressure.minecom.survival.Maps.create(170, 170, (byte) 0, true, false);
+        cart.setItemStack(0, freshMap);
+        cart.setItemStack(1, ItemStack.of(Material.GLASS_PANE));
+        tick(1);
+        ItemStack lockPreview = cart.getItemStack(2);
+        check("cartography table + glass pane previews a locked-tagged result",
+                !lockPreview.isAir());
+        check("previewing a lock does NOT itself lock the shared map data (deferred to take)",
+                !dev.pointofpressure.minecom.survival.Maps.isLocked(freshMap));
+        click(cart, 2);
+        ItemStack lockedTaken = cart.getCursorItem(player);
+        check("cartography table: taking the lock result actually commits the lock",
+                dev.pointofpressure.minecom.survival.Maps.isLocked(lockedTaken));
+        cart.setCursorItem(player, ItemStack.AIR);
+
+        // --- a second glass pane on the now-locked map is a no-op (already locked) ---
+        cart.setItemStack(0, lockedTaken);
+        cart.setItemStack(1, ItemStack.of(Material.GLASS_PANE));
+        tick(1);
+        check("re-locking an already-locked map previews nothing", cart.getItemStack(2).isAir());
+        cart.setItemStack(0, ItemStack.AIR);
+        cart.setItemStack(1, ItemStack.AIR);
+
+        // --- another filled map: clone, sharing the same id, count 2 ---
+        ItemStack cloneSource = dev.pointofpressure.minecom.survival.Maps.create(170, 170, (byte) 0, true, false);
+        ItemStack cloneOther = dev.pointofpressure.minecom.survival.Maps.create(170, 170, (byte) 0, true, false);
+        cart.setItemStack(0, cloneSource);
+        cart.setItemStack(1, cloneOther);
+        tick(1);
+        ItemStack clonePreview = cart.getItemStack(2);
+        check("cartography table + another filled map previews a 2-count clone",
+                !clonePreview.isAir() && clonePreview.amount() == 2);
+        click(cart, 2);
+        ItemStack cloned = cart.getCursorItem(player);
+        check("cartography table: taking the clone yields amount 2 sharing the source's map_id",
+                cloned.amount() == 2 && cloned.getTag(dev.pointofpressure.minecom.survival.Maps.MAP_ID)
+                        .equals(cloneSource.getTag(dev.pointofpressure.minecom.survival.Maps.MAP_ID)));
+        cart.setCursorItem(player, ItemStack.AIR);
+
+        player.closeInventory();
+        tick(2);
+        clearEntitiesExceptPlayer();
+        world.setBlock(pos, Block.AIR);
+        resetPlayer();
+    }
+
+    /**
      * Signs: front+back text edit/persistence, dye color, glow ink sac/ink sac, honeycomb
      * waxing (blocks every further edit — SignBlock.useItemOn/useWithoutItem's isWaxed gate).
      * Also covers the two banner crafting-special recipes (BannerDuplicateRecipe,
@@ -1949,6 +2032,105 @@ public final class PlayTest {
         world.setBlock(bannerPos, Block.AIR);
         player.setItemInMainHand(ItemStack.AIR);
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Loom: ported from decompiled LoomMenu (26.2) — the mechanic Banners.java's own class doc
+     * named as unmodeled ("the only way real vanilla lets a player ORIGINATE a pattern layer").
+     * Covers: the base "no item required" pattern set needs a button click, a stencil item
+     * (creeper_banner_pattern) auto-selects its single option with no click needed, taking
+     * consumes the banner+dye but NOT the reusable stencil, the 6-layer cap refuses a 7th, and
+     * swapping away from a selected value that doesn't exist in the new candidate set resets
+     * the selection rather than silently keeping a stale one.
+     */
+    private static void scenarioLoom() {
+        BlockVec pos = new BlockVec(24, Y + 1, 28);
+        world.setBlock(pos, Block.LOOM);
+        interact(pos);
+        boolean opened = player.getOpenInventory() instanceof Inventory;
+        check("loom opens window", opened);
+        if (!opened) { world.setBlock(pos, Block.AIR); return; }
+        Inventory loom = (Inventory) player.getOpenInventory();
+
+        // --- base patterns: no item required, needs an explicit button click ---
+        loom.setItemStack(0, ItemStack.of(Material.WHITE_BANNER));
+        loom.setItemStack(1, ItemStack.of(Material.RED_DYE));
+        tick(1);
+        check("banner+dye with no pattern item previews nothing until a button is clicked",
+                loom.getItemStack(3).isAir());
+
+        net.minestom.server.event.EventDispatcher.call(
+                new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, loom, 3));
+        tick(1);
+        ItemStack baseResultPreview = loom.getItemStack(3);
+        var basePatterns = baseResultPreview.get(net.minestom.server.component.DataComponents.BANNER_PATTERNS);
+        check("clicking button 3 previews a banner carrying exactly 1 red pattern layer",
+                !baseResultPreview.isAir() && basePatterns != null && basePatterns.layers().size() == 1
+                        && basePatterns.layers().get(0).color() == net.minestom.server.color.DyeColor.RED);
+
+        click(loom, 3);
+        ItemStack takenBase = loom.getCursorItem(player);
+        var takenPatterns = takenBase.get(net.minestom.server.component.DataComponents.BANNER_PATTERNS);
+        check("taking the base-pattern result consumes 1 banner + 1 dye and carries the layer",
+                loom.getItemStack(0).isAir() && loom.getItemStack(1).isAir()
+                        && takenPatterns != null && takenPatterns.layers().size() == 1);
+        loom.setCursorItem(player, ItemStack.AIR);
+
+        // --- stencil item: exactly 1 selectable pattern, auto-selected without a click ---
+        loom.setItemStack(0, ItemStack.of(Material.WHITE_BANNER));
+        loom.setItemStack(1, ItemStack.of(Material.BLUE_DYE));
+        loom.setItemStack(2, ItemStack.of(Material.CREEPER_BANNER_PATTERN));
+        tick(1);
+        check("a stencil pattern item auto-previews with no button click needed",
+                !loom.getItemStack(3).isAir());
+        click(loom, 3);
+        check("taking a stencil-pattern result does NOT consume the reusable stencil item",
+                loom.getItemStack(2).material() == Material.CREEPER_BANNER_PATTERN);
+        loom.setCursorItem(player, ItemStack.AIR);
+
+        // --- swapping away from a selected value not present in the new set resets it ---
+        loom.setItemStack(0, ItemStack.of(Material.WHITE_BANNER));
+        loom.setItemStack(1, ItemStack.of(Material.GREEN_DYE));
+        loom.setItemStack(2, ItemStack.AIR);
+        tick(1);
+        net.minestom.server.event.EventDispatcher.call(
+                new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, loom, 2));
+        tick(1);
+        check("re-selecting a base pattern (button 2) previews again",
+                !loom.getItemStack(3).isAir());
+        loom.setItemStack(2, ItemStack.of(Material.CREEPER_BANNER_PATTERN)); // -> singleton [creeper]
+        tick(1);
+        loom.setItemStack(2, ItemStack.AIR); // back to the base set: "creeper" isn't in it
+        tick(1);
+        check("a selection that doesn't survive a pattern-slot round trip resets instead of staying stale",
+                loom.getItemStack(3).isAir());
+
+        // --- the 6-layer cap refuses a 7th ---
+        net.minestom.server.event.EventDispatcher.call(
+                new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, loom, 0));
+        tick(1);
+        ItemStack singleLayerPreview = loom.getItemStack(3);
+        var layer = singleLayerPreview.get(net.minestom.server.component.DataComponents.BANNER_PATTERNS).layers().get(0);
+        java.util.List<net.minestom.server.item.component.BannerPatterns.Layer> sixLayers = new java.util.ArrayList<>();
+        for (int i = 0; i < 6; i++) sixLayers.add(layer);
+        ItemStack maxedBanner = ItemStack.of(Material.WHITE_BANNER).with(
+                net.minestom.server.component.DataComponents.BANNER_PATTERNS,
+                new net.minestom.server.item.component.BannerPatterns(sixLayers));
+        loom.setItemStack(0, maxedBanner);
+        loom.setItemStack(1, ItemStack.of(Material.GREEN_DYE));
+        loom.setItemStack(2, ItemStack.AIR);
+        tick(1);
+        net.minestom.server.event.EventDispatcher.call(
+                new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, loom, 0));
+        tick(1);
+        check("a banner already at the 6-layer cap refuses a 7th, even after a fresh button click",
+                loom.getItemStack(3).isAir());
+
+        player.closeInventory();
+        tick(2);
+        clearEntitiesExceptPlayer();
+        world.setBlock(pos, Block.AIR);
         resetPlayer();
     }
 
@@ -9360,6 +9542,71 @@ public final class PlayTest {
         tick(2);
         clearEntitiesExceptPlayer();
         world.setBlock(pos, Block.AIR);
+    }
+
+    /**
+     * Stonecutter: ported from decompiled StonecutterMenu (26.2). The recipe-button list is
+     * server-declared (Stonecutter.declareRecipes) so this checks the real interactive flow: a
+     * material change resets the selection, a button click previews the exact recipe result,
+     * and taking it leaves a same-material remainder ready for an immediate repeat take without
+     * re-selecting.
+     */
+    private static void scenarioStonecutter() {
+        BlockVec pos = new BlockVec(24, Y + 1, 26);
+        world.setBlock(pos, Block.STONECUTTER);
+        interact(pos);
+        boolean opened = player.getOpenInventory() instanceof Inventory;
+        check("stonecutter opens window", opened);
+        if (!opened) { world.setBlock(pos, Block.AIR); return; }
+        Inventory sc = (Inventory) player.getOpenInventory();
+
+        var stoneRecipes = dev.pointofpressure.minecom.data.Recipes.stonecuttingFor(Material.STONE);
+        check("stone has multiple real stonecutting recipes (got " + stoneRecipes.size() + ")",
+                stoneRecipes.size() > 5);
+
+        sc.setItemStack(0, ItemStack.of(Material.STONE, 5));
+        tick(1);
+        check("placing an uncut input previews no result before a recipe is picked",
+                sc.getItemStack(1).isAir());
+
+        // button 0: the stable (alphabetical-by-id) first stonecutting recipe for stone
+        var expected = stoneRecipes.get(0);
+        net.minestom.server.event.EventDispatcher.call(
+                new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, sc, 0));
+        tick(1);
+        check("selecting button 0 previews recipe " + expected.id() + " -> "
+                + expected.result().material().key().value(),
+                sc.getItemStack(1).material() == expected.result().material()
+                        && sc.getItemStack(1).amount() == expected.result().amount());
+
+        click(sc, 1);
+        ItemStack taken = sc.getCursorItem(player);
+        check("taking the result consumes exactly 1 stone and hands back the recipe's real output",
+                taken.material() == expected.result().material()
+                        && sc.getItemStack(0).amount() == 4);
+        check("the same recipe re-populates immediately for a repeat take (no re-click needed)",
+                sc.getItemStack(1).material() == expected.result().material());
+        sc.setCursorItem(player, ItemStack.AIR);
+
+        // an out-of-range button is ignored entirely
+        int selectedBefore = sc.getItemStack(1).isAir() ? -1 : 0;
+        net.minestom.server.event.EventDispatcher.call(
+                new net.minestom.server.event.inventory.InventoryButtonClickEvent(player, sc, 999));
+        tick(1);
+        check("an out-of-range button click is a no-op",
+                (sc.getItemStack(1).isAir() ? -1 : 0) == selectedBefore);
+
+        // changing the input's MATERIAL (not just its count) resets the selection + preview
+        sc.setItemStack(0, ItemStack.of(Material.ANDESITE, 1));
+        tick(1);
+        check("swapping to a different input material clears the stale preview",
+                sc.getItemStack(1).isAir());
+
+        player.closeInventory();
+        tick(2);
+        clearEntitiesExceptPlayer();
+        world.setBlock(pos, Block.AIR);
+        resetPlayer();
     }
 
     private static void scenarioFishing() {

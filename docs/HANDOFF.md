@@ -14,6 +14,26 @@ of what got escalated and why.
 
 ---
 
+## Tier 3 batch 6: stonecutter + loom + cartography table (2026-07-17, Sonnet 5)
+
+Closes 3 of the 4 items this file's own v0.18.0-era entry ("Not touched,
+still open: smithing table, stonecutter, loom, cartography table") left
+open — full writeup in docs/AUDIT.md's Enchants.java entry (search
+"Stonecutter/loom/cartography table done"). New files: `blocks/
+Stonecutter.java`, `blocks/Loom.java`, `blocks/CartographyTable.java`. 27
+new PlayTest checks (EXPECTED_CHECK_COUNT 960 -> 987). Smithing table
+(netherite upgrade + the 18 armor-trim recipes) is the one station still
+unbuilt — recipe data is already bundled and Minestom has the needed
+`RecipeDisplay.Smithing`/`DataComponents.TRIM` support, so it's UI wiring
+analogous to this batch, not a data-plumbing gap. Also fixed a bug caught
+before it landed: an early draft of the cartography table's lock branch
+mutated the shared map's `locked` flag from the menu-PREVIEW recompute
+path (fires on every keystroke), which would have locked a map the
+instant a glass pane merely touched the slot — real vanilla defers that
+mutation to `MapItem.onCraftedPostProcess`, i.e. actual take time; fixed
+by splitting `Maps.tryLock` (pure preview) from `Maps.commitLock` (the
+actual mutation, called only from the take handler).
+
 ## v0.29.0 gate: archaeology floor-hole determinism bug fixed + fragile-check population flagged (2026-07-17, Fable)
 
 Batch-4's full playtest failed 940/941 on `[piglin] flees a nearby soul

@@ -223,12 +223,15 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.Brewing.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Anvils.register(events);
         dev.pointofpressure.minecom.blocks.Grindstone.register(events);
+        dev.pointofpressure.minecom.blocks.Stonecutter.register(events);
+        dev.pointofpressure.minecom.blocks.Loom.register(events);
         dev.pointofpressure.minecom.survival.Fishing.register(events);
         dev.pointofpressure.minecom.survival.Bow.register(events);
         dev.pointofpressure.minecom.survival.Crossbow.register(events);
         dev.pointofpressure.minecom.survival.Trident.register(events);
         dev.pointofpressure.minecom.survival.EnderPearls.register(events);
         dev.pointofpressure.minecom.survival.Maps.register(events, overworld);
+        dev.pointofpressure.minecom.blocks.CartographyTable.register(events);
         dev.pointofpressure.minecom.survival.Elytra.register(events);
         dev.pointofpressure.minecom.survival.Bundles.register(events);
         dev.pointofpressure.minecom.survival.GoatHorns.register(events);
