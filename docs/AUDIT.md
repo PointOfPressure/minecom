@@ -254,7 +254,9 @@ leftovers.
   (no tool durability in containers), armor equipping onto living entities
   with empty slots, firework rockets (cosmetic flight only — no explosion
   or elytra boost). Still missing:
-  brush (no archaeology), candle placement, chest-onto-donkey (no
+  dispenser-fires-a-brush (a brush dispensed at a suspicious block — no dispenser
+  case for it; ~~brushing itself~~ **done 2026-07-17, Sonnet 5, Tier 3 batch 4** — see
+  the dedicated Archaeology entry below), candle placement, chest-onto-donkey (no
   chested-horse inventory). Armor stands landed 2026-07-16 (Opus, Tier 3
   batch 1 — `blocks/ArmorStands.java`: place/consume, cursor-height equip +
   swap + bare-hand take, Invisible/Small/NoBasePlate/Marker/ShowArms + pose
@@ -514,6 +516,62 @@ leftovers.
   the block-material dispatch-shortcut case (a potted sapling still
   extracts correctly rather than being swallowed by normal block
   placement).
+- ~~Archaeology (brush + suspicious_sand/suspicious_gravel)~~ **Done
+  2026-07-17 (Sonnet 5, Tier 3 batch 4, `blocks/Archaeology.java`, new
+  file)** — decompile-verified against `BrushItem`/`BrushableBlock`/
+  `BrushableBlockEntity` (26.2, freshly decompiled, no cached copy existed
+  before). The engine gap: real vanilla's `onUseTick` is a per-tick callback
+  on the held item while a use-animation is active; Minestom exposes no such
+  hook (same gap `Crossbow.java` already documents for its own charge
+  timing), so the 10-brush-strokes-to-reveal cadence is driven by a global
+  per-tick poll over every in-progress brush session's
+  `player.isUsingItem()`/`getCurrentItemUseTime()` — the real
+  `timeElapsed%10==5` gate (`timeElapsed = getUseDuration-ticksRemaining+1`)
+  re-derived against Minestom's up-counting timer as
+  `getCurrentItemUseTime()%10==4`. A second, more specific engine wrinkle: a
+  BLOCK-targeted right-click (aiming at a suspicious block) routes through
+  Minestom's `BlockPlacementListener`/`PlayerUseItemOnBlockEvent`, which —
+  unlike the AIR-click path `UseItemListener` handles — never starts the
+  engine's use-timer on its own; `Archaeology.useOnBlock` starts it manually
+  (`Player#refreshItemUse`/`refreshActiveHand`, the exact two calls
+  `UseItemListener` itself makes internally) to mirror vanilla's own
+  `BrushItem.useOn` calling `player.startUsingItem(hand)` explicitly. Ported:
+  the real completion-state thresholds (0/1-2/3-5/6-9 strokes -> `dusted`
+  blockstate 0-3), the 10gt per-stroke cooldown, the 40gt-idle-then-4gt decay
+  (`checkReset`, brushCount -= 2 per step), loot resolved once on the FIRST
+  successful stroke and cached (not re-rolled), the exact vanilla quirk that
+  `hurtAndBreak(1)` on the brush only fires on the stroke that COMPLETES the
+  reveal (`brush()`'s own return value gates it, decompile-verified — not
+  once per stroke), and the real drop-in-the-hit-direction position + a
+  10-30-count `split` (practically always the whole roll, since every real
+  archaeology table's pool yields exactly one stack). New bundled data:
+  `loot_archaeology.json` (`scripts/extract_vanilla_data.py` extended — all 6
+  `data/minecraft/loot_table/archaeology/*.json` tables, `--validate`
+  clean) + `LootTables.archaeology(idPath)`. Falling (BrushableBlock
+  implements Fallable) rides the existing gravity-block system
+  (`blocks/BlockRules.java` — suspicious_sand/suspicious_gravel added to its
+  whitelist) rather than vanilla's own unconditional per-2-tick check, same
+  event-driven-on-neighbor-change simplification every other gravity block
+  in this project already has. Persisted via a new `StateAdapter` (brush
+  count/timers as restart-relative deltas, the `Breeding.cooldownTicksRemaining`
+  technique; pending/resolved loot). Not modeled: the continuous
+  look-direction raycast vanilla re-evaluates every tick to cancel brushing
+  the instant a player looks away (this project captures position+face once
+  at click time and only re-validates "is this still a suspicious block"
+  each poll — a player can look elsewhere mid-brush without interrupting it,
+  a real behavioral difference, not a hidden one); dust/falling-block
+  particles (client-visual). **Worldgen does NOT place suspicious_sand/
+  suspicious_gravel anywhere yet** (desert pyramids, desert wells, ocean
+  ruins, trail ruins all should carry them in real vanilla) — deliberately
+  out of scope per this batch's "no worldgen changes" instruction; this file
+  is the reusable subsystem (`registerLoot`, the same pending-pos-&gt;table
+  shape `Containers.registerLoot` already uses for structure chests),
+  exercised in tests by registering loot directly rather than through a
+  structure placement. 10 new PlayTest checks (`scenarioArchaeology` — full
+  brush-out with real loot dropped and picked up, exact-1-durability cost, a
+  no-loot-registered block still turns to sand/gravel but drops nothing, and
+  abandoned progress decaying back to 0) + 3 SelfTest checks on the bundled
+  loot data itself.
 - TrialChambers.java (mine, for the record) — not modeled: ominous item
   spawner drips, per-mob ominous equipment loot tables, spawn-potential custom
   NBT (slime size etc.), vault client display-item cycling/connected-player

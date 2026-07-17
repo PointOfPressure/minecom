@@ -156,8 +156,12 @@ public final class BlockRules {
 
     private static boolean isGravityBlock(Block block) {
         String key = block.key().value();
+        // suspicious_sand/suspicious_gravel implement Fallable too (BrushableBlock), same
+        // event-driven-on-neighbor-change simplification as every other gravity block here
+        // rather than BrushableBlock.tick's own unconditional-every-2gt check.
         return key.equals("sand") || key.equals("red_sand") || key.equals("gravel")
-                || key.endsWith("_concrete_powder");
+                || key.endsWith("_concrete_powder")
+                || key.equals("suspicious_sand") || key.equals("suspicious_gravel");
     }
 
     /** After a block changes at pos, let any unsupported gravity blocks above it fall. */

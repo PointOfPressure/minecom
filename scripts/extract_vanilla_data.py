@@ -30,6 +30,9 @@ relative to that directory, ".json" stripped; value = parsed file content):
   loot_trial.json         data/minecraft/loot_table/chests/trial_chambers/**
                           + data/minecraft/loot_table/spawners/**         (keys
                           relative to loot_table/; overlaps loot_chests by design)
+  loot_archaeology.json   data/minecraft/loot_table/archaeology/**        (all 6; keys
+                          are the bare filename, e.g. "desert_pyramid" —
+                          LootTables.archaeology's own lookup, blocks/Archaeology.java)
   trial_spawner.json      data/minecraft/trial_spawner/**                 (all 28)
   tags_block.json         data/minecraft/tags/block/**                    (all 248, raw:
                           "#..." tag refs NOT resolved — VanillaData resolves at runtime)
@@ -229,6 +232,7 @@ def build_aggregates(jar):
         "loot_chests.json": ("json", {"chests/" + k: v for k, v in
                                       aggregate(jar, lt + "chests/").items()}),
         "loot_trial.json": ("json", loot_trial),
+        "loot_archaeology.json": ("json", aggregate(jar, lt + "archaeology/")),
         "trial_spawner.json": ("json", aggregate(jar, "data/minecraft/trial_spawner/")),
         "tags_block.json": ("json", aggregate(jar, "data/minecraft/tags/block/")),
         "tags_item.json": ("json", aggregate(jar, "data/minecraft/tags/item/")),

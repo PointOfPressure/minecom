@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 926;
+    private static final int EXPECTED_CHECK_COUNT = 936;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -250,6 +250,7 @@ public final class PlayTest {
         scenario("fire spread: player-lit flint and steel burns down flammable planks, self-extinguishes unsupported, spreads to a neighbor", PlayTest::scenarioFireSpread);
         scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
         scenario("bundle: cursor-holds-bundle and slot-holds-bundle click insert/remove, shulker boxes rejected, a bare right-click pops and drops the top entry", PlayTest::scenarioBundle);
+        scenario("archaeology: brushing a suspicious block through 10 strokes reveals real loot and turns it to sand/gravel, no loot table means no drop, abandoned progress decays back to 0", PlayTest::scenarioArchaeology);
         scenario("structure loot: chest/barrel/dispenser roll a real vanilla loot table on first open, not before, not twice; barrel lid blockstate toggles open/close", PlayTest::scenarioStructureLoot);
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
@@ -778,6 +779,91 @@ public final class PlayTest {
                         && s.get(DataComponents.LODESTONE_TRACKER).tracked());
         check("splitting off a bound compass adds exactly one new bound copy to the inventory", gotBoundCopy);
         resetPlayer();
+    }
+
+    /**
+     * Archaeology (blocks/Archaeology.java): brushing a suspicious_sand/suspicious_gravel block
+     * through its real 10-brush completion, decompile-verified against
+     * {@code BrushableBlockEntity}. Loot is registered manually here the same way
+     * {@code scenarioStructureLoot} manually registers a chest's pending table — this project
+     * doesn't place these blocks from worldgen yet (see AUDIT), only the subsystem itself.
+     */
+    private static void scenarioArchaeology() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(0, Y, 0);
+
+        // --- full brush-out with real loot registered ---
+        world.setBlock(pos, Block.SUSPICIOUS_SAND);
+        dev.pointofpressure.minecom.blocks.Archaeology.registerLoot(pos, "desert_pyramid");
+        player.setItemInMainHand(ItemStack.of(Material.BRUSH));
+        int durabilityBefore = intDamage(player.getItemInMainHand());
+
+        useItemOnBlock(ItemStack.of(Material.BRUSH), pos, BlockFace.TOP);
+        tick(20); // BRUSH_COOLDOWN_TICKS=10, first stroke lands at elapsed 4 — a couple strokes land here
+        check("a few brush strokes advance progress but don't finish the block (" + dustedOf(pos) + ")",
+                dev.pointofpressure.minecom.blocks.Archaeology.brushCountAt(pos) > 0
+                        && world.getBlock(pos).key().value().equals("suspicious_sand"));
+        check("the dusted blockstate property advances off 0 as progress accrues", !"0".equals(dustedOf(pos)));
+
+        tick(100); // 10 strokes total land well within this (elapsed reaches ~94) and within the 200-tick use window
+        check("10 completed brush strokes turn suspicious_sand into real sand",
+                world.getBlock(pos) == Block.SAND);
+        // the player stands right where the loot drops (both at ~(0.5, Y+1, 0.5)), so real
+        // vanilla-style auto-pickup vacuums the dropped ItemEntity into their inventory well
+        // within the 100 ticks above — check the inventory, not the ground, same reasoning
+        // scenarioDroppedItemPickup-style checks elsewhere in this file already use.
+        check("the real desert_pyramid loot table drops one of its own items, picked up into the inventory",
+                playerHasItem(Material.DIAMOND) || playerHasItem(Material.TNT)
+                        || playerHasItem(Material.GUNPOWDER) || playerHasItem(Material.EMERALD)
+                        || playerHasItem(Material.ARCHER_POTTERY_SHERD) || playerHasItem(Material.MINER_POTTERY_SHERD)
+                        || playerHasItem(Material.PRIZE_POTTERY_SHERD) || playerHasItem(Material.SKULL_POTTERY_SHERD));
+        check("the brush loses exactly 1 durability for the WHOLE dig-out, not per stroke "
+                        + "(BrushItem.onUseTick only hurtAndBreak's on the stroke that completes it)",
+                intDamage(player.getItemInMainHand()) == durabilityBefore + 1);
+
+        // --- a manually-placed block with no registered loot table drops nothing when finished ---
+        clearEntitiesExceptPlayer();
+        BlockVec pos2 = new BlockVec(4, Y, 0);
+        world.setBlock(pos2, Block.SUSPICIOUS_GRAVEL);
+        player.setItemInMainHand(ItemStack.of(Material.BRUSH));
+        useItemOnBlock(ItemStack.of(Material.BRUSH), pos2, BlockFace.TOP);
+        tick(120);
+        check("brushing out a block with no registered loot table still turns it into gravel",
+                world.getBlock(pos2) == Block.GRAVEL);
+        check("...but drops nothing (no LootTable NBT, matching a real /setblock'd suspicious block)",
+                world.getEntities().stream().noneMatch(en -> en instanceof net.minestom.server.entity.ItemEntity));
+
+        // --- brush progress decays back to 0 if the player stops mid-way and enough time passes ---
+        clearEntitiesExceptPlayer();
+        BlockVec pos3 = new BlockVec(8, Y, 0);
+        world.setBlock(pos3, Block.SUSPICIOUS_SAND);
+        player.setItemInMainHand(ItemStack.of(Material.BRUSH));
+        useItemOnBlock(ItemStack.of(Material.BRUSH), pos3, BlockFace.TOP);
+        tick(20); // a couple of strokes land
+        int progressed = dev.pointofpressure.minecom.blocks.Archaeology.brushCountAt(pos3);
+        check("setup: some progress landed before we stop brushing", progressed > 0);
+        player.clearItemUse(); // release right-click: no more strokes will land
+        tick(200); // well past the 40gt idle window + several 4gt decay steps
+        check("abandoned progress decays back to 0 (BrushableBlockEntity.checkReset), block stays suspicious_sand",
+                dev.pointofpressure.minecom.blocks.Archaeology.brushCountAt(pos3) == 0
+                        && world.getBlock(pos3).key().value().equals("suspicious_sand"));
+        check("the dusted property resets to 0 alongside the decayed count", "0".equals(dustedOf(pos3)));
+
+        world.setBlock(pos, Block.AIR);
+        world.setBlock(pos2, Block.AIR);
+        world.setBlock(pos3, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    private static String dustedOf(BlockVec pos) {
+        String v = world.getBlock(pos).getProperty("dusted");
+        return v == null ? "0" : v;
+    }
+
+    private static int intDamage(ItemStack stack) {
+        Integer d = stack.get(DataComponents.DAMAGE);
+        return d == null ? 0 : d;
     }
 
     /**

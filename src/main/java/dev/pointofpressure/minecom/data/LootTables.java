@@ -96,6 +96,21 @@ public final class LootTables {
         return evaluate(table.getAsJsonObject(), new Ctx(ItemStack.AIR, null));
     }
 
+    /**
+     * Archaeology tables (data/minecraft/loot_table/archaeology/*.json, bundled verbatim as
+     * loot_archaeology.json) by bare name, e.g. "desert_pyramid". Rolled once per suspicious
+     * block on the brush stroke that completes it (BrushableBlockEntity.unpackLootTable),
+     * mirrored by {@code blocks/Archaeology.java}. Every real archaeology table's single pool
+     * is unconditioned plain item entries (no tool/entity predicates), so the generic
+     * tool-less {@code Ctx} used for trial/chest tables is exact here too, not an
+     * approximation of a richer context this project doesn't build.
+     */
+    public static List<ItemStack> archaeology(String idPath) {
+        JsonElement table = VanillaData.lootArchaeology.get(VanillaData.path(idPath));
+        if (table == null) return List.of();
+        return evaluate(table.getAsJsonObject(), new Ctx(ItemStack.AIR, null));
+    }
+
     private static List<ItemStack> evaluate(JsonObject table, Ctx ctx) {
         List<ItemStack> out = new ArrayList<>(2);
         JsonArray pools = table.getAsJsonArray("pools");

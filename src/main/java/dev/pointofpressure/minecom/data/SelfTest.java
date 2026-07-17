@@ -1621,6 +1621,28 @@ public final class SelfTest {
                     secondNested.inserted() == 0);
         }
 
+        // Archaeology loot tables (data/minecraft/loot_table/archaeology/*.json, bundled as
+        // loot_archaeology.json for blocks/Archaeology.java): a straight data/lookup check,
+        // same shape as the existing chest-table coverage above.
+        check("LootTables.archaeology: unknown id resolves to nothing",
+                LootTables.archaeology("not_a_real_table").isEmpty());
+        {
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (int i = 0; i < 50; i++) {
+                for (ItemStack drop : LootTables.archaeology("desert_pyramid")) {
+                    seen.add(drop.material().key().value());
+                }
+            }
+            check("LootTables.archaeology(\"desert_pyramid\") rolls real items over 50 tries (got "
+                            + seen.size() + " distinct materials, e.g. " + seen + ")",
+                    !seen.isEmpty() && seen.stream().allMatch(m -> m.equals("diamond") || m.equals("tnt")
+                            || m.equals("gunpowder") || m.equals("emerald") || m.endsWith("_pottery_sherd")));
+        }
+        check("LootTables.archaeology(\"trail_ruins_rare\") includes armor trim smithing templates",
+                java.util.stream.Stream.generate(() -> LootTables.archaeology("trail_ruins_rare"))
+                        .limit(50).flatMap(List::stream)
+                        .anyMatch(s -> s.material().key().value().endsWith("_armor_trim_smithing_template")));
+
         emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
             emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
