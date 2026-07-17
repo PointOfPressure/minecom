@@ -13,6 +13,7 @@ import dev.pointofpressure.minecom.blocks.Placement;
 import dev.pointofpressure.minecom.data.VanillaData;
 import dev.pointofpressure.minecom.mobs.Combat;
 import dev.pointofpressure.minecom.mobs.Mobs;
+import dev.pointofpressure.minecom.mobs.Totems;
 import dev.pointofpressure.minecom.survival.Experience;
 import dev.pointofpressure.minecom.survival.Survival;
 import dev.pointofpressure.minecom.survival.WeatherCycle;
@@ -132,6 +133,11 @@ public final class Bootstrap {
         Survival.register(events);
         Experience.register(events);
         Combat.register(events);
+        // Totems registers right after Combat: it needs to see EntityDamageEvent's amount
+        // AFTER Combat's armor/resistance/enchantment reduction, matching real vanilla's
+        // checkTotemDeathProtection running after hurtServer's full reduction pipeline (see
+        // Totems.java's class doc).
+        Totems.register(events);
         // Taming registers after Combat: its owner-defense listeners read Combat's
         // cancellation/mitigation decisions on the same events (see Taming.register).
         dev.pointofpressure.minecom.mobs.Taming.register(events);
@@ -226,6 +232,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.survival.Elytra.register(events);
         dev.pointofpressure.minecom.survival.Bundles.register(events);
         dev.pointofpressure.minecom.survival.GoatHorns.register(events);
+        dev.pointofpressure.minecom.survival.Spyglass.register(events);
         dev.pointofpressure.minecom.blocks.Archaeology.register(events);
         dev.pointofpressure.minecom.blocks.Portals.register(events, overworld, nether);
         WeatherCycle.start(overworld);

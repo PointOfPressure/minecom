@@ -393,8 +393,28 @@ leftovers.
   duration/amplifier variants, blaze-powder fuel (20 charges). (M)
 - Anvils.java — check rename cost, prior-work-penalty doubling, too-expensive
   cap 40, unit repair with raw material. (S/M)
-- Beds.java:41 — no nether/end bed explosion (vanilla BED_RULE attribute); no
-  "monsters nearby" sleep denial; thunderstorm daytime sleeping. (S)
+- ~~Beds.java:41 — no nether/end bed explosion (vanilla BED_RULE attribute); no
+  "monsters nearby" sleep denial; thunderstorm daytime sleeping. (S)~~ This
+  note was stale — nether/end explosion and thunderstorm daytime sleeping were
+  already done by the time of this pass (see `Beds.java`'s own class doc).
+  **"Monsters nearby" done 2026-07-17 (Sonnet 5, Tier 3 batch 5)** —
+  decompile-verified against `ServerPlayer.startSleepInBed` (26.2, freshly
+  decompiled): a non-creative player can't sleep while a real vanilla
+  `Monster` is within an AABB of ±8 blocks horizontal / ±5 vertical around
+  the bed's bottom-center. `Monster.isPreventingPlayerRest` has exactly ONE
+  override anywhere in the 26.2 entity tree (confirmed by scanning every
+  class file's bytecode in the server jar, not just the ones this project
+  implements): `ZombifiedPiglin`, gated on anger at the specific player —
+  left out of `Beds.MONSTER_TYPES` entirely rather than reimplemented as
+  "always false", since this project has no persistent per-mob anger/aggro
+  timer for it (same gap `VanillaMobs`' wolf-anger note documents), so it
+  can never actually be angry here. `MONSTER_TYPES` itself is real vanilla's
+  `Monster` subclass hierarchy — also confirmed by walking each class
+  file's superclass chain in the jar bytecode, not assumed from names —
+  intersected with the mobs this project spawns; several plausible-looking
+  "monsters" are real vanilla `Mob` subclasses, NOT `Monster` subclasses,
+  and correctly do NOT block sleep: ghast, hoglin, slime, magma cube/sulfur
+  cube, phantom, shulker. 5 new PlayTest checks in `scenarioBedMonsters`.
 - Boats.java — no fall-damage negation rules; ~~bubble column sink?~~ (done
   2026-07-12 — buoyancy defers to BubbleColumns over drag columns); chest
   boats? (S/M)
@@ -1039,7 +1059,11 @@ leftovers.
   falling (check), levitation via potion, bad omen bottle (ominous bottle item
   — trial chambers ominous path currently only reachable via /effect-style
   application in tests), luck, darkness, oozing/weaving/infested/wind-charged
-  (26.x effects). Absorption/golden apples? Totem of undying? (M)
+  (26.x effects). Absorption/golden apples still open — the ABSORPTION
+  potion effect mechanic itself now exists (mobs/Totems.java grants it
+  generically via player.addEffect), just not golden apples granting it on
+  eat. ~~Totem of undying?~~ done, see the Items entry's spyglass/totem
+  note. (M)
 - Experience.java — check: xp from trading/breeding/fishing (vanilla grants),
   level curve beyond 30ish, enchanting costs deduction. (S)
 - Survival.java — exhaustion sources incomplete (sprint-jump 0.2, swim 0.01/m,
@@ -1085,8 +1109,43 @@ leftovers.
   already run that physics locally and just report position, so only the
   parts a client can't authoritatively decide were modeled server-side).
   no eye of ender flight (locatestronghold
-  command instead), no spyglass, no
-  shields BANNER patterns (see banners entry below), no totem. (each S-M)
+  command instead), no
+  shields BANNER patterns (see banners entry below). (each S-M)
+  ~~no spyglass~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 5,
+  `survival/Spyglass.java`, new file)** — decompile-verified against
+  `SpyglassItem` (26.2, freshly decompiled): real vanilla's spyglass is
+  almost entirely client-visual (zoom FOV, scope overlay, held-to-eye
+  pose), and Minestom's own raw-packet handler already special-cases
+  `Material.SPYGLASS` for the animation/1200-tick duration the same way it
+  special-cases `Material.GOAT_HORN` — so the only product-owned behavior
+  is two sounds, `item.spyglass.use` on raise and `item.spyglass.stop_using`
+  on release (early or at full duration), and (a real, easy-to-miss
+  vanilla detail confirmed by decompiling `Entity.playSound`/`Player.
+  playSound`/`ServerLevel.playSeededSound`) neither is heard by the acting
+  player themselves — real vanilla's `Player.playSound` broadcasts to every
+  OTHER nearby player, excluding the source. 5 new PlayTest checks
+  (`scenarioSpyglass`, using a second connected player to observe the
+  exclusion).
+  ~~no totem~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 5,
+  `mobs/Totems.java`, new file)** — decompile-verified against
+  `LivingEntity.checkTotemDeathProtection` and `DeathProtection.
+  TOTEM_OF_UNDYING` (26.2, freshly decompiled): main hand then off hand
+  checked for `DataComponents.DEATH_PROTECTION`, consumed on a lethal hit
+  (skipped for `bypasses_invulnerability` damage, e.g. out-of-world/kill),
+  health set to 1.0, the item's own `death_effects` list applied generically
+  (not hardcoded — real vanilla's default is clear-all-effects +
+  Regeneration II/900t + Absorption II/100t + Fire Resistance I/800t), and
+  entity status 35 broadcast (drives the totem particle burst + sound
+  client-side, matching `broadcastEntityEvent(this, 35)` — nothing else
+  needs to play a sound server-side). Registered right after `Combat.
+  register` so it sees `EntityDamageEvent`'s amount AFTER Combat's armor/
+  resistance/enchantment reduction, matching real vanilla's order. 9 new
+  PlayTest checks (`scenarioTotem`: main-hand save, off-hand save, no-totem
+  death, out-of-world bypass, exact effect amplifier/duration values).
+  Leaves "Absorption from golden apples" open (Potions.java's own entry) —
+  this closes the Absorption *potion effect* mechanic generally (usable by
+  anything that grants it, including the totem), not golden apples
+  specifically granting it on eat, which is still unimplemented.
   ~~no bundles~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 4,
   `survival/Bundles.java`, new file)** — decompile-verified against
   `BundleItem`/`BundleContents`/`BundleContents.Mutable` (26.2, freshly

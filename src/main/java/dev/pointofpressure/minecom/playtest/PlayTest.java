@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 941;
+    private static final int EXPECTED_CHECK_COUNT = 960;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -304,6 +304,9 @@ public final class PlayTest {
         scenario("natural spawn: vanilla NaturalSpawner + parallel bench", PlayTest::scenarioNaturalSpawn);
         scenario("nether: terrain generates", PlayTest::scenarioNetherGen);
         scenario("nether: portal ignites + travels + returns", PlayTest::scenarioPortal);
+        scenario("bed: a nearby real Monster subclass denies sleep, a passive mob or one outside the AABB doesn't, creative bypasses the check", PlayTest::scenarioBedMonsters);
+        scenario("totem of undying: a lethal hit with one in either hand survives at 1 HP and grants its real effects, out-of-world damage bypasses it", PlayTest::scenarioTotem);
+        scenario("spyglass: raising it plays item.spyglass.use, releasing (early or at full duration) plays item.spyglass.stop_using, other items are a no-op", PlayTest::scenarioSpyglass);
 
         emit(passed + " passed, " + failed + " failed\n");
         int totalChecks = passed + failed;
@@ -4400,6 +4403,19 @@ public final class PlayTest {
         tick(1);
     }
 
+    /** Unwraps the last grouped-packet sound sent to a connection: instance-level broadcast
+     *  sounds (Instance.playSound/playSoundExcept) go out as a CachedPacket wrapping the real
+     *  SoundEffectPacket (ServerFlag.GROUPED_PACKET), so FakeConnection.lastOfType needs a
+     *  layer of indirection a direct-to-player playSound call (e.g. scenarioMap's
+     *  MapDataPacket) doesn't. Returns null if nothing was captured or it wasn't a sound. */
+    private static net.minestom.server.network.packet.server.play.SoundEffectPacket lastSound(
+            dev.pointofpressure.minecom.playtest.FakeConnection conn) {
+        var cached = conn.lastOfType(net.minestom.server.network.packet.server.CachedPacket.class);
+        if (cached == null) return null;
+        var packet = cached.packet(net.minestom.server.network.ConnectionState.PLAY);
+        return packet instanceof net.minestom.server.network.packet.server.play.SoundEffectPacket sound ? sound : null;
+    }
+
     /** Whether the player's inventory currently holds at least one of the given material. */
     private static boolean playerHasItem(Material material) {
         for (ItemStack stack : player.getInventory().getItemStacks()) {
@@ -5670,6 +5686,164 @@ public final class PlayTest {
         // affected by this one's side effects.
         world.setTime(1000);
         clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /** Beds.java's "monsters nearby" gate (see its class doc). Real vanilla's AABB is
+     *  ±8 horizontal / ±5 vertical around the bed's bottom-center. */
+    private static void scenarioBedMonsters() {
+        world.setTime(14000); // night
+        BlockVec foot = new BlockVec(-15, Y + 1, -5);
+        BlockVec head = foot.add(0, 0, -1);
+        world.setBlock(foot, Block.RED_BED.withProperty("part", "foot").withProperty("facing", "north"));
+        world.setBlock(head, Block.RED_BED.withProperty("part", "head").withProperty("facing", "north"));
+
+        var zombie = Mobs.spawn("zombie", world, new Pos(foot.blockX() + 4.0, Y + 1, foot.blockZ() + 0.5));
+        tick(2);
+        long beforeBlocked = world.getTime();
+        interact(foot);
+        check("a real vanilla Monster (zombie) 4 blocks away, inside the ±8/±5 AABB, denies sleep",
+                world.getTime() - beforeBlocked < 100);
+
+        zombie.remove();
+        tick(2);
+        long beforeClear = world.getTime();
+        interact(foot);
+        check("removing the zombie lets sleep proceed again", world.getTime() - beforeClear > 5000);
+        world.setTime(14000);
+
+        var farZombie = Mobs.spawn("zombie", world, new Pos(foot.blockX() + 40.0, Y + 1, foot.blockZ() + 0.5));
+        tick(2);
+        long beforeFar = world.getTime();
+        interact(foot);
+        check("a zombie 40 blocks away, outside the ±8/±5 AABB, does not deny sleep",
+                world.getTime() - beforeFar > 5000);
+        farZombie.remove();
+        world.setTime(14000);
+
+        var cow = Mobs.spawn("cow", world, new Pos(foot.blockX() + 1.0, Y + 1, foot.blockZ() + 0.5));
+        tick(2);
+        long beforeCow = world.getTime();
+        interact(foot);
+        check("a nearby cow — a real vanilla Mob, NOT a Monster subclass — does not deny sleep",
+                world.getTime() - beforeCow > 5000);
+        cow.remove();
+        world.setTime(14000);
+
+        var creativeZombie = Mobs.spawn("zombie", world, new Pos(foot.blockX() + 2.0, Y + 1, foot.blockZ() + 0.5));
+        player.setGameMode(GameMode.CREATIVE);
+        tick(2);
+        long beforeCreative = world.getTime();
+        interact(foot);
+        check("creative mode bypasses the monster-nearby check entirely (real vanilla: !this.isCreative())",
+                world.getTime() - beforeCreative > 5000);
+        player.setGameMode(GameMode.SURVIVAL);
+
+        world.setBlock(foot, Block.AIR);
+        world.setBlock(head, Block.AIR);
+        world.setTime(1000);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /** Totems.java: real event flow via player.damage(), not a hand-built EntityDamageEvent —
+     *  exercises Combat's own armor/resistance reduction feeding into Totems' listener exactly
+     *  the way Bootstrap registers them (see Totems.java's class doc on registration order). */
+    private static void scenarioTotem() {
+        resetPlayer();
+        player.setHealth(1f);
+        player.setItemInMainHand(ItemStack.of(Material.TOTEM_OF_UNDYING));
+        player.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 5f);
+        tick(1);
+        check("a lethal hit with a totem in the main hand survives at 1 HP instead of dying",
+                !player.isDead() && player.getHealth() == 1f);
+        check("the totem is consumed (main hand now empty)", player.getItemInMainHand().isAir());
+
+        var regen = player.getEffect(net.minestom.server.potion.PotionEffect.REGENERATION);
+        check("totem grants Regeneration II (900 ticks)",
+                regen != null && regen.potion().amplifier() == 1 && regen.potion().duration() == 900);
+        var absorption = player.getEffect(net.minestom.server.potion.PotionEffect.ABSORPTION);
+        check("totem grants Absorption II (100 ticks)",
+                absorption != null && absorption.potion().amplifier() == 1 && absorption.potion().duration() == 100);
+        var fireRes = player.getEffect(net.minestom.server.potion.PotionEffect.FIRE_RESISTANCE);
+        check("totem grants Fire Resistance I (800 ticks)",
+                fireRes != null && fireRes.potion().amplifier() == 0 && fireRes.potion().duration() == 800);
+
+        player.clearEffects();
+        resetPlayer();
+        player.setHealth(1f);
+        player.setItemInOffHand(ItemStack.of(Material.TOTEM_OF_UNDYING));
+        player.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 5f);
+        tick(1);
+        check("an off-hand totem also saves the player (real vanilla checks main then off hand)",
+                !player.isDead() && player.getHealth() == 1f);
+        check("the off-hand totem is consumed", player.getItemInOffHand().isAir());
+
+        player.clearEffects();
+        resetPlayer();
+        player.setHealth(1f);
+        player.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 5f);
+        tick(1);
+        check("without a totem in either hand, the same lethal hit actually kills the player",
+                player.isDead());
+
+        resetPlayer();
+        player.setHealth(1f);
+        player.setItemInMainHand(ItemStack.of(Material.TOTEM_OF_UNDYING));
+        player.damage(net.minestom.server.entity.damage.DamageType.OUT_OF_WORLD, 5f);
+        tick(1);
+        check("out_of_world damage bypasses totem protection (bypasses_invulnerability tag)",
+                player.isDead());
+
+        resetPlayer();
+    }
+
+    /** Spyglass.java: Minestom's own UseItemListener already special-cases Material.SPYGLASS
+     *  for the animation/duration (see Spyglass.java's class doc) — this exercises only what
+     *  the product code owns, the two sounds, real vanilla's "except the acting player"
+     *  broadcast (verified against decompiled Entity.playSound/ServerLevel.playSeededSound —
+     *  see Spyglass.java's class doc) needs a SECOND connected player to observe, since the
+     *  acting player is specifically who does NOT get the packet. Instance.playSoundExcept
+     *  goes through Minestom's grouped-packet path (ServerFlag.GROUPED_PACKET), which wraps
+     *  the real ServerPacket in a CachedPacket — {@link #lastSound} unwraps it, the same way
+     *  scenarioMap's FakeConnection.lastOfType technique works one layer down. */
+    private static void scenarioSpyglass() {
+        resetPlayer();
+        var conn = (dev.pointofpressure.minecom.playtest.FakeConnection) player.getPlayerConnection();
+        var observerConn = new dev.pointofpressure.minecom.playtest.FakeConnection();
+        var observer = new dev.pointofpressure.minecom.playtest.TestPlayer(observerConn,
+                new GameProfile(UUID.randomUUID(), "SpyglassObserver"));
+        observer.setInstance(world, new Pos(50.5, Y + 1, 50.5)).join();
+        tick(1);
+
+        ItemStack spyglass = ItemStack.of(Material.SPYGLASS);
+
+        int actorPacketsBefore = conn.packetsSent.get();
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(player, PlayerHand.MAIN, spyglass, 0));
+        check("the acting player never gets their own item.spyglass.use packet back "
+                        + "(real vanilla's Player.playSound excludes the source player)",
+                conn.packetsSent.get() == actorPacketsBefore);
+        var observedUse = lastSound(observerConn);
+        check("a different nearby player DOES hear item.spyglass.use",
+                observedUse != null && observedUse.soundEvent().equals(net.minestom.server.sound.SoundEvent.ITEM_SPYGLASS_USE));
+
+        EventDispatcher.call(new net.minestom.server.event.item.PlayerCancelItemUseEvent(player, PlayerHand.MAIN, spyglass, 40));
+        var observedCancel = lastSound(observerConn);
+        check("releasing early (PlayerCancelItemUseEvent) is heard by others as item.spyglass.stop_using",
+                observedCancel != null && observedCancel.soundEvent().equals(net.minestom.server.sound.SoundEvent.ITEM_SPYGLASS_STOP_USING));
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(player, PlayerHand.MAIN, spyglass, 0));
+        EventDispatcher.call(new net.minestom.server.event.item.PlayerFinishItemUseEvent(player, PlayerHand.MAIN, spyglass, 1200));
+        var observedFinish = lastSound(observerConn);
+        check("the full 1200-tick duration elapsing (PlayerFinishItemUseEvent) is ALSO heard as item.spyglass.stop_using",
+                observedFinish != null && observedFinish.soundEvent().equals(net.minestom.server.sound.SoundEvent.ITEM_SPYGLASS_STOP_USING));
+
+        int observerPacketsBefore = observerConn.packetsSent.get();
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(player, PlayerHand.MAIN, ItemStack.of(Material.BOW), 0));
+        check("a non-spyglass item's use event is a no-op (no packet sent to anyone)",
+                observerConn.packetsSent.get() == observerPacketsBefore);
+
+        observer.remove();
         resetPlayer();
     }
 
