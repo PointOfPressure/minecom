@@ -120,23 +120,39 @@ public final class ArmorStands {
      * default stand.
      */
     public static LivingEntity place(Instance instance, Point base, float placerYaw, ItemStack item) {
-        LivingEntity stand = new LivingEntity(EntityType.ARMOR_STAND);
         // Mth.floor((wrapDegrees(rot - 180) + 22.5) / 45) * 45 in ArmorStandItem.useOn.
         float yaw = (float) Math.floor((wrapDegrees(placerYaw - 180.0f) + 22.5f) / 45.0f) * 45.0f;
+        LivingEntity stand = spawnAt(instance, new Pos(base.blockX() + 0.5, base.blockY(), base.blockZ() + 0.5, yaw, 0));
         applyFlags(stand, item);
-        stand.setInstance(instance, new Pos(base.blockX() + 0.5, base.blockY(), base.blockZ() + 0.5, yaw, 0));
+        return stand;
+    }
+
+    /** Spawn a bare, default-flags armor stand at its exact position — no click/consume side effects. */
+    public static LivingEntity spawnAt(Instance instance, Pos pos) {
+        LivingEntity stand = new LivingEntity(EntityType.ARMOR_STAND);
+        stand.setInstance(instance, pos);
         return stand;
     }
 
     /** Apply the Invisible/Small/NoBasePlate/Marker/ShowArms flags off an item's NBT. */
     public static void applyFlags(LivingEntity stand, ItemStack item) {
+        applyFlags(stand,
+                item != null && Boolean.TRUE.equals(item.getTag(TAG_INVISIBLE)),
+                item != null && Boolean.TRUE.equals(item.getTag(TAG_SMALL)),
+                item != null && Boolean.TRUE.equals(item.getTag(TAG_NO_BASE_PLATE)),
+                item != null && Boolean.TRUE.equals(item.getTag(TAG_MARKER)),
+                item != null && Boolean.TRUE.equals(item.getTag(TAG_SHOW_ARMS)));
+    }
+
+    /** Apply the same five flags from explicit values (persistence restore path — no source item). */
+    public static void applyFlags(LivingEntity stand, boolean invisible, boolean small,
+            boolean noBasePlate, boolean marker, boolean showArms) {
         ArmorStandMeta meta = (ArmorStandMeta) stand.getEntityMeta();
-        boolean invisible = item != null && Boolean.TRUE.equals(item.getTag(TAG_INVISIBLE));
         stand.setInvisible(invisible);
-        meta.setSmall(item != null && Boolean.TRUE.equals(item.getTag(TAG_SMALL)));
-        meta.setHasNoBasePlate(item != null && Boolean.TRUE.equals(item.getTag(TAG_NO_BASE_PLATE)));
-        meta.setMarker(item != null && Boolean.TRUE.equals(item.getTag(TAG_MARKER)));
-        meta.setHasArms(item != null && Boolean.TRUE.equals(item.getTag(TAG_SHOW_ARMS)));
+        meta.setSmall(small);
+        meta.setHasNoBasePlate(noBasePlate);
+        meta.setMarker(marker);
+        meta.setHasArms(showArms);
     }
 
     /** Set the six body-part pose rotations (degrees). ArmorStand.setXxxPose. */

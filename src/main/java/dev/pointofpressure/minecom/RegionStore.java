@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import dev.pointofpressure.minecom.blocks.ArmorStands;
+import dev.pointofpressure.minecom.blocks.ItemFrames;
 import dev.pointofpressure.minecom.mobs.Breeding;
 import dev.pointofpressure.minecom.mobs.Mobs;
 import dev.pointofpressure.minecom.mobs.VillagerFood;
@@ -15,10 +17,15 @@ import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.EntityCreature;
 import net.minestom.server.entity.EquipmentSlot;
 import net.minestom.server.entity.EntityType;
+import net.minestom.server.entity.LivingEntity;
 import net.minestom.server.entity.metadata.AgeableMobMeta;
 import net.minestom.server.entity.metadata.animal.SheepMeta;
+import net.minestom.server.entity.metadata.other.ArmorStandMeta;
+import net.minestom.server.entity.metadata.other.ItemFrameMeta;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.item.ItemStack;
+import net.minestom.server.utils.Direction;
+import net.minestom.server.utils.Rotation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +56,11 @@ import java.util.zip.GZIPOutputStream;
  * Writes are atomic (tmp + move); stale shards from vanished regions are
  * deleted on save. Mobs round-trip through Mobs.spawn by kind — unknown kinds
  * are skipped with a log line, villager profession/food ride along as data.
+ * Item frames/glow item frames and armor stands ride the same generic
+ * entity-sweep shape as mobs (their own "deco" array per chunk, not the
+ * {@link StateAdapter} SPI — like mobs, they're roaming/placed entities at a
+ * floating-point {@code Pos}, not chunk-anchored block-entity data) rather
+ * than a full mob snapshot, since neither is an {@code EntityCreature}.
  */
 public final class RegionStore {
     private RegionStore() {}
@@ -75,6 +87,7 @@ public final class RegionStore {
             });
         }
         collectMobs(instance, regions);
+        collectDecorations(instance, regions);
         Difficulty.inhabitedSnapshot(instance).forEach((packed, ticks) -> {
             int cx = (int) (packed >> 32), cz = (int) (long) packed;
             chunkOf(regions, cx, cz).addProperty("inhabited", ticks);
@@ -117,6 +130,7 @@ public final class RegionStore {
             chunk = new JsonObject();
             chunk.add("be", new JsonArray());
             chunk.add("mobs", new JsonArray());
+            chunk.add("deco", new JsonArray());
             chunks.add(chunkKey, chunk);
         }
         return chunk;
@@ -163,11 +177,75 @@ public final class RegionStore {
         }
     }
 
+    /**
+     * Item frames/glow item frames and armor stands: neither is an {@code EntityCreature}, so
+     * they never reach {@link #collectMobs}, and a restart would otherwise silently discard
+     * every placed frame/stand plus whatever they're holding/wearing — session-scoped state
+     * nobody had documented as a deliberate simplification (AUDIT.md, Tier 3 batch 3).
+     */
+    private static void collectDecorations(Instance instance, Map<Long, JsonObject> regions) {
+        for (Entity e : instance.getEntities()) {
+            if (e.isRemoved()) continue;
+            EntityType type = e.getEntityType();
+            Pos pos = e.getPosition();
+            JsonObject d = new JsonObject();
+            JsonArray at = new JsonArray();
+            at.add(pos.x()); at.add(pos.y()); at.add(pos.z()); at.add(pos.yaw()); at.add(pos.pitch());
+
+            if (ItemFrames.isFrame(type)) {
+                d.addProperty("kind", type.key().value());
+                d.add("pos", at);
+                ItemFrameMeta frameMeta = (ItemFrameMeta) e.getEntityMeta();
+                d.addProperty("dir", frameMeta.getDirection().name());
+                ItemStack framed = frameMeta.getItem();
+                if (!framed.isAir()) d.add("item", Persist.writeItem(framed));
+                d.addProperty("rot", frameMeta.getRotation().ordinal());
+            } else if (type == EntityType.ARMOR_STAND && e instanceof LivingEntity stand) {
+                d.addProperty("kind", "armor_stand");
+                d.add("pos", at);
+                ArmorStandMeta meta = (ArmorStandMeta) stand.getEntityMeta();
+                d.addProperty("invisible", stand.isInvisible());
+                d.addProperty("small", meta.isSmall());
+                d.addProperty("noBasePlate", meta.isHasNoBasePlate());
+                d.addProperty("marker", meta.isMarker());
+                d.addProperty("showArms", meta.isHasArms());
+                d.add("headPose", writeVec(meta.getHeadRotation()));
+                d.add("bodyPose", writeVec(meta.getBodyRotation()));
+                d.add("leftArmPose", writeVec(meta.getLeftArmRotation()));
+                d.add("rightArmPose", writeVec(meta.getRightArmRotation()));
+                d.add("leftLegPose", writeVec(meta.getLeftLegRotation()));
+                d.add("rightLegPose", writeVec(meta.getRightLegRotation()));
+                JsonArray equip = new JsonArray();
+                boolean anyEquip = false;
+                for (EquipmentSlot slot : EQUIP_SLOTS) {
+                    ItemStack item = stand.getEquipment(slot);
+                    equip.add(item.isAir() ? null : Persist.writeItem(item));
+                    anyEquip |= !item.isAir();
+                }
+                if (anyEquip) d.add("equip", equip);
+            } else {
+                continue;
+            }
+            chunkOf(regions, pos.blockX() >> 4, pos.blockZ() >> 4).getAsJsonArray("deco").add(d);
+        }
+    }
+
+    private static JsonArray writeVec(net.minestom.server.coordinate.Vec v) {
+        JsonArray a = new JsonArray();
+        a.add(v.x()); a.add(v.y()); a.add(v.z());
+        return a;
+    }
+
+    private static net.minestom.server.coordinate.Vec readVec(JsonArray a) {
+        return new net.minestom.server.coordinate.Vec(
+                a.get(0).getAsDouble(), a.get(1).getAsDouble(), a.get(2).getAsDouble());
+    }
+
     // ------------------------------------------------------------------ load
 
     static void load(Path dir, Instance instance, Map<String, StateAdapter> byKind) {
         if (!Files.isDirectory(dir)) return;
-        int entries = 0, mobs = 0;
+        int entries = 0, mobs = 0, deco = 0;
         try (DirectoryStream<Path> shards = Files.newDirectoryStream(dir, "r.*.json.gz")) {
             for (Path shard : shards) {
                 JsonObject root;
@@ -191,6 +269,11 @@ public final class RegionStore {
                     for (JsonElement el : chunk.getAsJsonArray("mobs")) {
                         if (restoreMob(instance, el.getAsJsonObject())) mobs++;
                     }
+                    if (chunk.has("deco")) { // absent in shards written before this field existed
+                        for (JsonElement el : chunk.getAsJsonArray("deco")) {
+                            if (restoreDecoration(instance, el.getAsJsonObject())) deco++;
+                        }
+                    }
                     if (chunk.has("inhabited")) {
                         String[] parts = c.getKey().split(",");
                         Difficulty.setInhabitedTicks(instance,
@@ -203,8 +286,9 @@ public final class RegionStore {
             LOGGER.error("Failed loading region shards from {}", dir, e);
         }
         for (StateAdapter adapter : byKind.values()) adapter.finishRestore(instance);
-        if (entries > 0 || mobs > 0) {
-            LOGGER.info("Restored {} block-entity entries, {} mobs from region shards", entries, mobs);
+        if (entries > 0 || mobs > 0 || deco > 0) {
+            LOGGER.info("Restored {} block-entity entries, {} mobs, {} item frames/armor stands from region shards",
+                    entries, mobs, deco);
         }
     }
 
@@ -247,6 +331,53 @@ public final class RegionStore {
             if (m.has("color")) sheep.setColor(DyeColor.valueOf(m.get("color").getAsString()));
         }
         if (m.has("breedCooldown")) Breeding.setCooldownTicks(mob, m.get("breedCooldown").getAsLong());
+        return true;
+    }
+
+    private static boolean restoreDecoration(Instance instance, JsonObject d) {
+        JsonArray at = d.getAsJsonArray("pos");
+        Pos pos = new Pos(at.get(0).getAsDouble(), at.get(1).getAsDouble(), at.get(2).getAsDouble(),
+                at.get(3).getAsFloat(), at.get(4).getAsFloat());
+        String kind = d.get("kind").getAsString();
+
+        if (kind.equals("armor_stand")) {
+            LivingEntity stand = ArmorStands.spawnAt(instance, pos);
+            ArmorStands.applyFlags(stand,
+                    d.get("invisible").getAsBoolean(), d.get("small").getAsBoolean(),
+                    d.get("noBasePlate").getAsBoolean(), d.get("marker").getAsBoolean(),
+                    d.get("showArms").getAsBoolean());
+            ArmorStands.applyPose(stand,
+                    readVec(d.getAsJsonArray("headPose")), readVec(d.getAsJsonArray("bodyPose")),
+                    readVec(d.getAsJsonArray("leftArmPose")), readVec(d.getAsJsonArray("rightArmPose")),
+                    readVec(d.getAsJsonArray("leftLegPose")), readVec(d.getAsJsonArray("rightLegPose")));
+            if (d.has("equip")) {
+                JsonArray equip = d.getAsJsonArray("equip");
+                for (int i = 0; i < EQUIP_SLOTS.length && i < equip.size(); i++) {
+                    if (!equip.get(i).isJsonNull()) {
+                        ItemStack item = Persist.readItem(equip.get(i).getAsJsonObject());
+                        if (item != null) stand.setEquipment(EQUIP_SLOTS[i], item);
+                    }
+                }
+            }
+            return true;
+        }
+
+        EntityType type = EntityType.fromKey("minecraft:" + kind);
+        if (type == null || !ItemFrames.isFrame(type)) {
+            LOGGER.warn("Unknown decoration kind {} — not restored", kind);
+            return false;
+        }
+        Entity frame = ItemFrames.spawnAt(instance, pos, Direction.valueOf(d.get("dir").getAsString()), type);
+        if (d.has("item")) {
+            ItemStack item = Persist.readItem(d.getAsJsonObject("item"));
+            if (item != null) {
+                Rotation rotation = Rotation.values()[d.get("rot").getAsInt()];
+                frame.editEntityMeta(ItemFrameMeta.class, meta -> {
+                    meta.setItem(item);
+                    meta.setRotation(rotation);
+                });
+            }
+        }
         return true;
     }
 }

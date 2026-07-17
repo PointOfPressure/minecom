@@ -53,11 +53,8 @@ public final class ItemFrames {
             Point framePos = support.add(dir.normalX(), dir.normalY(), dir.normalZ());
             if (!instance.getBlock(framePos).isAir()) return;
 
-            Entity frame = new Entity(type);
-            frame.setNoGravity(true);
-            frame.editEntityMeta(HangingMeta.class, meta -> meta.setDirection(dir));
-            frame.setInstance(instance, new Pos(
-                    framePos.blockX() + 0.5, framePos.blockY() + 0.5, framePos.blockZ() + 0.5));
+            spawnAt(instance, new Pos(framePos.blockX() + 0.5, framePos.blockY() + 0.5, framePos.blockZ() + 0.5),
+                    dir, type);
 
             ItemStack held = event.getItemStack();
             event.getPlayer().setItemInMainHand(held.consume(1));
@@ -101,5 +98,19 @@ public final class ItemFrames {
         ItemEntity item = new ItemEntity(stack);
         item.setInstance(instance, at);
         item.setPickupDelay(Duration.ofMillis(500));
+    }
+
+    /** Whether {@code type} is one of the two real frame entity types (used by RegionStore's decoration sweep). */
+    public static boolean isFrame(EntityType type) {
+        return FRAME_TYPES.contains(type);
+    }
+
+    /** Spawn a bare (unfilled) frame of {@code type} at its exact hanging center — no click/consume side effects. */
+    public static Entity spawnAt(Instance instance, Pos center, Direction dir, EntityType type) {
+        Entity frame = new Entity(type);
+        frame.setNoGravity(true);
+        frame.editEntityMeta(HangingMeta.class, meta -> meta.setDirection(dir));
+        frame.setInstance(instance, center);
+        return frame;
     }
 }

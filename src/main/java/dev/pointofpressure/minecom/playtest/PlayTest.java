@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 898;
+    private static final int EXPECTED_CHECK_COUNT = 900;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -166,7 +166,7 @@ public final class PlayTest {
         scenario("ender pearl: throw teleports the thrower with armor-bypassing damage, resets fall tracking, and rolls an endermite spawn", PlayTest::scenarioEnderPearl);
         scenario("sculk shrieker: player vibration shrieks + darkness", PlayTest::scenarioShrieker);
         scenario("warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn", PlayTest::scenarioWarden);
-        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size), and fire's own scheduled-tick countdown", PlayTest::scenarioPersistence);
+        scenario("persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size), item frames + armor stands (flags/pose/equipment), and fire's own scheduled-tick countdown", PlayTest::scenarioPersistence);
         scenario("random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread, crop growth, sapling growth", PlayTest::scenarioRandomTicks);
         scenario("creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down", PlayTest::scenarioCreaking);
         scenario("happy ghast: harness equips + mounts, rider input flies it, sneak dismounts", PlayTest::scenarioHappyGhast);
@@ -7068,6 +7068,22 @@ public final class PlayTest {
         rs(80, Y + 1, z, Block.FIRE);
         dev.pointofpressure.minecom.blocks.FireSpread.track(new Vec(80, Y + 1, z));
 
+        // item frame + armor stand (Tier 3 batch 3): neither is an EntityCreature, so
+        // RegionStore.collectMobs never sees them — they need their own decoration sweep.
+        Entity persistFrame = dev.pointofpressure.minecom.blocks.ItemFrames.spawnAt(world,
+                new Pos(82.5, Y + 1.5, z + 0.5), net.minestom.server.utils.Direction.WEST, EntityType.ITEM_FRAME);
+        persistFrame.editEntityMeta(net.minestom.server.entity.metadata.other.ItemFrameMeta.class, meta -> {
+            meta.setItem(ItemStack.of(Material.COMPASS));
+            meta.setRotation(net.minestom.server.utils.Rotation.CLOCKWISE_135);
+        });
+
+        var persistStand = dev.pointofpressure.minecom.blocks.ArmorStands.spawnAt(
+                world, new Pos(84.5, Y + 1, z + 0.5, 45, 0));
+        dev.pointofpressure.minecom.blocks.ArmorStands.applyFlags(persistStand, true, true, true, false, true);
+        dev.pointofpressure.minecom.blocks.ArmorStands.applyPose(
+                persistStand, new Vec(10, 20, 30), null, null, null, null, null);
+        persistStand.setEquipment(EquipmentSlot.HELMET, ItemStack.of(Material.GOLDEN_HELMET));
+
         dev.pointofpressure.minecom.Persist.save();
         dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
         clearEntitiesExceptPlayer();
@@ -7144,6 +7160,26 @@ public final class PlayTest {
         check("shulker box contents survive the round trip",
                 restoredShulker != null && restoredShulker.getItemStack(5).material() == Material.GOLD_INGOT
                         && restoredShulker.getItemStack(5).amount() == 9);
+
+        var restoredFrame = world.getEntities().stream()
+                .filter(en -> en.getEntityType() == EntityType.ITEM_FRAME)
+                .findFirst().orElse(null);
+        check("item frame's held item + rotation survive the round trip",
+                restoredFrame != null && restoredFrame.getEntityMeta() instanceof
+                        net.minestom.server.entity.metadata.other.ItemFrameMeta fm
+                        && fm.getItem().material() == Material.COMPASS
+                        && fm.getRotation() == net.minestom.server.utils.Rotation.CLOCKWISE_135);
+        var restoredStand = world.getEntities().stream()
+                .filter(en -> en.getEntityType() == EntityType.ARMOR_STAND)
+                .findFirst().orElse(null);
+        check("armor stand flags/pose/equipment survive the round trip",
+                restoredStand != null && restoredStand.isInvisible()
+                        && restoredStand.getEntityMeta() instanceof
+                                net.minestom.server.entity.metadata.other.ArmorStandMeta asm
+                        && asm.isSmall() && asm.isHasNoBasePlate() && asm.isHasArms() && !asm.isMarker()
+                        && asm.getHeadRotation().equals(new Vec(10, 20, 30))
+                        && ((net.minestom.server.entity.LivingEntity) restoredStand)
+                                .getEquipment(EquipmentSlot.HELMET).material() == Material.GOLDEN_HELMET);
 
         rs(50, Y + 1, z, Block.AIR);
         rs(52, Y + 1, z, Block.AIR);

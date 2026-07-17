@@ -70,11 +70,27 @@ leftovers.
   task, not tracked state — gets a fresh timer on restore). ~~Trial
   chambers~~ and ~~fire's own scheduled-tick countdown~~ **done 2026-07-12
   (Sonnet)** — see their own entries below and in HANDOFF's "Persistence
-  adapter tail". Still session-scoped: warden anger (deliberate), item
-  entities in flight, breeding's own 30-second IN_LOVE window (too
-  short-lived to be worth it), and the registries are overworld-only
-  (position keys would collide across dimensions — pre-existing
-  limitation).
+  adapter tail". ~~Item frames/glow item frames and armor stands~~ **done
+  2026-07-17 (Sonnet 5, Tier 3 batch 3)** — neither is an `EntityCreature`,
+  so `RegionStore.collectMobs` never swept them; a restart silently
+  discarded every placed frame (and whatever it held) or stand (and its
+  flags/pose/equipment) with nobody having documented it as deliberate.
+  Fixed with a sibling entity-sweep (`RegionStore.collectDecorations`/
+  `restoreDecoration`, its own `"deco"` array per chunk — same shape as the
+  existing mob sweep, not the `StateAdapter` SPI, since like mobs these are
+  roaming/placed entities at a floating-point `Pos` rather than
+  chunk-anchored block-entity data) rather than a new adapter kind.
+  `ItemFrames.java`/`ArmorStands.java` gained small `spawnAt`/`isFrame`/
+  primitive-`applyFlags` accessors so the restore path can reconstruct an
+  entity exactly (position, direction, held item + rotation for frames;
+  the five boolean flags, all six pose `Vec`s, and the six standard
+  equipment slots for stands) without duplicating their placement logic.
+  2 new PlayTest checks folded into the existing `scenarioPersistence`
+  save/wipe/reload round trip. Still session-scoped: warden anger
+  (deliberate), item entities in flight, breeding's own 30-second IN_LOVE
+  window (too short-lived to be worth it), and the registries are
+  overworld-only (position keys would collide across dimensions —
+  pre-existing limitation).
 - ~~No random-tick engine~~ **Core landed 2026-07-12 (Fable)** —
   `blocks/RandomTicks.java`: the ServerLevel.tickChunk dispatch (3 rolls per
   non-empty 16³ section per tick, chunks within 8 of players; vanilla's
