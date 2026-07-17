@@ -1109,10 +1109,52 @@ leftovers.
   `recipes.json`) and Minestom's `RecipeDisplay.Smithing` +
   `DataComponents.TRIM`/`ArmorTrim` exist, so the remaining work is UI
   wiring analogous to this batch, not data plumbing. (M-L)
-- Potions.java — 13 effect cases handled on drink; missing: splash potion AoE
-  scaling by distance, lingering clouds, tipped arrows, turtle master, slow
-  falling (check), levitation via potion, bad omen bottle (ominous bottle item
-  — trial chambers ominous path currently only reachable via /effect-style
+- Potions.java — 13 effect cases handled on drink. ~~splash potion AoE scaling
+  by distance, lingering clouds~~ — this note was stale: both are done, see
+  `survival/ThrownPotions.java`'s own class doc (splash strength scales
+  1-dist/4 within a 4-block reach; lingering clouds shrink and reapply on a
+  cooldown). ~~tipped arrows~~ **Done 2026-07-17 (Sonnet 5)** — decompile-
+  verified against freshly-decompiled `Arrow`/`SpectralArrow`/`AbstractArrow`/
+  `ArrowItem`/`TippedArrowItem`/`SpectralArrowItem`/`BowItem`/
+  `ProjectileWeaponItem` (26.2, no cached copies existed before): previously
+  `Bow.consumeArrow`/`Crossbow.hasArrow`/`consumeArrow` only ever recognized
+  plain `Material.ARROW`, so a tipped or spectral arrow couldn't even be
+  nocked, and `Combat.projectileHit`'s arrow branch was gated to
+  `EntityType.ARROW` only, so a dispenser-fired spectral arrow (a distinct
+  entity type) dealt no damage and applied no effect at all — worse than "no
+  effect on hit," a real pre-existing gap this pass surfaced rather than
+  introduced. Now: `Bow.isArrowFamily` accepts all three materials as valid
+  ammo (bow and crossbow both — the crossbow's real arrow is consumed at
+  `load()` time but fired at `shoot()` time, so its material/potion identity
+  rides the crossbow `ItemStack`'s own tags in between); a hit applies the
+  carried potion (`Bow.POTION` tag, read off the fired item's
+  `DataComponents.POTION_CONTENTS`) at the real bundled `tipped_arrow` item's
+  `potion_duration_scale` of 0.125 (1/8 duration — reusing `Potions.apply`'s
+  existing scale parameter, the same one splash/lingering already use), or a
+  flat 200-tick Glowing for a spectral arrow (`SpectralArrow.
+  doPostHurtEffects`, unconditional, no distance/scale factor). Dispenser-
+  fired tipped arrows (`redstone/Redstone.java`, already spawning the correct
+  entity type before this pass) now carry the same potion tag. Loot supply
+  was already real and working (stray/bogged/parched drop `tipped_arrow` with
+  `set_potion`, trial chamber loot tables carry them too — `LootTables.
+  applyItemFunctions`'s `set_potion` case, unrelated pre-existing code,
+  verified still correct) — the missing piece was purely the fire/hit side.
+  8 new PlayTest checks (`scenarioTippedSpectralArrows`), using a manually-
+  dispatched `ProjectileCollideWithEntityEvent` rather than real flight
+  timing to test `Combat.projectileHit`'s effect application in isolation
+  (real projectile flight/collision is this project's own documented flake
+  class — trident riptide, crossbow piercing, etc. — irrelevant to what this
+  change actually touches). Not modeled: the `crafting_imbue` special
+  recipe (8 arrows + a lingering potion -> 8 tipped arrows) — bundled recipe
+  data exists (`recipes.json`'s `tipped_arrow` entry) but `Crafting.java`
+  doesn't dispatch that recipe type yet, a separate acquisition-pipeline gap,
+  not blocking since loot already supplies real tipped arrows; a
+  creative-mode or Infinity-enchanted shot still always fires a plain arrow
+  regardless of what's nocked (real vanilla reads the type without consuming
+  it in both cases — this project's pre-existing simplification, unchanged
+  by this pass). Still missing: turtle master, slow falling (check),
+  levitation via potion, bad omen bottle (ominous bottle item — trial
+  chambers ominous path currently only reachable via /effect-style
   application in tests), luck, darkness, oozing/weaving/infested/wind-charged
   (26.x effects). Absorption/golden apples still open — the ABSORPTION
   potion effect mechanic itself now exists (mobs/Totems.java grants it
@@ -1481,7 +1523,10 @@ leftovers.
    window, see Combat.java entry above); mob spawn-equipment enchantments still open — M
 8. ~~Taming (wolf/cat/horse) + leads/name tags~~ — DONE 2026-07-15 (v0.21.0, see the
    Taming/mounts entry above) — S remaining (wolf/cat/horse breeding, wolf armor)
-9. Splash/lingering/tipped arrows + missing 26.x effects — M
+9. ~~Splash/lingering/tipped arrows~~ — all DONE (splash/lingering were already
+   real, just undocumented here; tipped/spectral arrows DONE 2026-07-17,
+   Sonnet 5, see the Potions.java entry above) — missing 26.x effects (turtle
+   master, luck, darkness, oozing/weaving/infested/wind-charged) remain — M
 10. ~~Raid difficulty scaling (wave counts by difficulty, Bad Omen via
     patrols)~~ — DONE 2026-07-15 (v0.23.0, wave counts/composition; the
     patrol-captain Bad Omen trigger itself remains open, see Raid.java

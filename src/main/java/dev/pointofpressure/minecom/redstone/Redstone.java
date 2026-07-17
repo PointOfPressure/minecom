@@ -1026,6 +1026,14 @@ public final class Redstone {
             EntityProjectile projectile = new EntityProjectile(null, type);
             projectile.setInstance(instance, spawnAt);
             projectile.setVelocity(facing.mul(20).add(0, 1, 0));
+            if (mat == Material.TIPPED_ARROW) {
+                // ArrowItem.asProjectile carries the item's own potion contents onto the
+                // fired entity the same way a player's nocked arrow does (Bow.java).
+                var contents = stack.get(net.minestom.server.component.DataComponents.POTION_CONTENTS);
+                if (contents != null && contents.potion() != null) {
+                    projectile.setTag(dev.pointofpressure.minecom.survival.Bow.POTION, contents.potion().key().value());
+                }
+            }
         } else if (!dropper && (mat == Material.SPLASH_POTION || mat == Material.LINGERING_POTION)) {
             // ProjectileDispenseBehavior for potions: power 1.375 shoot units
             dev.pointofpressure.minecom.survival.ThrownPotions.launch(

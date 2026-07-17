@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.survival;
 
 import dev.pointofpressure.minecom.data.Enchants;
 import dev.pointofpressure.minecom.data.Items;
+import net.minestom.server.component.DataComponents;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.EntityProjectile;
@@ -15,6 +16,7 @@ import net.minestom.server.event.item.PlayerFinishItemUseEvent;
 import net.minestom.server.event.player.PlayerUseItemEvent;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
+import net.minestom.server.item.component.PotionContents;
 import net.minestom.server.tag.Tag;
 
 /**
@@ -30,6 +32,12 @@ import net.minestom.server.tag.Tag;
  * {@code PlayerCancelItemUseEvent} (early release — no-op, matches vanilla).
  * Multishot/Piercing are crossbow-only enchants (bow's Power/Punch/Flame are NOT
  * crossbow-enchantable per data/minecraft/enchantment/*.json supported_items).
+ * Tipped/spectral arrows load the same as a plain one (Bow.isArrowFamily) — since the
+ * real arrow is consumed at load() time but fired at shoot() time (possibly ticks
+ * later), its material/potion identity rides the crossbow ItemStack's own tags
+ * (CHARGED_SPECTRAL/CHARGED_POTION) in between; multishot's extra copies all carry
+ * whatever the single loaded arrow was, matching real vanilla (multishot doesn't
+ * consume 3 arrows, just fires the one loaded arrow three times).
  */
 public final class Crossbow {
     private Crossbow() {}
@@ -38,6 +46,11 @@ public final class Crossbow {
     public static final Tag<Integer> CHARGE_COUNT = Tag.Integer("minecom:crossbow_charge_count");
     /** Remaining pierce hits on a fired arrow (Piercing enchant); read by Combat.projectileHit. */
     public static final Tag<Integer> PIERCE = Tag.Integer("minecom:arrow_pierce");
+    /** Which arrow-family material got loaded (and its potion, if tipped) — captured at
+     *  load() time since that's when the real arrow is consumed, and read back at
+     *  shoot() time (which may run ticks later) to build the right projectile. */
+    private static final Tag<Boolean> CHARGED_SPECTRAL = Tag.Boolean("minecom:crossbow_charged_spectral");
+    private static final Tag<String> CHARGED_POTION = Tag.String("minecom:crossbow_charged_potion");
 
     public static void register(GlobalEventHandler events) {
         events.addListener(PlayerUseItemEvent.class, e -> {
@@ -72,17 +85,31 @@ public final class Crossbow {
 
     private static void load(Player player, PlayerHand hand, ItemStack crossbow) {
         boolean creative = player.getGameMode() == GameMode.CREATIVE;
-        if (!creative && !consumeArrow(player)) return; // arrow could've vanished mid-charge
+        ItemStack ammo = ItemStack.AIR;
+        if (!creative) {
+            ammo = consumeArrow(player);
+            if (ammo.isAir()) return; // arrow could've vanished mid-charge
+        }
 
         int multishot = Enchants.level(crossbow, "multishot");
         int count = multishot > 0 ? 3 : 1;
         ItemStack updated = crossbow.withTag(CHARGED, true).withTag(CHARGE_COUNT, count);
+        if (ammo.material() == Material.SPECTRAL_ARROW) {
+            updated = updated.withTag(CHARGED_SPECTRAL, true);
+        } else if (ammo.material() == Material.TIPPED_ARROW) {
+            PotionContents contents = ammo.get(DataComponents.POTION_CONTENTS);
+            if (contents != null && contents.potion() != null) {
+                updated = updated.withTag(CHARGED_POTION, contents.potion().key().value());
+            }
+        }
         player.setItemInHand(hand, updated);
     }
 
     private static void shoot(Player player, PlayerHand hand, ItemStack crossbow) {
         int count = crossbow.getTag(CHARGE_COUNT) != null ? crossbow.getTag(CHARGE_COUNT) : 1;
         int pierceLevel = Enchants.level(crossbow, "piercing");
+        boolean spectral = Boolean.TRUE.equals(crossbow.getTag(CHARGED_SPECTRAL));
+        String potion = crossbow.getTag(CHARGED_POTION);
 
         Pos from = player.getPosition().add(0, player.getEyeHeight(), 0);
         Vec dir = player.getPosition().direction();
@@ -93,17 +120,22 @@ public final class Crossbow {
         float damage = 6f; // crossbow always fires at the bow's full-draw equivalent (power=1.0 -> 2+4*1)
 
         float maxAngleDeg = count > 1 ? 10f : 0f; // multishot.json: projectile_spread +10 per level (max_level 1)
+        // multishot triples the SINGLE loaded arrow (real vanilla doesn't consume 3) — every
+        // shot below carries the same loaded potion/spectral identity.
+        EntityType arrowType = spectral ? EntityType.SPECTRAL_ARROW : EntityType.ARROW;
         for (int i = 0; i < count; i++) {
             float angle = count == 1 ? 0f : (i - (count - 1) / 2f) * maxAngleDeg;
             Vec shotDir = rotateAroundUp(dir, angle);
-            EntityProjectile arrow = new EntityProjectile(player, EntityType.ARROW);
+            EntityProjectile arrow = new EntityProjectile(player, arrowType);
             arrow.setInstance(player.getInstance(), from);
             arrow.setVelocity(shotDir.mul(speed));
             arrow.setTag(Bow.DAMAGE, damage);
             if (pierceLevel > 0) arrow.setTag(PIERCE, pierceLevel);
+            if (potion != null) arrow.setTag(Bow.POTION, potion);
         }
 
-        ItemStack cleared = crossbow.withTag(CHARGED, false).withTag(CHARGE_COUNT, 0);
+        ItemStack cleared = crossbow.withTag(CHARGED, false).withTag(CHARGE_COUNT, 0)
+                .withTag(CHARGED_SPECTRAL, false).withTag(CHARGED_POTION, null);
         if (!(player.getGameMode() == GameMode.CREATIVE)) {
             cleared = Items.damageItem(player, cleared, 1);
         }
@@ -118,35 +150,37 @@ public final class Crossbow {
         return new Vec(dir.x() * cos - dir.z() * sin, dir.y(), dir.x() * sin + dir.z() * cos);
     }
 
-    /** ProjectileWeaponItem.getHeldProjectile checks the offhand before the inventory. */
+    /** ProjectileWeaponItem.getHeldProjectile checks the offhand before the inventory;
+     *  any arrow-family item (plain/tipped/spectral) is valid ammo, same as Bow.java. */
     private static boolean hasArrow(Player player) {
-        if (player.getItemInOffHand().material() == Material.ARROW) return true;
+        if (Bow.isArrowFamily(player.getItemInOffHand().material())) return true;
         var inv = player.getInventory();
         for (int i = 0; i < inv.getSize(); i++) {
-            if (inv.getItemStack(i).material() == Material.ARROW) return true;
+            if (Bow.isArrowFamily(inv.getItemStack(i).material())) return true;
         }
         return false;
     }
 
     /**
-     * Finds and removes 1 arrow; true if one was found. Offhand first (decompile-
-     * verified against ProjectileWeaponItem.getHeldProjectile, same as Bow.java) —
-     * previously only ever scanned the general inventory, so an arrow held in the
-     * offhand was neither detected by hasArrow() nor consumed by this.
+     * Finds and removes 1 arrow-family item, returning the stack it came from (a single
+     * copy, pre-decrement) or AIR if none. Offhand first (decompile-verified against
+     * ProjectileWeaponItem.getHeldProjectile, same as Bow.java) — previously only ever
+     * scanned the general inventory, so an arrow held in the offhand was neither
+     * detected by hasArrow() nor consumed by this.
      */
-    private static boolean consumeArrow(Player player) {
+    private static ItemStack consumeArrow(Player player) {
         ItemStack offhand = player.getItemInOffHand();
-        if (offhand.material() == Material.ARROW) {
+        if (Bow.isArrowFamily(offhand.material())) {
             player.setItemInOffHand(offhand.amount() <= 1 ? ItemStack.AIR : offhand.withAmount(offhand.amount() - 1));
-            return true;
+            return offhand;
         }
         var inv = player.getInventory();
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack stack = inv.getItemStack(i);
-            if (stack.material() != Material.ARROW) continue;
+            if (!Bow.isArrowFamily(stack.material())) continue;
             inv.setItemStack(i, stack.amount() <= 1 ? ItemStack.AIR : stack.withAmount(stack.amount() - 1));
-            return true;
+            return stack;
         }
-        return false;
+        return ItemStack.AIR;
     }
 }

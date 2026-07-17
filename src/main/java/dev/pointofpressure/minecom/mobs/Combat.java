@@ -359,7 +359,8 @@ public final class Combat {
             }
             return;
         }
-        if (projectile.getEntityType() != EntityType.ARROW) return;
+        EntityType arrowType = projectile.getEntityType();
+        if (arrowType != EntityType.ARROW && arrowType != EntityType.SPECTRAL_ARROW) return;
         // Piercing (crossbow-only): a fast-moving arrow can generate more than one
         // collision event against the same target on its way through; only the first
         // counts. Checked before applying damage so a duplicate event is a true no-op.
@@ -379,6 +380,27 @@ public final class Combat {
         }
         if (Boolean.TRUE.equals(projectile.getTag(dev.pointofpressure.minecom.survival.Bow.FLAME)) && !target.isDead()) {
             igniteFor(target, 5);
+        }
+        // Arrow.doPostHurtEffects/SpectralArrow.doPostHurtEffects (26.2 decompile-verified):
+        // a tipped arrow applies its carried potion at the real bundled tipped_arrow item's
+        // potion_duration_scale of 0.125 (1/8 duration — the same Potions.apply scaling
+        // ThrownPotions already uses for splash/lingering); a spectral arrow always grants
+        // Glowing for a flat 200 ticks. Runs on every successful hit, including each of a
+        // piercing arrow's multiple hits, same as real vanilla.
+        if (!target.isDead()) {
+            if (arrowType == EntityType.SPECTRAL_ARROW) {
+                target.addEffect(new net.minestom.server.potion.Potion(
+                        net.minestom.server.potion.PotionEffect.GLOWING, (byte) 0, 200));
+            }
+            String potionKey = projectile.getTag(dev.pointofpressure.minecom.survival.Bow.POTION);
+            if (potionKey != null) {
+                try {
+                    var potionType = net.minestom.server.potion.PotionType.fromKey(potionKey);
+                    if (potionType != null) {
+                        dev.pointofpressure.minecom.survival.Potions.apply(target, potionType, 0.125);
+                    }
+                } catch (Exception ignored) { }
+            }
         }
         if (pierce != null && pierce > 0) {
             projectile.setTag(dev.pointofpressure.minecom.survival.Crossbow.PIERCE, pierce - 1);

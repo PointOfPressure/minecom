@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 994;
+    private static final int EXPECTED_CHECK_COUNT = 1002;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -129,6 +129,7 @@ public final class PlayTest {
         scenario("player bow: draw-charge fires an arrow, consumes ammo, power/punch/flame apply", PlayTest::scenarioPlayerBow);
         scenario("bow/crossbow: an arrow held in the offhand is found and consumed before the inventory", PlayTest::scenarioOffhandArrowPriority);
         scenario("crossbow: load-then-fire, multishot triples arrows, piercing passes through", PlayTest::scenarioCrossbow);
+        scenario("tipped/spectral arrows: bow and crossbow can fire either, potion/glowing applies on hit", PlayTest::scenarioTippedSpectralArrows);
         scenario("trident: melee + throw, riptide launches instead on wet ground, loyalty returns, impaling vs aquatic", PlayTest::scenarioTrident);
         scenario("channeling: thunderstorm melee/throw strikes lightning, clear weather doesn't", PlayTest::scenarioLightning);
         scenario("water spread + decay", PlayTest::scenarioWater);
@@ -5449,6 +5450,116 @@ public final class PlayTest {
                 player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
         boolean bothHit = waitFor(() -> near.getHealth() < 20 && far.getHealth() < 20, 3000);
         check("piercing level 1 hits both the near and far target with one arrow", bothHit);
+
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Tipped/spectral arrows (ArrowItem/TippedArrowItem/SpectralArrowItem +
+     * Arrow.doPostHurtEffects/SpectralArrow.doPostHurtEffects, 26.2 decompile-verified):
+     * previously Bow/Crossbow's ammo scan only recognized plain Material.ARROW, so a
+     * tipped or spectral arrow couldn't even be nocked, and a hit applied no effect at
+     * all regardless. A bow (and a crossbow, whose load/fire are two separate ticks)
+     * can now fire either, and a hit applies the carried potion at 1/8 duration (the
+     * bundled tipped_arrow item's real potion_duration_scale) or a flat 200-tick
+     * Glowing for spectral.
+     */
+    private static Entity latestEntityOf(EntityType type) {
+        return world.getEntities().stream().filter(en -> en.getEntityType() == type)
+                .max(java.util.Comparator.comparingInt(Entity::getEntityId)).orElse(null);
+    }
+
+    private static void scenarioTippedSpectralArrows() {
+        clearEntitiesExceptPlayer();
+        player.teleport(new Pos(0.5, Y + 1, 0.5, 0, 0)).join();
+        player.setItemInMainHand(ItemStack.of(Material.BOW));
+
+        ItemStack slownessArrow = ItemStack.of(Material.TIPPED_ARROW).with(b ->
+                b.set(net.minestom.server.component.DataComponents.POTION_CONTENTS,
+                        new net.minestom.server.item.component.PotionContents(
+                                net.minestom.server.potion.PotionType.SLOWNESS)));
+        player.getInventory().addItemStack(slownessArrow.withAmount(5));
+        int tippedBefore = countHeld(player, Material.TIPPED_ARROW);
+        EntityCreature zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 6.5));
+        EventDispatcher.call(new net.minestom.server.event.item.PlayerCancelItemUseEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 20)); // full draw
+        tick(1);
+        var arrow1 = latestEntityOf(EntityType.ARROW);
+        check("a bow can fire a tipped arrow, consuming it like any other ("
+                        + tippedBefore + " -> " + countHeld(player, Material.TIPPED_ARROW) + ")",
+                arrow1 != null && countHeld(player, Material.TIPPED_ARROW) == tippedBefore - 1);
+        // force the hit deterministically (real flight/collision timing is this project's
+        // established flake class, see CLAUDE.md — this is testing Combat.projectileHit's
+        // effect application, not projectile flight physics)
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithEntityEvent(
+                arrow1, zombie.getPosition(), zombie));
+        tick(1);
+        check("the tipped arrow's carried potion (slowness) applies on hit", zombie.getActiveEffects().stream()
+                .anyMatch(t -> t.potion().effect() == net.minestom.server.potion.PotionEffect.SLOWNESS));
+        clearEntitiesExceptPlayer();
+
+        // spectral: always Glowing, no potion contents involved. Inventory cleared first --
+        // otherwise the 4 leftover tipped arrows from above would still occupy an earlier
+        // slot than these and get consumed instead (found this the hard way: the fired
+        // entity was a second tipped arrow, not a spectral one at all).
+        player.getInventory().clear();
+        player.setItemInMainHand(ItemStack.of(Material.BOW));
+        player.getInventory().addItemStack(ItemStack.of(Material.SPECTRAL_ARROW, 5));
+        zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 6.5));
+        EventDispatcher.call(new net.minestom.server.event.item.PlayerCancelItemUseEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 20));
+        tick(1);
+        var arrow2 = latestEntityOf(EntityType.SPECTRAL_ARROW);
+        check("a bow can fire a spectral arrow as its own real entity type", arrow2 != null);
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithEntityEvent(
+                arrow2, zombie.getPosition(), zombie));
+        tick(1);
+        check("a spectral arrow grants Glowing on hit", zombie.getActiveEffects().stream()
+                .anyMatch(t -> t.potion().effect() == net.minestom.server.potion.PotionEffect.GLOWING));
+        clearEntitiesExceptPlayer();
+
+        // regression: a plain arrow still applies no stray potion/glowing effect
+        player.getInventory().clear();
+        player.setItemInMainHand(ItemStack.of(Material.BOW));
+        player.getInventory().addItemStack(ItemStack.of(Material.ARROW, 5));
+        zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 6.5));
+        EventDispatcher.call(new net.minestom.server.event.item.PlayerCancelItemUseEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 20));
+        tick(1);
+        var arrow3 = latestEntityOf(EntityType.ARROW);
+        check("a plain arrow still fires normally", arrow3 != null);
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithEntityEvent(
+                arrow3, zombie.getPosition(), zombie));
+        tick(1);
+        check("a plain arrow still applies no potion/glowing effect", zombie.getActiveEffects().stream()
+                .noneMatch(t -> t.potion().effect() == net.minestom.server.potion.PotionEffect.SLOWNESS
+                        || t.potion().effect() == net.minestom.server.potion.PotionEffect.GLOWING));
+        clearEntitiesExceptPlayer();
+
+        // crossbow: the tipped arrow is consumed at load() time but fired at shoot() time —
+        // its identity must survive riding the crossbow ItemStack's own tags in between.
+        player.getInventory().clear();
+        player.setItemInMainHand(ItemStack.of(Material.CROSSBOW));
+        player.getInventory().addItemStack(slownessArrow.withAmount(5));
+        zombie = Mobs.spawn("zombie", world, new Pos(0.5, Y + 1, 6.5));
+        EventDispatcher.call(new net.minestom.server.event.item.PlayerBeginItemUseEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(),
+                net.minestom.server.item.ItemAnimation.CROSSBOW, 25));
+        EventDispatcher.call(new net.minestom.server.event.item.PlayerFinishItemUseEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 25));
+        tick(1);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+        tick(1);
+        var arrow4 = latestEntityOf(EntityType.ARROW);
+        check("a crossbow can load and fire a tipped arrow", arrow4 != null);
+        EventDispatcher.call(new net.minestom.server.event.entity.projectile.ProjectileCollideWithEntityEvent(
+                arrow4, zombie.getPosition(), zombie));
+        tick(1);
+        check("the potion survives riding the crossbow's tags from load() to shoot()",
+                zombie.getActiveEffects().stream()
+                        .anyMatch(t -> t.potion().effect() == net.minestom.server.potion.PotionEffect.SLOWNESS));
 
         clearEntitiesExceptPlayer();
         resetPlayer();

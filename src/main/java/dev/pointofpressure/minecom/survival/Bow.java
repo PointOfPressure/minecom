@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.survival;
 
+import net.minestom.server.component.DataComponents;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.EntityProjectile;
@@ -11,6 +12,7 @@ import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.item.PlayerCancelItemUseEvent;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
+import net.minestom.server.item.component.PotionContents;
 import net.minestom.server.tag.Tag;
 
 /**
@@ -20,7 +22,11 @@ import net.minestom.server.tag.Tag;
  * held, minimum 0.1 to loose a shot; velocity and damage scale with that fraction.
  * Arrow damage/knockback/ignite are stashed on the projectile entity as tags and read
  * back by {@code Combat.projectileHit} on impact (mob-fired arrows have no tags and
- * keep their existing flat random damage).
+ * keep their existing flat random damage). Tipped/spectral arrows (ArrowItem/
+ * TippedArrowItem/SpectralArrowItem, 26.2 decompile-verified) are nocked the same way
+ * as a plain arrow — real vanilla's {@code ItemTags.ARROWS} covers all three — and
+ * carry their potion/spectral identity onto the fired projectile via {@link #POTION}
+ * (read back by {@code Combat.projectileHit}).
  */
 public final class Bow {
     private Bow() {}
@@ -28,6 +34,10 @@ public final class Bow {
     public static final Tag<Float> DAMAGE = Tag.Float("minecom:arrow_damage");
     public static final Tag<Integer> PUNCH = Tag.Integer("minecom:arrow_punch");
     public static final Tag<Boolean> FLAME = Tag.Boolean("minecom:arrow_flame");
+    /** Tipped arrow's carried potion type key (e.g. "minecraft:slowness"); absent for a
+     *  plain or spectral arrow. Read by Combat.projectileHit, applied at real vanilla's
+     *  bundled tipped_arrow item default potion_duration_scale of 0.125 (1/8 duration). */
+    public static final Tag<String> POTION = Tag.String("minecom:arrow_potion");
 
     public static void register(GlobalEventHandler events) {
         events.addListener(PlayerCancelItemUseEvent.class, e -> {
@@ -43,11 +53,20 @@ public final class Bow {
 
         boolean creative = player.getGameMode() == GameMode.CREATIVE;
         boolean infinity = dev.pointofpressure.minecom.data.Enchants.level(bow, "infinity") > 0;
-        if (!creative && !infinity && !consumeArrow(player)) return;
+        ItemStack ammo = ItemStack.AIR;
+        if (!creative && !infinity) {
+            ammo = consumeArrow(player);
+            if (ammo.isAir()) return;
+        }
+        // Creative/Infinity: real vanilla still nocks whichever arrow type is present
+        // (without consuming it) to pick what's fired; this project's pre-existing
+        // simplification always fires a plain arrow in that case instead, unchanged here.
 
         Pos from = player.getPosition().add(0, player.getEyeHeight(), 0);
         Vec dir = player.getPosition().direction();
-        EntityProjectile arrow = new EntityProjectile(player, EntityType.ARROW);
+        EntityType arrowType = ammo.material() == Material.SPECTRAL_ARROW
+                ? EntityType.SPECTRAL_ARROW : EntityType.ARROW;
+        EntityProjectile arrow = new EntityProjectile(player, arrowType);
         arrow.setInstance(player.getInstance(), from);
         arrow.setVelocity(dir.mul(power * 32));
 
@@ -59,31 +78,44 @@ public final class Bow {
         arrow.setTag(DAMAGE, damage);
         if (punch > 0) arrow.setTag(PUNCH, punch);
         if (flame > 0) arrow.setTag(FLAME, true);
+        if (ammo.material() == Material.TIPPED_ARROW) {
+            PotionContents contents = ammo.get(DataComponents.POTION_CONTENTS);
+            if (contents != null && contents.potion() != null) {
+                arrow.setTag(POTION, contents.potion().key().value());
+            }
+        }
 
         if (!creative) player.setItemInHand(hand, dev.pointofpressure.minecom.data.Items.damageItem(player, bow, 1));
     }
 
+    /** ArrowItem/TippedArrowItem/SpectralArrowItem all satisfy real vanilla's
+     *  {@code ItemTags.ARROWS} — any of the three counts as valid bow/crossbow ammo. */
+    static boolean isArrowFamily(Material m) {
+        return m == Material.ARROW || m == Material.TIPPED_ARROW || m == Material.SPECTRAL_ARROW;
+    }
+
     /**
-     * Finds and removes 1 arrow; true if one was found. ProjectileWeaponItem.
-     * getHeldProjectile (decompile-verified) checks the offhand first, then falls
-     * back to a plain inventory scan — previously this only ever scanned the general
-     * inventory, so an arrow held in the offhand was invisible to it (and, worse,
-     * NOT what got consumed even when a bow-in-mainhand/arrows-in-offhand player
-     * also happened to have arrows elsewhere in their inventory).
+     * Finds and removes 1 arrow-family item, returning the stack it came from (a single
+     * copy, pre-decrement) or AIR if none. ProjectileWeaponItem.getHeldProjectile
+     * (decompile-verified) checks the offhand first, then falls back to a plain
+     * inventory scan — previously this only ever scanned the general inventory, so an
+     * arrow held in the offhand was invisible to it (and, worse, NOT what got consumed
+     * even when a bow-in-mainhand/arrows-in-offhand player also happened to have arrows
+     * elsewhere in their inventory).
      */
-    private static boolean consumeArrow(Player player) {
+    private static ItemStack consumeArrow(Player player) {
         ItemStack offhand = player.getItemInOffHand();
-        if (offhand.material() == Material.ARROW) {
+        if (isArrowFamily(offhand.material())) {
             player.setItemInOffHand(offhand.amount() <= 1 ? ItemStack.AIR : offhand.withAmount(offhand.amount() - 1));
-            return true;
+            return offhand;
         }
         var inv = player.getInventory();
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack stack = inv.getItemStack(i);
-            if (stack.material() != Material.ARROW) continue;
+            if (!isArrowFamily(stack.material())) continue;
             inv.setItemStack(i, stack.amount() <= 1 ? ItemStack.AIR : stack.withAmount(stack.amount() - 1));
-            return true;
+            return stack;
         }
-        return false;
+        return ItemStack.AIR;
     }
 }
