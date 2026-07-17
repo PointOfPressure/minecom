@@ -93,9 +93,20 @@ public final class VanillaGen implements Generator {
         return features;
     }
 
+    /** Murmur3 fmix64 — bijective (keys stay unique) but spreads chunk coords so the
+     *  LRU's hash buckets don't degenerate into tree bins on cx^cz collisions. */
+    private static long mixChunkKey(long k) {
+        k ^= k >>> 33;
+        k *= 0xFF51AFD7ED558CCDL;
+        k ^= k >>> 33;
+        k *= 0xC4CEB9FE1A85EC53L;
+        k ^= k >>> 33;
+        return k;
+    }
+
     /** Cached undecorated chunk (shape + surface + carve). */
     public VSurface.ChunkData cachedData(int chunkX, int chunkZ) {
-        long key = ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
+        long key = mixChunkKey(((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL));
         VSurface.ChunkData data = chunkCache.get(key);
         if (data == null) {
             data = generateData(chunkX, chunkZ);
@@ -142,12 +153,21 @@ public final class VanillaGen implements Generator {
     private final class StructureCanvas implements VStructureGen.Canvas {
         private final VSurface.ChunkData out;
         private final int cx, cz;
+        private long lastNeighborKey = Long.MIN_VALUE;
+        private VSurface.ChunkData lastNeighbor;
         StructureCanvas(VSurface.ChunkData out, int cx, int cz) { this.out = out; this.cx = cx; this.cz = cz; }
 
         @Override
         public Block get(int x, int y, int z) {
             if ((x >> 4) == cx && (z >> 4) == cz) return out.get(x & 15, y, z & 15);
-            return cachedData(x >> 4, z >> 4).get(x & 15, y, z & 15); // neighbour base terrain (protected-blocks reads)
+            // neighbour base terrain (protected-blocks reads); reads cluster per chunk, so
+            // memoize the last chunk ref instead of hitting the synchronized LRU per block
+            long key = ((long) (x >> 4) << 32) | ((z >> 4) & 0xFFFFFFFFL);
+            if (key != lastNeighborKey) {
+                lastNeighbor = cachedData(x >> 4, z >> 4);
+                lastNeighborKey = key;
+            }
+            return lastNeighbor.get(x & 15, y, z & 15);
         }
 
         @Override
@@ -163,16 +183,29 @@ public final class VanillaGen implements Generator {
         static final Block AIR_SENTINEL = Block.STRUCTURE_VOID;
         final Map<Long, Block> writes = new HashMap<>();
         final Map<Long, int[]> heightCache = new HashMap<>();
+        private long lastChunkKey = Long.MIN_VALUE;
+        private VSurface.ChunkData lastChunk;
 
         private static long pack(int x, int y, int z) {
             return ((x & 0x3FFFFFFL) << 38) | ((z & 0x3FFFFFFL) << 12) | (y & 0xFFFL);
+        }
+
+        /** Decoration reads cluster per chunk (and heights() scans whole columns), so
+         *  memoize the last chunk ref instead of hitting the synchronized LRU per block. */
+        private VSurface.ChunkData chunkAt(int cx, int cz) {
+            long key = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
+            if (key != lastChunkKey) {
+                lastChunk = cachedData(cx, cz);
+                lastChunkKey = key;
+            }
+            return lastChunk;
         }
 
         @Override
         public Block get(int x, int y, int z) {
             Block w = writes.get(pack(x, y, z));
             if (w != null) return w == AIR_SENTINEL ? null : w;
-            return cachedData(x >> 4, z >> 4).get(x & 15, y, z & 15);
+            return chunkAt(x >> 4, z >> 4).get(x & 15, y, z & 15);
         }
 
         @Override
