@@ -476,6 +476,15 @@ public final class VDensity {
         private final int cw, ch;   // cell width (horizontal), cell height (vertical)
         private final ThreadLocal<LongDoubleCache> corners =
                 ThreadLocal.withInitial(() -> new LongDoubleCache(2048));
+        private final ThreadLocal<CellMemo> lastCell = ThreadLocal.withInitial(CellMemo::new);
+
+        /** The 8 corner values of the most recently touched cell — consecutive per-block
+         *  calls stay inside one cell for cw*ch*cw blocks, skipping the map lookups. */
+        private static final class CellMemo {
+            long epoch = Long.MIN_VALUE;
+            int x0 = Integer.MIN_VALUE, y0 = Integer.MIN_VALUE, z0 = Integer.MIN_VALUE;
+            double c000, c100, c010, c110, c001, c101, c011, c111;
+        }
 
         Interpolated(DF wrapped, int cellWidth, int cellHeight) {
             this.wrapped = wrapped;
@@ -496,19 +505,26 @@ public final class VDensity {
             double fx = Math.floorMod(x, cw) / (double) cw;
             double fy = Math.floorMod(y, ch) / (double) ch;
             double fz = Math.floorMod(z, cw) / (double) cw;
-            double c000 = corner(cache, x0, y0, z0);
-            double c100 = corner(cache, x0 + cw, y0, z0);
-            double c010 = corner(cache, x0, y0 + ch, z0);
-            double c110 = corner(cache, x0 + cw, y0 + ch, z0);
-            double c001 = corner(cache, x0, y0, z0 + cw);
-            double c101 = corner(cache, x0 + cw, y0, z0 + cw);
-            double c011 = corner(cache, x0, y0 + ch, z0 + cw);
-            double c111 = corner(cache, x0 + cw, y0 + ch, z0 + cw);
+            CellMemo memo = lastCell.get();
+            if (memo.epoch != ep || memo.x0 != x0 || memo.y0 != y0 || memo.z0 != z0) {
+                memo.c000 = corner(cache, x0, y0, z0);
+                memo.c100 = corner(cache, x0 + cw, y0, z0);
+                memo.c010 = corner(cache, x0, y0 + ch, z0);
+                memo.c110 = corner(cache, x0 + cw, y0 + ch, z0);
+                memo.c001 = corner(cache, x0, y0, z0 + cw);
+                memo.c101 = corner(cache, x0 + cw, y0, z0 + cw);
+                memo.c011 = corner(cache, x0, y0 + ch, z0 + cw);
+                memo.c111 = corner(cache, x0 + cw, y0 + ch, z0 + cw);
+                memo.epoch = ep;
+                memo.x0 = x0;
+                memo.y0 = y0;
+                memo.z0 = z0;
+            }
             // vanilla per-block path is Mth.lerp3 (CacheAllInCell fill): X, then Y, then Z
-            double x00 = c000 + fx * (c100 - c000);
-            double x10 = c010 + fx * (c110 - c010);
-            double x01 = c001 + fx * (c101 - c001);
-            double x11 = c011 + fx * (c111 - c011);
+            double x00 = memo.c000 + fx * (memo.c100 - memo.c000);
+            double x10 = memo.c010 + fx * (memo.c110 - memo.c010);
+            double x01 = memo.c001 + fx * (memo.c101 - memo.c001);
+            double x11 = memo.c011 + fx * (memo.c111 - memo.c011);
             double xy0 = x00 + fy * (x10 - x00);
             double xy1 = x01 + fy * (x11 - x01);
             return xy0 + fz * (xy1 - xy0);
