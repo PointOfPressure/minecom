@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 990;
+    private static final int EXPECTED_CHECK_COUNT = 994;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -176,6 +176,7 @@ public final class PlayTest {
         scenario("riding: horse taming-by-riding, saddle, player-steered movement + jump, donkey chest cargo, horse x donkey -> mule breeding with attribute inheritance", PlayTest::scenarioRiding);
         scenario("leads + name tags + pig/strider saddles: attach/detach, fence knot, pull/break distance, name-tag persistence, forward-steered saddle riding with a boost", PlayTest::scenarioLeashingNameTagsSteering);
         scenario("slime sizes: setSize attributes, split-on-death chain, tiny-slime pacifism, magma armor", PlayTest::scenarioSlimeSizes);
+        scenario("sulfur cube: split-on-death is always exactly 2 children, terminal at size 1", PlayTest::scenarioSulfurCubeSplit);
         scenario("bubble columns: soul sand grows push-up, item + boat launch, magma flips to drag, revert to water", PlayTest::scenarioBubbleColumns);
         scenario("piston: reorder-at-collision rig (late honey line walks into an earlier-claimed cell)", PlayTest::scenarioPistonReorderCollision);
         scenario("piston: differential vs real vanilla 26.1.2 (slime/honey fixture incl. reorder-collision family)", PlayTest::scenarioPistonDifferential);
@@ -8556,6 +8557,40 @@ public final class PlayTest {
         tinyMagma.remove();
         clearEntitiesExceptPlayer();
         player.setHealth(20f);
+        resetPlayer();
+    }
+
+    /**
+     * Sulfur cube split-on-death (SulfurCube.getSplitCount/AbstractCubeMob.remove,
+     * 26.2 decompile-verified): unlike slime/magma cube's 2+rand(3)-children
+     * ladder, sulfur cube always splits into exactly 2 half-size children — and
+     * since its size ladder is only {1,2} (MIN_SIZE/MAX_SIZE), that first split
+     * is also always the terminal one.
+     */
+    private static void scenarioSulfurCubeSplit() {
+        int z = 278;
+        clearEntitiesExceptPlayer();
+        var adult = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.sulfurCube(
+                world, new Pos(50.5, Y + 1, z + 0.5));
+        check("a spawned sulfur cube is size 2", Integer.valueOf(2).equals(
+                adult.getTag(dev.pointofpressure.minecom.mobs.ai.VanillaMobs.SLIME_SIZE)));
+        adult.kill();
+        boolean splitExactlyTwo = waitFor(() -> world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SULFUR_CUBE && !((EntityCreature) e).isDead())
+                .count() == 2, 3000);
+        check("a dying size-2 sulfur cube splits into exactly 2 children (not slime/magma's 2-4)",
+                splitExactlyTwo);
+        check("the children are half the parent's size (1)", world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SULFUR_CUBE && !((EntityCreature) e).isDead())
+                .allMatch(e -> Integer.valueOf(1).equals(
+                        e.getTag(dev.pointofpressure.minecom.mobs.ai.VanillaMobs.SLIME_SIZE))));
+        world.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.SULFUR_CUBE && !((EntityCreature) e).isDead())
+                .forEach(e -> ((EntityCreature) e).kill());
+        tick(10);
+        check("size-1 sulfur cubes die without splitting (terminal — MIN_SIZE=1)", world.getEntities().stream()
+                .noneMatch(e -> e.getEntityType() == EntityType.SULFUR_CUBE && !((EntityCreature) e).isDead()));
+        clearEntitiesExceptPlayer();
         resetPlayer();
     }
 

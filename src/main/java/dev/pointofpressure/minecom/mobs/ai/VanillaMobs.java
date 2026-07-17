@@ -1525,11 +1525,14 @@ public final class VanillaMobs {
      * and contact damage/explosions come only from data-driven archetypes.
      * Natural spawn size is 2 (setSpawnSize's adult branch; size 1 = baby), with
      * the shared AbstractCubeMob attribute rules (HP size^2, speed 0.2+0.1*size)
-     * and slime hop movement. Deliberately not modeled yet (AUDIT.md — sulfur
-     * parity is a Tier follow-up): the archetype system (bouncy/explosive/hot...),
-     * item swallowing, bucketing, shearing, breeding/baby state, fuse priming,
-     * and split-on-death (vanilla splits into exactly 2; maybeSplitSlime stays
-     * slime/magma-only so a dying sulfur cube just dies).
+     * and slime hop movement. Split-on-death matches real vanilla (maybeSplitSlime
+     * below — SulfurCube.getSplitCount/setUpSplitCube, decompile-verified): a
+     * dying size-2 cube splits into exactly 2 size-1 children, terminal there
+     * (MIN_SIZE=1/MAX_SIZE=2, unlike slime/magma's 1/2/4/.../127 ladder). Still
+     * deliberately not modeled (AUDIT.md — full sulfur parity is a Tier
+     * follow-up, this pass is split-on-death only): the archetype system
+     * (bouncy/explosive/hot...), item swallowing, bucketing, shearing, and
+     * breeding/baby state.
      */
     public static EntityCreature sulfurCube(Instance instance, Pos pos) {
         return slimeLike(EntityType.SULFUR_CUBE, instance, pos, 2);
@@ -1621,20 +1624,26 @@ public final class VanillaMobs {
     }
 
     /**
-     * Slime.remove: a dying size>1 slime/magma cube spawns 2+rand(3) children of
-     * half its size on the parent's 2x2 quadrant grid (offsets +-parentWidth/4,
-     * +0.5 y, random yaw). Size-1 mobs die without splitting — the recursion's
-     * base case. Called from Combat.death.
+     * AbstractCubeMob.remove: a dying size>1 cube mob spawns children of half its
+     * size on the parent's 2x2 quadrant grid (offsets +-parentWidth/4, +0.5 y,
+     * random yaw). Slime/magma cube (Slime.getSplitCount/MagmaCube's inherited
+     * default) roll 2+rand(3) children; sulfur cube (SulfurCube.getSplitCount,
+     * decompile-verified) always splits into exactly 2 — its size ladder is only
+     * {1,2} (MIN_SIZE/MAX_SIZE), so this is also always its terminal split, unlike
+     * slime/magma's 1/2/4/.../127 ladder which can cascade through several splits.
+     * Size-1 mobs die without splitting — the recursion's base case. Called from
+     * Combat.death.
      */
     public static void maybeSplitSlime(EntityCreature mob, Instance instance, Pos pos) {
         EntityType type = mob.getEntityType();
-        if (type != EntityType.SLIME && type != EntityType.MAGMA_CUBE) return;
+        boolean cube = type == EntityType.SLIME || type == EntityType.MAGMA_CUBE || type == EntityType.SULFUR_CUBE;
+        if (!cube) return;
         Integer size = mob.getTag(SLIME_SIZE);
         if (size == null || size <= 1) return;
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         int half = size / 2;
         double offset = 0.52 * size / 2.0; // parent width / 2, pre-split
-        int count = 2 + rng.nextInt(3);
+        int count = type == EntityType.SULFUR_CUBE ? 2 : 2 + rng.nextInt(3);
         for (int i = 0; i < count; i++) {
             double xd = (i % 2 - 0.5) * offset;
             double zd = (i / 2 - 0.5) * offset;

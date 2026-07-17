@@ -1425,8 +1425,19 @@ leftovers.
   movement — but none of vanilla's data-driven behavior: the
   `SulfurCubeArchetype` system (bouncy/explosive/hot/sticky... modifiers),
   item swallowing (`SULFUR_CUBE_FOOD` tempt + BODY-slot pickup), bucketing,
-  shearing, breeding/baby state, fuse priming, or split-into-exactly-2 on
-  death (`maybeSplitSlime` stays slime/magma-only). Decompiles cached at
+  shearing, or breeding/baby-growth state. ~~split-into-exactly-2 on death
+  (`maybeSplitSlime` stays slime/magma-only)~~ **done 2026-07-17 (Sonnet 5)**
+  — `maybeSplitSlime` now also covers `SULFUR_CUBE`, decompile-verified
+  against `SulfurCube.getSplitCount`/`AbstractCubeMob.remove` (26.2): always
+  exactly 2 children (not slime/magma's `2+rand(3)`), and since sulfur cube's
+  size ladder is only `{1,2}` (`MIN_SIZE`/`MAX_SIZE`), that first split is also
+  always the terminal one — no fuse/archetype system exists yet to ever make
+  `getSplitCount` return 0 (the `isPrimed()` branch), so the unconditional-2
+  case is the only reachable one. 4 new PlayTest checks
+  (`scenarioSulfurCubeSplit`). Still open, unchanged by this pass: the full
+  `SulfurCubeArchetype` system (bouncy/explosive/hot/sticky... modifiers),
+  item swallowing, bucketing, shearing, breeding/baby-growth state, and fuse
+  priming — decompiles cached at
   `vanilla-src/net/minecraft/world/entity/monster/cubemob/` +
   `SulfurCubeArchetype*.java`. Part of the sulfur-caves Tier-parity
   follow-up. (L)
