@@ -391,6 +391,82 @@ public final class VDensity {
     }
 
     /**
+     * Primitive open-addressing long->double map for the per-epoch marker caches. Pure storage
+     * swap for the previous HashMap&lt;Long, Double&gt;: same keys, same values, no boxing, and
+     * an fmix64-spread hash so packed coords can't degenerate buckets into tree bins.
+     */
+    static final class LongDoubleCache {
+        long epoch = Long.MIN_VALUE;
+        private long[] keys;
+        private double[] vals;
+        private byte[] used;
+        private int mask, size;
+
+        LongDoubleCache(int initialCapacity) {
+            alloc(Integer.highestOneBit(Math.max(initialCapacity, 64) * 2 - 1)); // pow2 >= initialCapacity
+        }
+
+        private void alloc(int cap) {
+            keys = new long[cap];
+            vals = new double[cap];
+            used = new byte[cap];
+            mask = cap - 1;
+            size = 0;
+        }
+
+        void clear() {
+            java.util.Arrays.fill(used, (byte) 0);
+            size = 0;
+        }
+
+        private static int spread(long k) {
+            k ^= k >>> 33;
+            k *= 0xFF51AFD7ED558CCDL;
+            k ^= k >>> 33;
+            k *= 0xC4CEB9FE1A85EC53L;
+            k ^= k >>> 33;
+            return (int) k;
+        }
+
+        /** Slot index if present, else ~insertionSlot (for insertAt). */
+        int find(long key) {
+            int i = spread(key) & mask;
+            while (used[i] != 0) {
+                if (keys[i] == key) return i;
+                i = (i + 1) & mask;
+            }
+            return ~i;
+        }
+
+        double valueAt(int slot) {
+            return vals[slot];
+        }
+
+        void insertAt(int slot, long key, double value) {
+            used[slot] = 1;
+            keys[slot] = key;
+            vals[slot] = value;
+            if (++size > (mask + 1) * 7 / 10) grow();
+        }
+
+        private void grow() {
+            long[] oldKeys = keys;
+            double[] oldVals = vals;
+            byte[] oldUsed = used;
+            alloc((mask + 1) << 1);
+            for (int i = 0; i < oldUsed.length; i++) {
+                if (oldUsed[i] != 0) {
+                    int slot = find(oldKeys[i]);
+                    used[~slot] = 1;
+                    keys[~slot] = oldKeys[i];
+                    vals[~slot] = oldVals[i];
+                    size++;
+                }
+            }
+        }
+    }
+
+    /**
      * Vanilla NoiseChunk.NoiseInterpolator: trilerp of the wrapped graph at cell corners.
      * Cell size = (size_horizontal*4) x (size_vertical*4) x (size_horizontal*4) — 4x8x4 for
      * the overworld, 8x4x8 for the End.
@@ -398,9 +474,8 @@ public final class VDensity {
     static final class Interpolated implements DF {
         private final DF wrapped;
         private final int cw, ch;   // cell width (horizontal), cell height (vertical)
-        private final ThreadLocal<java.util.HashMap<Long, Double>> corners =
-                ThreadLocal.withInitial(java.util.HashMap::new);
-        private final ThreadLocal<Long> epoch = ThreadLocal.withInitial(() -> -1L);
+        private final ThreadLocal<LongDoubleCache> corners =
+                ThreadLocal.withInitial(() -> new LongDoubleCache(2048));
 
         Interpolated(DF wrapped, int cellWidth, int cellHeight) {
             this.wrapped = wrapped;
@@ -411,10 +486,11 @@ public final class VDensity {
         @Override
         public double compute(int x, int y, int z) {
             if (!CELL_MODE.get()) return wrapped.compute(x, y, z);
-            var cache = corners.get();
-            if (!epoch.get().equals(GENERATION_EPOCH.get())) {
+            LongDoubleCache cache = corners.get();
+            long ep = GENERATION_EPOCH.get();
+            if (cache.epoch != ep) {
                 cache.clear();
-                epoch.set(GENERATION_EPOCH.get());
+                cache.epoch = ep;
             }
             int x0 = Math.floorDiv(x, cw) * cw, y0 = Math.floorDiv(y, ch) * ch, z0 = Math.floorDiv(z, cw) * cw;
             double fx = Math.floorMod(x, cw) / (double) cw;
@@ -438,12 +514,12 @@ public final class VDensity {
             return xy0 + fz * (xy1 - xy0);
         }
 
-        private double corner(java.util.HashMap<Long, Double> cache, int x, int y, int z) {
+        private double corner(LongDoubleCache cache, int x, int y, int z) {
             long key = pack(Math.floorDiv(x, cw), Math.floorDiv(y, ch), Math.floorDiv(z, cw));
-            Double cached = cache.get(key);
-            if (cached != null) return cached;
+            int slot = cache.find(key);
+            if (slot >= 0) return cache.valueAt(slot);
             double value = wrapped.compute(x, y, z);
-            cache.put(key, value);
+            cache.insertAt(~slot, key, value);
             return value;
         }
     }
@@ -451,9 +527,8 @@ public final class VDensity {
     /** Vanilla NoiseChunk.FlatCache: per-quart (4x4 column) value sampled at (quartX<<2, 0, quartZ<<2). */
     static final class FlatCacheNode implements DF {
         private final DF wrapped;
-        private final ThreadLocal<java.util.HashMap<Long, Double>> cache =
-                ThreadLocal.withInitial(java.util.HashMap::new);
-        private final ThreadLocal<Long> epoch = ThreadLocal.withInitial(() -> -1L);
+        private final ThreadLocal<LongDoubleCache> cache =
+                ThreadLocal.withInitial(() -> new LongDoubleCache(256));
 
         FlatCacheNode(DF wrapped) {
             this.wrapped = wrapped;
@@ -462,17 +537,18 @@ public final class VDensity {
         @Override
         public double compute(int x, int y, int z) {
             if (!CELL_MODE.get()) return wrapped.compute(x, y, z);
-            var map = cache.get();
-            if (!epoch.get().equals(GENERATION_EPOCH.get())) {
+            LongDoubleCache map = cache.get();
+            long ep = GENERATION_EPOCH.get();
+            if (map.epoch != ep) {
                 map.clear();
-                epoch.set(GENERATION_EPOCH.get());
+                map.epoch = ep;
             }
             int quartX = x >> 2, quartZ = z >> 2;
             long key = pack(quartX, 0, quartZ);
-            Double cached = map.get(key);
-            if (cached != null) return cached;
+            int slot = map.find(key);
+            if (slot >= 0) return map.valueAt(slot);
             double value = wrapped.compute(quartX << 2, 0, quartZ << 2);
-            map.put(key, value);
+            map.insertAt(~slot, key, value);
             return value;
         }
     }
