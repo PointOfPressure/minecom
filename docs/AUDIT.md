@@ -359,10 +359,32 @@ leftovers.
 - Hoppers.java — check minecart-with-hopper pull-from-above and
   hopper-into-minecart paths (Minecarts variants exist; the connection is
   suspect). (S/M)
-- Fluids.java:26 — flow spreads evenly; vanilla weights toward nearest hole
-  within 4 blocks. Also check: kelp/seagrass waterlogging, ~~bubble columns~~
-  (done 2026-07-12, Fable — blocks/BubbleColumns.java, see entry below),
-  bottomless lava in nether speed (fast_lava attribute). (M)
+- ~~Fluids.java:26 — flow spreads evenly; vanilla weights toward nearest hole
+  within 4 blocks.~~ **Done 2026-07-17 (Sonnet 5)** — decompile-verified against
+  freshly-decompiled `FlowingFluid`/`WaterFluid`/`LavaFluid` (26.2, no cached
+  copy predated the 26.2 bump; re-decompiled and cached to vanilla-src per rule
+  7 even though fluids aren't worldgen, since this is now a differential-
+  testable parity claim). Sideways spread now runs a BFS (`Fluids.slopeDistance`)
+  from each open/same-fluid neighbor looking for the nearest "hole" (a cell
+  whose own below-neighbor isn't solid — `Fluids.isHole`, this project's coarse-
+  solidity approximation of `isWaterHole`) within `getSlopeFindDistance` blocks
+  (water 4, lava 2 — overworld values only, `fast_lava`/nether still open, see
+  below); only the direction(s) tied for the shortest path actually receive
+  fluid, matching `FlowingFluid.getSpread` exactly. A dead end in every
+  direction (no hole within range) falls back to the old spread-evenly
+  behavior, which is real vanilla's own fallback too — the existing "vanilla
+  diamond of 113" PlayTest check (a fully open, hole-free area) is unaffected
+  and still the regression guard for that case. New `scenarioFluidSlopeWeighting`
+  (3 checks): a source between two floor gaps at different distances spreads
+  only toward the nearer one after a single deterministic tick, leaving the
+  farther gap's side and both perpendicular directions untouched. Not modeled:
+  vanilla's broader `canHoldAnyFluid` (any non-motion-blocking block, e.g. tall
+  grass, can accept fluid) — this project's target eligibility stays air/
+  same-fluid-only, a pre-existing simplification unrelated to this fix; kelp/
+  seagrass waterlogging; bottomless lava in nether speed (`fast_lava`
+  attribute, `LavaFluid.getSlopeFindDistance`/`getDropOff`/`getTickDelay` all
+  branch on it — still a separate, undone gap, `isFastLava` was decompiled but
+  not wired since this project has no dimension-attribute lookup for it yet).
 - **Bubble columns (blocks/BubbleColumns.java, 2026-07-12, Fable)** —
   decompile-verified BubbleColumnBlock + Entity.onInside/AboveBubbleColumn +
   AbstractBoat: soul-sand push / magma drag columns re-derived from the

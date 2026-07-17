@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 987;
+    private static final int EXPECTED_CHECK_COUNT = 990;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -132,6 +132,7 @@ public final class PlayTest {
         scenario("trident: melee + throw, riptide launches instead on wet ground, loyalty returns, impaling vs aquatic", PlayTest::scenarioTrident);
         scenario("channeling: thunderstorm melee/throw strikes lightning, clear weather doesn't", PlayTest::scenarioLightning);
         scenario("water spread + decay", PlayTest::scenarioWater);
+        scenario("fluids: sideways spread weights toward the nearest hole, not evenly", PlayTest::scenarioFluidSlopeWeighting);
         scenario("bucket place", PlayTest::scenarioBucket);
         scenario("farming full cycle + sapling/grass bonemeal", PlayTest::scenarioFarming);
         scenario("door placement + toggle", PlayTest::scenarioDoor);
@@ -5691,6 +5692,39 @@ public final class PlayTest {
         dev.pointofpressure.minecom.blocks.Fluids.notifyAround(pos);
         waitFor(() -> countWater() == 0, 90000);
         check("scooping the source decays all water (got " + countWater() + ")", countWater() == 0);
+    }
+
+    /**
+     * FlowingFluid.getSpread/getSlopeDistance (26.2, decompile-verified): sideways spread is
+     * weighted toward the nearest hole within getSlopeFindDistance blocks, not spread evenly in
+     * every open direction. A source sits between two floor gaps ("holes") at different
+     * distances — 2 blocks east, 4 blocks west, both within water's search distance of 4 — so a
+     * single deterministic spread step (one debugTick, no live-timing race) should only fill the
+     * nearer (east) side; the farther (west) side and the two untouched perpendicular directions
+     * must stay untouched. scenarioWater's open-diamond count above is the regression check for
+     * the opposite case (no hole anywhere in range falls back to spreading evenly), so this is
+     * deliberately a fresh coordinate area, not a variant of that one.
+     */
+    private static void scenarioFluidSlopeWeighting() {
+        int sx = -55, sz = -50;
+        world.setBlock(sx - 4, Y, sz, Block.AIR); // west hole, 4 blocks away (still in range)
+        world.setBlock(sx + 2, Y, sz, Block.AIR); // east hole, 2 blocks away (nearer)
+        BlockVec pos = new BlockVec(sx, Y + 1, sz);
+        world.setBlock(pos, Block.WATER);
+        dev.pointofpressure.minecom.blocks.Fluids.debugEnqueue(sx, Y + 1, sz);
+        dev.pointofpressure.minecom.blocks.Fluids.debugTick();
+        check("nearest-hole weighting: spreads toward the closer hole (east, 2 away)",
+                "water".equals(blockKey(sx + 1, Y + 1, sz)));
+        check("nearest-hole weighting: the farther hole's side (west, 4 away) gets nothing this step",
+                "air".equals(blockKey(sx - 1, Y + 1, sz)));
+        check("nearest-hole weighting: perpendicular directions (no nearby hole) get nothing either",
+                "air".equals(blockKey(sx, Y + 1, sz + 1)) && "air".equals(blockKey(sx, Y + 1, sz - 1)));
+
+        world.setBlock(pos, Block.AIR);
+        dev.pointofpressure.minecom.blocks.Fluids.notifyAround(pos);
+        waitFor(() -> "air".equals(blockKey(sx + 1, Y + 1, sz)), 30000);
+        world.setBlock(sx - 4, Y, sz, Block.STONE); // restore the shared flat floor, not AIR
+        world.setBlock(sx + 2, Y, sz, Block.STONE);
     }
 
     private static int countWater() {

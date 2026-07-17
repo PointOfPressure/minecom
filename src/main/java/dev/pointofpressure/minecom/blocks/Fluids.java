@@ -22,8 +22,12 @@ import java.util.Set;
 /**
  * Cellular fluid simulation: water spreads 7 blocks with falling columns and
  * infinite-source creation; lava spreads 3 blocks and flows slower; water+lava
- * makes obsidian/cobblestone/stone; buckets pick up and place sources.
- * (Vanilla's nearest-hole flow weighting is not modeled — flow spreads evenly.)
+ * makes obsidian/cobblestone/stone; buckets pick up and place sources. Sideways
+ * spread is weighted toward the nearest hole within getSlopeFindDistance blocks
+ * (FlowingFluid.getSpread/getSlopeDistance, 26.2 decompile-verified) — see
+ * {@link #holeDistance} and {@link #slopeDistance}; with no hole in range it
+ * falls back to spreading evenly in every open direction, matching vanilla's
+ * own dead-end behavior.
  */
 public final class Fluids {
     private Fluids() {}
@@ -163,11 +167,37 @@ public final class Fluids {
         int strength = lvl >= 8 ? 0 : lvl;
         int spreadLevel = strength + step;
         if (spreadLevel > maxLevel) return;
-        for (int[] d : DIRS) {
-            int nx = x + d[0], nz = z + d[1];
+
+        // Water-lava contact (meltsInto) is its own independent reaction, evaluated on every
+        // side regardless of the hole weighting below (real vanilla's obsidian/cobble/stone
+        // conversion isn't part of FlowingFluid.getSpread at all).
+        boolean[] blocked = new boolean[4];
+        for (int i = 0; i < 4; i++) {
+            int nx = x + DIRS[i][0], nz = z + DIRS[i][1];
             Block n = loadedBlock(nx, y, nz);
-            if (n == null) continue;
-            if (meltsInto(n, water, nx, y, nz)) continue;
+            if (n == null || meltsInto(n, water, nx, y, nz) || !(n.isAir() || isSameFluid(n, water))) {
+                blocked[i] = true;
+            }
+        }
+
+        // FlowingFluid.getSpread (26.2, decompile-verified): only the direction(s) with the
+        // shortest path to a "hole" (a cell that can drain further down) within
+        // getSlopeFindDistance blocks actually receive fluid; ties spread together. A dead end
+        // in every direction (lowest stays the search's own not-found sentinel) falls back to
+        // spreading evenly, which is this codebase's old unconditional behavior — so a fully
+        // enclosed/flat area (no holes anywhere in range) is unaffected by this change.
+        java.util.Map<Long, Boolean> holeCache = new java.util.HashMap<>();
+        int[] distance = new int[4];
+        int lowest = Integer.MAX_VALUE;
+        for (int i = 0; i < 4; i++) {
+            if (blocked[i]) continue;
+            distance[i] = holeDistance(x + DIRS[i][0], y, z + DIRS[i][1], oppositeDir(i), water, holeCache);
+            if (distance[i] < lowest) lowest = distance[i];
+        }
+        for (int i = 0; i < 4; i++) {
+            if (blocked[i] || distance[i] != lowest) continue;
+            int nx = x + DIRS[i][0], nz = z + DIRS[i][1];
+            Block n = loadedBlock(nx, y, nz);
             if (n.isAir()) {
                 set(nx, y, nz, fluid(water).withProperty("level", String.valueOf(spreadLevel)), water);
             } else if (isSameFluid(n, water)) {
@@ -177,6 +207,61 @@ public final class Fluids {
                 }
             }
         }
+    }
+
+    private static int oppositeDir(int i) { return i ^ 1; } // DIRS pairs (0,1)=+-x, (2,3)=+-z
+
+    /** WaterFluid/LavaFluid.getSlopeFindDistance (overworld values — the nether's faster-lava
+     * override isn't modeled here, a pre-existing separate gap, see AUDIT.md). */
+    private static int slopeFindDistance(boolean water) { return water ? 4 : 2; }
+
+    /**
+     * FlowingFluid.isWaterHole, approximated with this project's coarse solidity model (matching
+     * the "flow down" gate a few lines up in {@code update}): a cell can drain further if the
+     * block below it isn't solid.
+     */
+    private static boolean isHole(int x, int y, int z, boolean water) {
+        Block below = loadedBlock(x, y - 1, z);
+        return below != null && !below.isSolid();
+    }
+
+    /** Whether fluid can occupy/pass through (x,y,z) at all for BFS purposes — air or a
+     * non-source cell of the same fluid (FlowingFluid.canMaybePassThrough excludes existing
+     * sources of its own type, approximated here the same way the rest of this file treats
+     * "empty" targets: only air or matching flowing fluid, not arbitrary replaceable blocks). */
+    private static boolean passable(int x, int y, int z, boolean water) {
+        Block n = loadedBlock(x, y, z);
+        if (n == null) return false;
+        if (n.isAir()) return true;
+        return isSameFluid(n, water) && level(n) != 0;
+    }
+
+    /** Distance from the source cell's neighbor at (x,y,z) to the nearest hole, per
+     * FlowingFluid.getSpread's own testPos-is-a-hole special case (distance 0) falling through
+     * to {@link #slopeDistance}. */
+    private static int holeDistance(int x, int y, int z, int cameFrom, boolean water, java.util.Map<Long, Boolean> holeCache) {
+        if (isHole(x, y, z, water)) return 0;
+        return slopeDistance(x, y, z, 1, cameFrom, water, holeCache, slopeFindDistance(water));
+    }
+
+    /** FlowingFluid.getSlopeDistance: BFS outward (never back the way we came) up to `limit`
+     * hops looking for the nearest hole; 1000 (vanilla's own not-found sentinel) if none found. */
+    private static int slopeDistance(int x, int y, int z, int pass, int cameFrom, boolean water,
+                                      java.util.Map<Long, Boolean> holeCache, int limit) {
+        int lowest = 1000;
+        for (int i = 0; i < 4; i++) {
+            if (i == cameFrom) continue;
+            int nx = x + DIRS[i][0], nz = z + DIRS[i][1];
+            if (!passable(nx, y, nz, water)) continue;
+            long key = pack(nx, y, nz);
+            boolean hole = holeCache.computeIfAbsent(key, k -> isHole(nx, y, nz, water));
+            if (hole) return pass;
+            if (pass < limit) {
+                int v = slopeDistance(nx, y, nz, pass + 1, oppositeDir(i), water, holeCache, limit);
+                if (v < lowest) lowest = v;
+            }
+        }
+        return lowest;
     }
 
     private static Block loadedBlock(int x, int y, int z) {

@@ -73,10 +73,13 @@ Bugs/risks known right now, none blocking, all cheap:
    land with the next pistons touch.
 5. **Persistence keys are overworld-only** — position keys collide across
    dimensions. Cheap now (prefix shard keys with dimension), painful later.
-6. **Fluids spread is not vanilla-exact** (even spread vs nearest-hole
-   weighting within 4) — a *visible* parity gap farms depend on; promote to
-   the parity backlog (§3), it's differential-testable with the piston-fixture
-   method.
+6. ~~**Fluids spread is not vanilla-exact** (even spread vs nearest-hole
+   weighting within 4)~~ — **DONE 2026-07-17 (Sonnet 5)**: `Fluids.java` now
+   ports `FlowingFluid.getSpread`/`getSlopeDistance`'s nearest-hole BFS
+   weighting (decompile-verified against a fresh 26.2 decompile), see
+   AUDIT.md's blocks/ entry. The full vanilla-oracle differential fixture
+   (§2.2's per-subsystem extension) is still open — this is the behavior port
+   itself, not the differential harness.
 7. **QC approximation** ("power at block above, re-checked on updates") —
    known divergence class; document in the difference sheet until the
    update-order work (§5) replaces it.
