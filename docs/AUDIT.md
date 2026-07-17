@@ -1117,6 +1117,34 @@ leftovers.
   (pure insert/remove/weight math) + 12 PlayTest checks (`scenarioBundle` —
   the real click-event integration in both directions, shulker rejection,
   the bare-right-click drop).
+  ~~no goat horns~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 4,
+  `survival/GoatHorns.java`, new file)** — decompile-verified against
+  `InstrumentItem`/`Instruments` (26.2, freshly decompiled). Turned out
+  mostly already built: Minestom's own raw-packet handler (`UseItemListener`)
+  special-cases `Material.GOAT_HORN` directly and resolves the held item's
+  `DataComponents.INSTRUMENT` against its own built-in
+  `MinecraftServer.getInstrumentRegistry()` — pre-populated with the real 8
+  tunes (ponder/sing/seek/feel/admire/call/yearn/dream, uniform 7.0s
+  duration/256-block range, matching `Instruments.bootstrap` exactly) — and
+  fires the use-animation with the correct duration automatically, no
+  per-item duration wiring needed the way `Crossbow.java`'s variable
+  quick-charge duration does. What the engine does NOT do: play the sound
+  (real vanilla plays it immediately on click, inline inside `use()`, before
+  the use-animation even starts — not on finish) and apply a cooldown; both
+  land on `PlayerUseItemEvent`, the earliest point matching vanilla's own
+  timing. Cooldown is per-player keyed by material only (not by tune): real
+  vanilla's `ItemCooldowns` defaults a stack's cooldown group to its base
+  `Item` identity, and all 8 tunes share the single `minecraft:goat_horn`
+  item, so blowing any tune locks out every tune for the same duration. Not
+  modeled (no acquisition pipeline exists to need it yet): goat ramming a
+  wall for a rare random-tune drop (a separate mobs/ gap — `withTune` is
+  exposed as the entry point a future ramming implementation would call, the
+  same shape `InstrumentItem.create` is in vanilla), the
+  `CriteriaTriggers`/advancement hook, the `GameEvent.INSTRUMENT_PLAY` sculk
+  vibration emission (no matching tap in `Vibrations.emit`'s table for this
+  event kind). 5 PlayTest checks (`scenarioGoatHorn` — first blow succeeds,
+  immediate re-blow blocked, a different tune still shares the cooldown,
+  cooldown expiry, and an unresolvable instrument id is inert not a crash).
   ~~no maps~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 2)** —
   `survival/Maps.java` (decompile-verified against `EmptyMapItem`/`MapItem`/
   `MapItemSavedData`, 26.2) + `data/MapColors.java` (the ported `MapColor`

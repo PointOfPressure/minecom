@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 936;
+    private static final int EXPECTED_CHECK_COUNT = 941;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -251,6 +251,7 @@ public final class PlayTest {
         scenario("lodestone: a single compass binds in place, a larger stack splits off one bound copy", PlayTest::scenarioLodestone);
         scenario("bundle: cursor-holds-bundle and slot-holds-bundle click insert/remove, shulker boxes rejected, a bare right-click pops and drops the top entry", PlayTest::scenarioBundle);
         scenario("archaeology: brushing a suspicious block through 10 strokes reveals real loot and turns it to sand/gravel, no loot table means no drop, abandoned progress decays back to 0", PlayTest::scenarioArchaeology);
+        scenario("goat horn: blowing one plays its tune and starts a shared per-player cooldown covering every tune, an untuned horn is inert", PlayTest::scenarioGoatHorn);
         scenario("structure loot: chest/barrel/dispenser roll a real vanilla loot table on first open, not before, not twice; barrel lid blockstate toggles open/close", PlayTest::scenarioStructureLoot);
         scenario("item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame", PlayTest::scenarioItemFrame);
         scenario("item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)", PlayTest::scenarioItemFrameComparator);
@@ -864,6 +865,64 @@ public final class PlayTest {
     private static int intDamage(ItemStack stack) {
         Integer d = stack.get(DataComponents.DAMAGE);
         return d == null ? 0 : d;
+    }
+
+    /**
+     * Goat horns (survival/GoatHorns.java): fired directly as a bare {@code PlayerUseItemEvent}
+     * (the same pattern {@code scenarioMap} uses) rather than through Minestom's raw
+     * {@code ClientUseItemPacket} pipeline — that packet-level pipeline is what actually starts
+     * the 140-tick use-animation timer automatically for {@code Material.GOAT_HORN} (see
+     * GoatHorns' class doc), a client-animation-timing detail outside what this project's
+     * PlayTest verifies (matching the established "server gameplay state, not client
+     * animation" scope). What GoatHorns.java itself owns — sound trigger + cooldown gate — is
+     * entirely self-contained inside the {@code PlayerUseItemEvent} handler and needs nothing
+     * from that automatic timer, so testing the bare event directly exercises the real code
+     * path.
+     */
+    private static void scenarioGoatHorn() {
+        clearEntitiesExceptPlayer();
+
+        // checked FIRST, before any tuned use below establishes a cooldown that would
+        // otherwise also block this one (the cooldown gate isn't tune-specific, see below).
+        // NOTE: a bare ItemStack.of(Material.GOAT_HORN) is NOT actually "untuned" in this
+        // engine — Minestom's own item-component defaults already carry a real INSTRUMENT
+        // (ponder_goat_horn), so that edge case isn't reachable here; the genuinely reachable
+        // defensive case is a corrupt/modded stack pointing at an instrument id that doesn't
+        // resolve in the registry at all.
+        ItemStack garbageTune = ItemStack.of(Material.GOAT_HORN)
+                .with(DataComponents.INSTRUMENT, net.minestom.server.registry.RegistryKey.unsafeOf("not_a_real_instrument"));
+        var garbageUse = new net.minestom.server.event.player.PlayerUseItemEvent(player, PlayerHand.MAIN, garbageTune, 0);
+        EventDispatcher.call(garbageUse);
+        check("a goat horn pointing at an unresolvable instrument id is inert, not a crash",
+                !garbageUse.isCancelled());
+
+        ItemStack horn = dev.pointofpressure.minecom.survival.GoatHorns.withTune(ItemStack.of(Material.GOAT_HORN), 0);
+        player.setItemInMainHand(horn);
+
+        var first = new net.minestom.server.event.player.PlayerUseItemEvent(player, PlayerHand.MAIN, horn, 0);
+        EventDispatcher.call(first);
+        check("blowing a tuned goat horn the first time is not blocked (no cooldown yet)", !first.isCancelled());
+
+        var second = new net.minestom.server.event.player.PlayerUseItemEvent(player, PlayerHand.MAIN, horn, 0);
+        EventDispatcher.call(second);
+        check("blowing it again immediately is blocked by the cooldown it just started",
+                second.isCancelled());
+
+        ItemStack otherTune = dev.pointofpressure.minecom.survival.GoatHorns.withTune(ItemStack.of(Material.GOAT_HORN), 3);
+        var thirdDifferentTune = new net.minestom.server.event.player.PlayerUseItemEvent(player, PlayerHand.MAIN, otherTune, 0);
+        EventDispatcher.call(thirdDifferentTune);
+        check("a DIFFERENT tune still shares the one per-player cooldown (real vanilla: the "
+                        + "cooldown group is the base minecraft:goat_horn item, not the instrument)",
+                thirdDifferentTune.isCancelled());
+
+        tick(150); // Instruments.GOAT_HORN_DURATION=7.0s -> useDurationTicks()=140
+        var afterCooldown = new net.minestom.server.event.player.PlayerUseItemEvent(player, PlayerHand.MAIN, horn, 0);
+        EventDispatcher.call(afterCooldown);
+        check("once the 140-tick cooldown elapses, blowing it again is allowed",
+                !afterCooldown.isCancelled());
+
+        clearEntitiesExceptPlayer();
+        resetPlayer();
     }
 
     /**

@@ -14,6 +14,55 @@ of what got escalated and why.
 
 ---
 
+## Tier 3 parity batch 4 (2026-07-17, Sonnet 5) — bundles + archaeology + goat horns, no escalation
+
+Not an escalation — a progress note, same convention as batches 1-2. Picked up after
+batch 3 (v0.28.0, Allay + item-frame/armor-stand persistence — see AUDIT's own entries,
+no HANDOFF note was written for it at the time). Three AUDIT gaps, one commit each:
+
+1. **Bundles** (`survival/Bundles.java`, new) — the click-event integration
+   (`InventoryPreClickEvent` cancel-and-hand-roll, matching `Crafting.java`'s own shape
+   for its result slot) over Minestom's native `DataComponents.BUNDLE_CONTENTS`
+   component. 13 SelfTest + 12 PlayTest checks.
+2. **Archaeology** (`blocks/Archaeology.java`, new) — brushing suspicious_sand/
+   suspicious_gravel through BrushableBlockEntity's real 10-stroke completion. The
+   interesting engine gap: Minestom has no per-tick "item still being used" callback
+   (same absence `Crossbow.java` already documents), so brush progress is driven by a
+   global per-tick poll over in-flight sessions rather than vanilla's own `onUseTick`.
+   Found and fixed live while writing the PlayTest scenario: the natural first instinct
+   (`MinecraftServer.getConnectionManager().getOnlinePlayers()`) silently returns
+   nothing for the fake test player (documented gap, see `scenarioAdminCommands`'s own
+   class doc) — switched to walking the tracked brush sessions directly instead, which
+   is also just a better design (no registry dependency at all). New bundled data:
+   `loot_archaeology.json` (extractor extended, `--validate` clean) +
+   `LootTables.archaeology`. Worldgen does NOT place these blocks yet — out of scope
+   per this batch's explicit no-worldgen-changes instruction; this is the reusable
+   subsystem only, exercised via a `registerLoot` entry point mirroring
+   `Containers.registerLoot`. 3 SelfTest + 10 PlayTest checks.
+3. **Goat horns** (`survival/GoatHorns.java`, new) — turned out mostly pre-built:
+   Minestom's own `UseItemListener` already special-cases `Material.GOAT_HORN` and
+   resolves its `DataComponents.INSTRUMENT` against a built-in, pre-populated
+   `DynamicRegistry<Instrument>` (real 8 tunes, correct duration/range) — this file
+   only adds what the engine doesn't do on its own: play the sound immediately (matching
+   vanilla's inline-in-`use()` timing, not on finish) and apply the per-player,
+   shared-across-tunes cooldown. One live gotcha found while writing the test: a bare
+   `ItemStack.of(Material.GOAT_HORN)` is NOT actually "untuned" in this engine — it
+   already carries a default `ponder_goat_horn` INSTRUMENT component from Minestom's own
+   item-default data, so the "no instrument at all" defensive branch is dead code for
+   any stack constructible in practice; the test instead exercises the genuinely
+   reachable case (an instrument id that doesn't resolve in the registry — a
+   corrupt/modded stack). 5 PlayTest checks.
+
+All three decompiled fresh into `vanilla-src/` (BundleItem/BundleContents,
+BrushItem/BrushableBlock/BrushableBlockEntity, InstrumentItem/Instrument/Instruments —
+none were cached before this session). EXPECTED_CHECK_COUNT 914 -> 941 (27 new PlayTest
+checks: 12+10+5). No worldgen touched, no redstone dispenser behaviors touched, DIAG
+silk untouched. Full green-bar suite left to the orchestrator per this session's
+instructions (see the report for exact suite status at handoff time).
+
+---
+
+
 ## Tier 3 parity batch 2 CLOSED (2026-07-17, Sonnet 5) — v0.27.0, maps + signs/banners land items 2+3, no escalation
 
 Finishes the batch item 1 (bees/beehives) started below. Both items landed as one commit
