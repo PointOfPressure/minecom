@@ -753,9 +753,59 @@ leftovers.
   spawning, morning gifts, creeper repel — taming/feeding DONE, see above),
   skeleton_horse (trap exists? no —
   lightning trap missing), trader_llama (wandering trader spawns alone;
-  vanilla brings 2 leashed llamas), allay (item collection), sniffer, tadpole
+  vanilla brings 2 leashed llamas), ~~allay (item collection)~~ **done
+  2026-07-17 (Sonnet 5, Tier 3 batch 3, `mobs/Allays.java`, new file)**,
+  sniffer, tadpole
   (frog lifecycle), snow golem/iron golem BUILDING by players (pumpkin
   placement patterns — golems only spawn via commands/tests). (S-M each)
+- **Allay (mobs/Allays.java, 2026-07-17, Sonnet 5)** — decompile-verified
+  against `Allay.java`/`AllayAi.java` (26.2, already cached in vanilla-src
+  from an earlier session but never ported into gameplay code before this
+  pass), condensed from vanilla's Brain/Sensor/Behavior tree into one
+  per-tick state machine (`Bees.java`'s "static holder + per-entity State
+  map" shape, since this project has no generic Brain framework). Give/take
+  (`mobInteract`): an empty-handed allay offered an item holds it and
+  remembers the giver as its liked player; approached empty-handed with the
+  item held, it gives the item back, drops any carried extras, and forgets
+  its liked player. Item collection (`wantsToPickUp`/`InventoryCarrier.
+  pickUpItem`): with an item already in hand, it collects matching dropped
+  items (same material AND matching `PotionContents` —
+  `allayConsidersItemEqual`) within reach into a single carry slot, then
+  flies them to a deposit target — a liked note block if one is still
+  liked (real 1024-block/600-tick-cooldown gate,
+  `shouldDepositItemsAtLikedNoteblock`) else its liked player (real
+  64-block/survival-or-creative gate, `getLikedPlayer`) — throwing them
+  once close enough (`GoAndGiveItemsToTarget`). Note-block hearing rides
+  the existing `Vibrations.emit` tap system as a new hook alongside the
+  warden one (`Vibrations.emit`'s note_block_play case ->
+  `Allays.hearNoteblock`, the real 16-block `VibrationUser` listener
+  radius), not a new vibration subsystem. Dancing: idling near an actively
+  playing jukebox (`Jukebox.isPlaying`, real 10-block `JUKEBOX_PLAY`
+  notification radius, periodic 20-tick scan when idle) starts a dance
+  (Minestom's native `AllayMeta.dancing`); duplication: offering an
+  amethyst shard (`ItemTags.DUPLICATES_ALLAYS`, bundled in
+  `tags_item.json`) to a dancing allay with the real 6000-tick cooldown
+  ready spawns a twin at the same position, both landing on the shared
+  cooldown (`duplicateAllay`). Wired into `Mobs.spawn("allay", ...)` and
+  `Bootstrap.java`. 14 new PlayTest checks (`scenarioAllay`), 14/14 clean.
+  Simplifications (stated, not silently faked): flight is direct
+  velocity-to-target steering, the same idiom Bees/HappyGhast/ghast/
+  phantom already use (no A*-ish `AirRandomPos` sampling — this project's
+  ground `VPathfinder` doesn't cover 3D flight); item-pickup cooldown is a
+  short fixed 2-tick same-tick-reentry guard rather than vanilla's exact
+  `ITEM_PICKUP_COOLDOWN_TICKS` memory value (that value lives in
+  `GoToWantedItem`/`Mob` base-class internals not decompiled for this
+  pass — the PURPOSE, not re-grabbing what was just set down, is
+  preserved); deposit throws happen the instant the allay is within range
+  rather than vanilla's real 20-tick `GIVE_ITEM_TIMEOUT_DURATION` travel
+  window; no heart/amethyst-chime particles (this project has no particle
+  idiom yet, same note as Warden's sonic boom); no
+  `CriteriaTriggers.ALLAY_DROP_ITEM_ON_BLOCK` advancement (no advancement
+  system in this project). State (liked player/noteblock, carried extras,
+  dancing) is session-scoped like Bees' own hive/flower memory — a restart
+  resets an allay's relationships but not its identity or held mainhand
+  item (that rides the generic mob-equipment snapshot in
+  `RegionStore.collectMobs`, unchanged by this pass).
 - ~~No taming anywhere (wolves/cats/parrots/horses), no horse riding/saddles, no
   leads, no name tags (despawn suppression)~~ — DONE 2026-07-15 for
   wolves/cats/horses/leads/name tags, see above; parrot taming still open (S).

@@ -155,12 +155,17 @@ public final class Vibrations {
     public static void emit(String event, Point sourcePos, Entity source) {
         Instance instance = Redstone.instance();
         boolean wardens = dev.pointofpressure.minecom.mobs.ai.WardenMob.anyListening();
-        if (instance == null || (SENSORS.isEmpty() && SHRIEKERS.isEmpty() && !wardens)) return;
+        boolean allays = dev.pointofpressure.minecom.mobs.Allays.anyListening();
+        if (instance == null || (SENSORS.isEmpty() && SHRIEKERS.isEmpty() && !wardens && !allays)) return;
         int frequency = FREQ.getOrDefault(event, 0);
         if (frequency == 0) return;
         if (source instanceof Player p && p.isSneaking() && frequency == 1) return; // silent steps
         Vec origin = new Vec(sourcePos.x(), sourcePos.y(), sourcePos.z());
         if (wardens) dev.pointofpressure.minecom.mobs.ai.WardenMob.hearVibration(event, origin, source);
+        // Allay.VibrationUser: only listens to note_block_play, own 16-block listener radius.
+        if (allays && event.equals("note_block_play")) {
+            dev.pointofpressure.minecom.mobs.Allays.hearNoteblock(instance, origin);
+        }
 
         for (long key : SENSORS) {
             Point pos = unpack(key);

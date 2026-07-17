@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 900;
+    private static final int EXPECTED_CHECK_COUNT = 914;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -256,6 +256,7 @@ public final class PlayTest {
         scenario("beacon: pyramid levels 1-4, beam needs clear sky (glass passes), menu validates + consumes payment, effects apply in range at the right amp", PlayTest::scenarioBeacon);
         scenario("conduit: 3x3x3 water gate + radius-2 prismarine ring gate activation (16) and hunting (42), power radius size/7*16, in-water power, hostile pulse", PlayTest::scenarioConduit);
         scenario("bee + beehive: pollination gains nectar, hive delivery advances honey, shears/bottle harvest at level 5, campfire sedation, anger + sting-once-then-die", PlayTest::scenarioBee);
+        scenario("allay: give/take remembers a liked player, collects + deposits matching items, dances near a playing jukebox, duplicates via amethyst shard, hears note blocks", PlayTest::scenarioAllay);
         scenario("map: empty map -> filled on use, live color sampling from the world, the holder's own player marker + heading, zoom crafting", PlayTest::scenarioMap);
         scenario("signs + banners: front/back text edit/persistence, dye color, glow, wax-lock; banner duplicate + shield decoration crafting-special recipes", PlayTest::scenarioSignsAndBanners);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
@@ -1373,6 +1374,105 @@ public final class PlayTest {
         check("a stung bee dies by exactly its 1200-tick STING_DEATH_COUNTDOWN (real vanilla's "
                 + "clamp guarantees the roll at that tick, not just eventually)", angryBee.isDead());
 
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Allay: give/take remembers a liked player (Allay.mobInteract), a held-item allay collects
+     * matching drops within reach and carries them to its deposit target — the liked player
+     * within 64 blocks (real getLikedPlayer gate) once close enough to throw (real
+     * GoAndGiveItemsToTarget) — dancing near an actively playing jukebox (real 10-block
+     * JUKEBOX_PLAY radius), and duplicating via an amethyst shard while dancing (real
+     * DUPLICATES_ALLAYS tag + 6000-tick shared cooldown). Also covers the noteblock-hearing
+     * path (Vibrations.emit's note_block_play hook) independently of the give/take allay above.
+     */
+    private static void scenarioAllay() {
+        clearEntitiesExceptPlayer();
+        int cx = 180, cz = 140, cy = Y + 5;
+        for (int x = -3; x <= 3; x++)
+            for (int z = -3; z <= 3; z++)
+                world.setBlock(new BlockVec(cx + x, cy, cz + z), Block.AIR);
+
+        var allay = dev.pointofpressure.minecom.mobs.Allays.spawn(world, new Pos(cx + 0.5, cy + 1, cz + 0.5));
+        check("allay spawns with real vanilla stats (20 HP) and no liked player yet",
+                allay.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH) == 20.0
+                        && dev.pointofpressure.minecom.mobs.Allays.likedPlayer(allay) == null);
+
+        // --- give: an empty-handed allay offered an item holds it and likes the giver ---
+        player.teleport(new Pos(cx + 0.5, cy + 1, cz + 0.5)).join();
+        player.setItemInMainHand(ItemStack.of(Material.COMPASS));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, allay, PlayerHand.MAIN, Vec.ZERO));
+        check("giving an empty-handed allay an item makes it hold that item",
+                allay.getEquipment(EquipmentSlot.MAIN_HAND).material() == Material.COMPASS);
+        check("giving the item consumes it from the player's hand", player.getItemInMainHand().isAir());
+        check("giving the item marks the player as this allay's liked player",
+                player.getUuid().equals(dev.pointofpressure.minecom.mobs.Allays.likedPlayer(allay)));
+
+        // --- collection: a matching dropped item within reach, liked player too far to deposit ---
+        player.teleport(new Pos(cx + 0.5, cy + 1, cz + 100)).join(); // past the real 64-block liked-player gate
+        ItemEntity dropped = new ItemEntity(ItemStack.of(Material.COMPASS, 2));
+        dropped.setInstance(world, new Pos(cx + 0.5, cy + 1, cz + 0.5));
+        for (int i = 0; i < 12; i++) tick(1); // ItemEntity settle gate (aliveTicks >= 10)
+        dev.pointofpressure.minecom.mobs.Allays.tickForTest(allay);
+        check("a matching dropped item within reach is picked up into the allay's carry slot (2 compasses)",
+                dev.pointofpressure.minecom.mobs.Allays.extraInventory(allay).material() == Material.COMPASS
+                        && dev.pointofpressure.minecom.mobs.Allays.extraInventory(allay).amount() == 2);
+
+        // --- deposit: back within range, the carried extras get thrown at the liked player ---
+        player.teleport(new Pos(cx + 0.5, cy + 1, cz + 0.5)).join();
+        dev.pointofpressure.minecom.mobs.Allays.tickForTest(allay);
+        check("once back within throw range of its liked player, the allay deposits its carried extras",
+                dev.pointofpressure.minecom.mobs.Allays.extraInventory(allay).isAir());
+
+        // --- take: an empty-handed approach gives the held item back and forgets the player ---
+        player.setItemInMainHand(ItemStack.AIR);
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, allay, PlayerHand.MAIN, Vec.ZERO));
+        check("taking an allay's held item empty-handed returns it to the player",
+                player.getItemInMainHand().material() == Material.COMPASS);
+        check("the allay's hand is now empty", allay.getEquipment(EquipmentSlot.MAIN_HAND).isAir());
+        check("taking the item makes the allay forget its liked player",
+                dev.pointofpressure.minecom.mobs.Allays.likedPlayer(allay) == null);
+
+        // --- dancing: an actively playing jukebox nearby starts a dance ---
+        BlockVec jukebox = new BlockVec(cx + 1, cy + 1, cz);
+        world.setBlock(jukebox, Block.JUKEBOX);
+        useItemOnBlock(ItemStack.of(Material.MUSIC_DISC_13), jukebox, BlockFace.TOP);
+        boolean danced = false;
+        for (int i = 0; i < 30 && !danced; i++) {
+            dev.pointofpressure.minecom.mobs.Allays.tickForTest(allay);
+            danced = allay.getEntityMeta() instanceof net.minestom.server.entity.metadata.other.AllayMeta am
+                    && am.isDancing();
+        }
+        check("an allay idling near an actively playing jukebox starts dancing", danced);
+
+        // --- duplication: an amethyst shard offered to a dancing allay spawns a twin ---
+        int allaysBefore = (int) world.getEntities().stream()
+                .filter(en -> en.getEntityType() == EntityType.ALLAY).count();
+        player.setItemInMainHand(ItemStack.of(Material.AMETHYST_SHARD));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, allay, PlayerHand.MAIN, Vec.ZERO));
+        int allaysAfter = (int) world.getEntities().stream()
+                .filter(en -> en.getEntityType() == EntityType.ALLAY).count();
+        check("offering an amethyst shard to a dancing allay spawns a second allay ("
+                + allaysBefore + " -> " + allaysAfter + ")", allaysAfter == allaysBefore + 1);
+        check("the amethyst shard is consumed", player.getItemInMainHand().isAir());
+        check("duplicating puts the original allay on the real 6000-tick cooldown",
+                !dev.pointofpressure.minecom.mobs.Allays.canDuplicateForTest(allay));
+
+        // --- noteblock hearing: independent of the give/take allay above ---
+        var listener = dev.pointofpressure.minecom.mobs.Allays.spawn(world, new Pos(cx + 20.5, cy + 1, cz + 0.5));
+        BlockVec noteblockPos = new BlockVec(cx + 20, cy, cz);
+        dev.pointofpressure.minecom.redstone.Vibrations.emit("note_block_play",
+                new Vec(noteblockPos.x() + 0.5, noteblockPos.y() + 0.5, noteblockPos.z() + 0.5), null);
+        net.minestom.server.coordinate.Point heardNoteblock =
+                dev.pointofpressure.minecom.mobs.Allays.likedNoteblockPos(listener);
+        check("a nearby allay hears a played note block and adopts it as liked (real 16-block listener radius)",
+                heardNoteblock != null && noteblockPos.sameBlock(heardNoteblock));
+
+        world.setBlock(jukebox, Block.AIR);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
