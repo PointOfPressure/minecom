@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 890;
+    private static final int EXPECTED_CHECK_COUNT = 898;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -271,6 +271,7 @@ public final class PlayTest {
         scenario("cake: eating a slice restores hunger and advances bites, the comparator signal follows (7-bites)*2, the last bite removes it", PlayTest::scenarioCake);
         scenario("scaffolding: distance 0 on solid ground, inherits +1 down a chain, and collapses when its support is removed", PlayTest::scenarioScaffolding);
         scenario("decorated pot: right-click stacks a matching item in, empty-hand never extracts, breaking drops the contents plus 4 bricks", PlayTest::scenarioDecoratedPot);
+        scenario("flower pot: planting swaps to the potted variant, a held plant on a filled pot is a no-op, empty-hand pops the plant back out", PlayTest::scenarioFlowerPot);
         scenario("ender chest: inventory is shared across every ender chest the same player opens, and breaking one never spills its contents", PlayTest::scenarioEnderChest);
         scenario("barrel: opens like a chest, persists across close/reopen, comparator reads fullness, hoppers can push into and pull from it", PlayTest::scenarioBarrel);
         scenario("mobs: a few zombies/drowned spawn holding a weapon", PlayTest::scenarioWeaponHolding);
@@ -2015,6 +2016,59 @@ public final class PlayTest {
                         && ie.getItemStack().material() == Material.BRICK && ie.getItemStack().amount() == 4), 2000);
         check("breaking the pot also drops its 4 (plain/undecorated) sherds as bricks", bricksDropped);
 
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * FlowerPotBlock.useItemOn/useWithoutItem (decompile-verified, 26.2): planting swaps the
+     * whole block to its potted_&lt;content&gt; variant rather than tracking separate state.
+     * Every one of the 37 pottable plant items is itself a real placeable block, so Minestom's
+     * BlockPlacementListener never reaches PlayerUseItemOnBlockEvent for them at all
+     * (block-material items go straight from block-interact to block PLACEMENT once interact
+     * doesn't consume the click) — FlowerPots.java drives both planting AND un-planting off the
+     * one PlayerBlockInteractEvent that's guaranteed to fire, so this scenario exercises the
+     * full outcome table (not just the happy path) to prove that dispatch shortcut is correct.
+     */
+    private static void scenarioFlowerPot() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(0, Y, 0);
+        world.setBlock(pos, Block.FLOWER_POT);
+
+        player.setItemInMainHand(ItemStack.of(Material.DANDELION));
+        interact(pos);
+        check("planting a dandelion into an empty pot swaps it to potted_dandelion",
+                world.getBlock(pos) == Block.POTTED_DANDELION);
+        check("planting consumes the held item", player.getItemInMainHand().isAir());
+
+        player.setItemInMainHand(ItemStack.of(Material.POPPY));
+        interact(pos);
+        check("holding a DIFFERENT valid plant over an already-filled pot is a pure no-op (real vanilla's CONSUME, no swap)",
+                world.getBlock(pos) == Block.POTTED_DANDELION);
+        check("the no-op doesn't consume the held item either",
+                player.getItemInMainHand().material() == Material.POPPY && player.getItemInMainHand().amount() == 1);
+
+        player.setItemInMainHand(ItemStack.AIR);
+        interact(pos);
+        check("an empty-hand right-click on a filled pot pops the plant back out",
+                world.getBlock(pos) == Block.FLOWER_POT);
+        check("the extracted dandelion lands in the player's inventory", playerHasItem(Material.DANDELION));
+
+        player.getInventory().clear();
+        player.setItemInMainHand(ItemStack.of(Material.STONE));
+        interact(pos);
+        check("a non-plant item held on an empty pot is a no-op (still no dandelion planted)",
+                world.getBlock(pos) == Block.FLOWER_POT);
+
+        world.setBlock(pos, Block.POTTED_OAK_SAPLING);
+        player.setItemInMainHand(ItemStack.AIR);
+        interact(pos);
+        check("a sapling (itself a real placeable BLOCK item) still routes through the same "
+                        + "interact-first dispatch and pops back out, rather than being swallowed by "
+                        + "Minestom's normal block-placement fallthrough",
+                world.getBlock(pos) == Block.FLOWER_POT && playerHasItem(Material.OAK_SAPLING));
+
+        world.setBlock(pos, Block.AIR);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

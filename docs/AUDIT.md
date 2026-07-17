@@ -467,6 +467,37 @@ leftovers.
   tracked-rod registry + 128-block strike redirect + 8gt pulse, weighted
   pressure plates analog + copper bulbs also landed in the same
   redstone-parity pass.
+- ~~Flower pots~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 3,
+  `blocks/FlowerPots.java`, new file)** — decompile-verified against
+  `FlowerPotBlock.useItemOn`/`useWithoutItem` (26.2, freshly decompiled, no
+  cached copy existed before). No block-entity state at all: planting swaps
+  the whole block straight to its `potted_<content>` variant (the real
+  37-entry `POTTED_BY_CONTENT` map, reproduced from `Blocks.java`'s
+  registration list) and un-planting swaps it straight back, so persistence
+  rides the world's own block storage for free — no `StateAdapter` needed.
+  The one genuinely non-obvious part: every pottable plant item (saplings,
+  flowers, fungi, roots, azaleas, eyeblossoms) is ITSELF a real placeable
+  block, so Minestom's `BlockPlacementListener` (its own dispatcher, not a
+  vanilla-src class) never reaches `PlayerUseItemOnBlockEvent` for them —
+  a block-material item skips straight from the block-interact event to
+  normal block PLACEMENT once interact doesn't consume the click. Real
+  vanilla's own dispatch is item-first-with-block-fallback; Minestom's is
+  interact-first-with-item-fallback (`PlayerBlockInteractEvent` always
+  fires first and can call `setBlockingItemUse(true)` to suppress
+  everything after it) — so both planting AND un-planting are driven off
+  that single guaranteed event, reading the held item directly off
+  `player.getItemInHand(hand)`, reproducing vanilla's full outcome table
+  (empty pot + valid plant -> plants; empty pot + anything else -> no-op;
+  filled pot + ANY valid plant (matching or not) -> pure no-op, real
+  vanilla's `CONSUME`, does NOT extract; filled pot + anything else
+  including empty hand -> extracts). Not modeled:
+  `POTTED_OPEN_EYEBLOSSOM`/`POTTED_CLOSED_EYEBLOSSOM`'s random-tick
+  day/night auto-toggle (a biome `EnvironmentAttributes.EYEBLOSSOM_OPEN`
+  cosmetic swap, unrelated to planting/unplanting itself). 8 new PlayTest
+  checks (`scenarioFlowerPot`), covering the full outcome table including
+  the block-material dispatch-shortcut case (a potted sapling still
+  extracts correctly rather than being swallowed by normal block
+  placement).
 - TrialChambers.java (mine, for the record) — not modeled: ominous item
   spawner drips, per-mob ominous equipment loot tables, spawn-potential custom
   NBT (slime size etc.), vault client display-item cycling/connected-player
