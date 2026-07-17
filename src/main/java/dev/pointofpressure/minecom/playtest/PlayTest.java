@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 866;
+    private static final int EXPECTED_CHECK_COUNT = 890;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -256,6 +256,8 @@ public final class PlayTest {
         scenario("beacon: pyramid levels 1-4, beam needs clear sky (glass passes), menu validates + consumes payment, effects apply in range at the right amp", PlayTest::scenarioBeacon);
         scenario("conduit: 3x3x3 water gate + radius-2 prismarine ring gate activation (16) and hunting (42), power radius size/7*16, in-water power, hostile pulse", PlayTest::scenarioConduit);
         scenario("bee + beehive: pollination gains nectar, hive delivery advances honey, shears/bottle harvest at level 5, campfire sedation, anger + sting-once-then-die", PlayTest::scenarioBee);
+        scenario("map: empty map -> filled on use, live color sampling from the world, the holder's own player marker + heading, zoom crafting", PlayTest::scenarioMap);
+        scenario("signs + banners: front/back text edit/persistence, dye color, glow, wax-lock; banner duplicate + shield decoration crafting-special recipes", PlayTest::scenarioSignsAndBanners);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
         scenario("note block: instrument follows the block below, right-click cycles the note", PlayTest::scenarioNoteBlock);
         scenario("campfire: cooks raw food into its real recipe result and drops it", PlayTest::scenarioCampfire);
@@ -1370,6 +1372,237 @@ public final class PlayTest {
         check("a stung bee dies by exactly its 1200-tick STING_DEATH_COUNTDOWN (real vanilla's "
                 + "clamp guarantees the roll at that tick, not just eventually)", angryBee.isDead());
 
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Maps: an empty map used in the air becomes a filled map centred on the user (EmptyMap
+     * Item.use), live color sampling from the world (block_map_colors.json's base color x
+     * MapItem.update's brightness formula), the holder's own player-marker decoration (heading
+     * via calculateRotation's non-Nether branch), and zoom crafting (MapExtendingRecipe: filled
+     * map + 8 paper -> scale+1, capped at MAX_SCALE=4). FakeConnection.lastOfType lets this
+     * inspect the actual MapDataPacket sent, matching this harness's "assert real state, not a
+     * mocked stand-in" approach even for a client-bound packet.
+     */
+    private static void scenarioMap() {
+        clearEntitiesExceptPlayer();
+        int mx = 160, mz = 160;
+        for (int x = -4; x <= 4; x++)
+            for (int z = -4; z <= 4; z++)
+                world.setBlock(new BlockVec(mx + x, Y, mz + z), Block.STONE);
+        player.teleport(new Pos(mx + 0.5, Y + 1, mz + 0.5)).join();
+
+        // --- empty map -> filled map on use ---
+        player.setItemInMainHand(ItemStack.of(Material.MAP));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerUseItemEvent(
+                player, PlayerHand.MAIN, player.getItemInMainHand(), 0));
+        tick(1);
+        ItemStack held = player.getItemInMainHand();
+        check("using an empty map consumes it and hands back a filled_map carrying a map_id tag",
+                held.material() == Material.FILLED_MAP
+                        && held.hasTag(dev.pointofpressure.minecom.survival.Maps.MAP_ID));
+
+        // --- color sampling: the stone floor under the player samples to MapColors.STONE ---
+        dev.pointofpressure.minecom.survival.Maps.recomputeForTest(held, player);
+        // MapItemSavedData.createFresh snaps the origin to this scale's 128-block map-area
+        // grid, so the player's own map pixel isn't necessarily (64,64) — derive it the same
+        // way MapItem.update does, from the item's own stored center (scale 0 here).
+        int centerX = held.getTag(dev.pointofpressure.minecom.survival.Maps.CENTER_X);
+        int centerZ = held.getTag(dev.pointofpressure.minecom.survival.Maps.CENTER_Z);
+        int playerPixelX = Math.floorDiv(mx - centerX, 1) + 64;
+        int playerPixelZ = Math.floorDiv(mz - centerZ, 1) + 64;
+        byte packed = dev.pointofpressure.minecom.survival.Maps.colorAt(held, playerPixelX, playerPixelZ);
+        int sampledColorId = (packed & 0xFF) >> 2;
+        check("the stone floor under the player samples to MapColors.STONE's id ("
+                + dev.pointofpressure.minecom.data.MapColors.STONE.id() + ", got " + sampledColorId + ")",
+                sampledColorId == dev.pointofpressure.minecom.data.MapColors.STONE.id());
+
+        // --- player marker decoration: type 0 (PLAYER), position near map-center, real heading ---
+        var conn = (dev.pointofpressure.minecom.playtest.FakeConnection) player.getPlayerConnection();
+        var mapPacket = conn.lastOfType(net.minestom.server.network.packet.server.play.MapDataPacket.class);
+        check("a recompute sends a MapDataPacket with exactly one icon (the holder's own player marker)",
+                mapPacket != null && mapPacket.icons().size() == 1 && mapPacket.icons().get(0).type() == 0);
+        if (mapPacket != null && !mapPacket.icons().isEmpty()) {
+            player.setView(90f, 0f); // face east
+            dev.pointofpressure.minecom.survival.Maps.recomputeForTest(held, player);
+            var mapPacket2 = conn.lastOfType(net.minestom.server.network.packet.server.play.MapDataPacket.class);
+            byte facingNorth = mapPacket.icons().get(0).direction();
+            byte facingEast = mapPacket2.icons().get(0).direction();
+            check("the player marker's heading changes with the player's real yaw (north=" + facingNorth
+                    + ", east=" + facingEast + ")", facingNorth != facingEast);
+        }
+
+        // --- zoom: filled map + 8 paper -> scale+1, real MapExtendingRecipe semantics ---
+        ItemStack zoomed = dev.pointofpressure.minecom.survival.Maps.tryZoom(held);
+        check("zooming a scale-0 map (map_extending: 8 paper + a filled map) yields scale 1",
+                zoomed != null && zoomed.material() == Material.FILLED_MAP
+                        && Byte.valueOf((byte) 1).equals(zoomed.getTag(dev.pointofpressure.minecom.survival.Maps.SCALE)));
+        ItemStack maxScale = dev.pointofpressure.minecom.survival.Maps.create(mx, mz, (byte) 4, true, false);
+        check("a map already at MAX_SCALE=4 can't be zoomed further (MapExtendingRecipe.matches: scale<4)",
+                dev.pointofpressure.minecom.survival.Maps.tryZoom(maxScale) == null);
+
+        clearEntitiesExceptPlayer();
+        for (int x = -4; x <= 4; x++)
+            for (int z = -4; z <= 4; z++)
+                world.setBlock(new BlockVec(mx + x, Y, mz + z), Block.AIR);
+        resetPlayer();
+    }
+
+    /**
+     * Signs: front+back text edit/persistence, dye color, glow ink sac/ink sac, honeycomb
+     * waxing (blocks every further edit — SignBlock.useItemOn/useWithoutItem's isWaxed gate).
+     * Also covers the two banner crafting-special recipes (BannerDuplicateRecipe,
+     * ShieldDecorationRecipe) — real vanilla data-driven recipes this batch made reachable by
+     * building a patterned banner's DataComponents directly, standing in for "however a
+     * patterned banner was obtained" (see Banners' class doc for why the Loom UI itself, the
+     * only way a player could originate one, is out of scope).
+     */
+    private static void scenarioSignsAndBanners() {
+        clearEntitiesExceptPlayer();
+        int sx = 180, sz = 180;
+        BlockVec sign = new BlockVec(sx, Y + 1, sz);
+        world.setBlock(sign, Block.AIR);
+        player.teleport(new Pos(sx + 0.5, Y + 1, sz + 1.5)).join(); // south of the sign: faces it
+
+        // --- placing a sign auto-opens the real client editor protocol (front face first) —
+        // this is also what registers the placer as the allowed editor (SignBlock.
+        // openTextEdit -> setAllowedPlayerEditor), a real anti-griefing check this project
+        // ports faithfully: an edit from anyone else (or before any place/interact-open at
+        // all) is silently rejected, so the test drives the SAME real flow a client would. ---
+        EventDispatcher.call(new PlayerBlockPlaceEvent(player, world, Block.OAK_SIGN.withProperty("rotation", "0"),
+                net.minestom.server.instance.block.BlockFace.TOP, sign, new Vec(0.5, 0, 0.5), PlayerHand.MAIN));
+        world.setBlock(sign, Block.OAK_SIGN.withProperty("rotation", "0"));
+        tick(1);
+
+        check("a sign's front/back role follows the real vanilla angle formula (a player south "
+                + "of a rotation-0 sign reads its front)",
+                dev.pointofpressure.minecom.blocks.Signs.isFacingFrontText(sign, player.getPosition().x(), player.getPosition().z()));
+
+        var conn = (dev.pointofpressure.minecom.playtest.FakeConnection) player.getPlayerConnection();
+        var openPacket = conn.lastOfType(net.minestom.server.network.packet.server.play.OpenSignEditorPacket.class);
+        check("placing a sign sends OpenSignEditorPacket for its front face (real client auto-open)",
+                openPacket != null && openPacket.isFrontText());
+
+        // --- front text edit via the real protocol round trip (Minestom's own PlayerEditSignEvent) ---
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEditSignEvent(
+                player, world, world.getBlock(sign), sign,
+                List.of("Hello", "Minecom", "", ""), true));
+        String[] front = dev.pointofpressure.minecom.blocks.Signs.lines(sign, true);
+        check("editing a sign's front text persists the real lines (Hello/Minecom)",
+                front[0].equals("Hello") && front[1].equals("Minecom"));
+        String[] back = dev.pointofpressure.minecom.blocks.Signs.lines(sign, false);
+        check("the back face is untouched by a front-only edit", back[0].isEmpty());
+
+        // --- dye application only works once a face has a message (real vanilla's canApplyToSign) ---
+        // Front/back is decided purely by the PLAYER's position relative to the sign's own
+        // yaw (isFacingFrontText, decompile-verified) — not which BlockFace was clicked — so
+        // testing the blank back face means actually standing on the other side.
+        player.teleport(new Pos(sx + 0.5, Y + 1, sz - 1.5)).join(); // north of the sign: reads its back
+        check("standing north of a rotation-0 sign reads its back face",
+                !dev.pointofpressure.minecom.blocks.Signs.isFacingFrontText(sign, player.getPosition().x(), player.getPosition().z()));
+        useItemOnBlock(ItemStack.of(Material.BLUE_DYE), sign, BlockFace.NORTH); // hits the BLANK back face
+        check("dye on a sign face WITHOUT text is a no-op (canApplyToSign's hasMessage gate) — "
+                + "color unchanged, dye not consumed",
+                "black".equals(dev.pointofpressure.minecom.blocks.Signs.color(sign, false))
+                        && !player.getItemInMainHand().isAir());
+        player.setItemInMainHand(ItemStack.AIR);
+        player.teleport(new Pos(sx + 0.5, Y + 1, sz + 1.5)).join(); // back south: reads its front (has text)
+
+        useItemOnBlock(ItemStack.of(Material.RED_DYE), sign, BlockFace.SOUTH);
+        check("dye on a sign face WITH text sets its color and consumes the dye",
+                "RED".equals(dev.pointofpressure.minecom.blocks.Signs.color(sign, true))
+                        && player.getItemInMainHand().isAir());
+
+        // --- glow ink sac / ink sac ---
+        useItemOnBlock(ItemStack.of(Material.GLOW_INK_SAC), sign, BlockFace.SOUTH);
+        check("glow ink sac makes the (text-bearing) front face glow",
+                dev.pointofpressure.minecom.blocks.Signs.glowing(sign, true));
+        useItemOnBlock(ItemStack.of(Material.INK_SAC), sign, BlockFace.SOUTH);
+        check("a plain ink sac clears the glow back off",
+                !dev.pointofpressure.minecom.blocks.Signs.glowing(sign, true));
+
+        // --- honeycomb waxes: locks out every further edit, dye, and glow change ---
+        useItemOnBlock(ItemStack.of(Material.HONEYCOMB), sign, BlockFace.SOUTH);
+        check("honeycomb waxes the sign", dev.pointofpressure.minecom.blocks.Signs.isWaxed(sign));
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEditSignEvent(
+                player, world, world.getBlock(sign), sign, List.of("Changed", "", "", ""), true));
+        check("a waxed sign rejects further text edits", dev.pointofpressure.minecom.blocks.Signs.lines(sign, true)[0].equals("Hello"));
+        player.setItemInMainHand(ItemStack.of(Material.GREEN_DYE));
+        useItemOnBlock(ItemStack.of(Material.GREEN_DYE), sign, BlockFace.SOUTH);
+        check("a waxed sign rejects dye too (item not consumed)", !player.getItemInMainHand().isAir());
+        player.setItemInMainHand(ItemStack.AIR);
+
+        // --- persistence: front/back/color/glow/waxed survive a real save/wipe/reload ---
+        var signBase = java.nio.file.Path.of("target", "playtest-sign-persist");
+        dev.pointofpressure.minecom.Persist.setBaseDirForTest(signBase, world);
+        dev.pointofpressure.minecom.Persist.save();
+        dev.pointofpressure.minecom.Persist.wipeAdaptersForTest();
+        dev.pointofpressure.minecom.Persist.loadRegions(world);
+        check("a sign's front text/color and waxed state survive a save/wipe/reload",
+                "Hello".equals(dev.pointofpressure.minecom.blocks.Signs.lines(sign, true)[0])
+                        && "RED".equals(dev.pointofpressure.minecom.blocks.Signs.color(sign, true))
+                        && dev.pointofpressure.minecom.blocks.Signs.isWaxed(sign));
+
+        world.setBlock(sign, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+
+        // --- banners: the two real crafting-special recipes (BannerDuplicateRecipe, ShieldDecorationRecipe) ---
+        var creeperPattern = dev.pointofpressure.minecom.blocks.Banners.patternByName("creeper");
+        var patterned = new net.minestom.server.item.component.BannerPatterns(
+                List.of(new net.minestom.server.item.component.BannerPatterns.Layer(
+                        creeperPattern, net.minestom.server.color.DyeColor.BLACK)));
+        ItemStack sourceBanner = ItemStack.of(Material.RED_BANNER).with(DataComponents.BANNER_PATTERNS, patterned);
+        ItemStack blankBanner = ItemStack.of(Material.RED_BANNER);
+        ItemStack[] dupGrid = new ItemStack[9];
+        dupGrid[0] = sourceBanner;
+        dupGrid[4] = blankBanner;
+        ItemStack dupResult = dev.pointofpressure.minecom.blocks.Banners.matchSpecial(dupGrid);
+        check("BannerDuplicateRecipe: a patterned banner + a blank one of the SAME base color "
+                + "copies the pattern onto the blank one",
+                dupResult != null && dupResult.material() == Material.RED_BANNER
+                        && dupResult.get(DataComponents.BANNER_PATTERNS) != null
+                        && dupResult.get(DataComponents.BANNER_PATTERNS).layers().size() == 1);
+        java.util.Map<Integer, ItemStack> consumedTo = new java.util.HashMap<>();
+        dev.pointofpressure.minecom.blocks.Banners.consumeDuplicate(dupGrid, consumedTo::put);
+        check("BannerDuplicateRecipe.getRemainingItems: the patterned source survives at qty 1, "
+                + "the blank target is fully consumed (asymmetric — the one recipe in this "
+                + "project that doesn't consume everything)",
+                consumedTo.get(0) != null && !consumedTo.get(0).isAir() && consumedTo.get(0).amount() == 1
+                        && consumedTo.get(4) != null && consumedTo.get(4).isAir());
+
+        ItemStack blueBlank = ItemStack.of(Material.BLUE_BANNER);
+        ItemStack[] mismatchGrid = new ItemStack[9];
+        mismatchGrid[0] = sourceBanner;
+        mismatchGrid[4] = blueBlank;
+        check("BannerDuplicateRecipe rejects a mismatched base color (red source, blue target)",
+                dev.pointofpressure.minecom.blocks.Banners.matchSpecial(mismatchGrid) == null);
+
+        ItemStack shield = ItemStack.of(Material.SHIELD);
+        ItemStack[] shieldGrid = new ItemStack[9];
+        shieldGrid[0] = sourceBanner;
+        shieldGrid[4] = shield;
+        ItemStack shieldResult = dev.pointofpressure.minecom.blocks.Banners.matchSpecial(shieldGrid);
+        check("ShieldDecorationRecipe: a banner + a pattern-free shield produces a shield carrying "
+                + "the banner's base color and pattern layers",
+                shieldResult != null && shieldResult.material() == Material.SHIELD
+                        && net.minestom.server.color.DyeColor.RED.equals(shieldResult.get(DataComponents.BASE_COLOR))
+                        && shieldResult.get(DataComponents.BANNER_PATTERNS) != null
+                        && shieldResult.get(DataComponents.BANNER_PATTERNS).layers().size() == 1);
+
+        // --- placed banner: captures the item's patterns at place time, drops them back on break ---
+        BlockVec bannerPos = new BlockVec(sx, Y + 1, sz + 4);
+        world.setBlock(bannerPos, Block.AIR);
+        player.setItemInMainHand(sourceBanner);
+        var bannerPlace = new PlayerBlockPlaceEvent(player, world, Block.RED_BANNER,
+                net.minestom.server.instance.block.BlockFace.TOP, bannerPos, new Vec(0.5, 0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(bannerPlace);
+        world.setBlock(bannerPos, bannerPlace.getBlock());
+        check("a banner placed from a patterned item captures its patterns at place time",
+                dev.pointofpressure.minecom.blocks.Banners.patternsOf(bannerPos).layers().size() == 1);
+        world.setBlock(bannerPos, Block.AIR);
+        player.setItemInMainHand(ItemStack.AIR);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

@@ -72,11 +72,21 @@ public final class Crafting {
     }
 
     private static void recompute(Grid grid) {
-        ItemStack result = Recipes.matchCrafting(readGrid(grid), grid.width());
+        ItemStack[] cells = readGrid(grid);
+        ItemStack result = Banners.matchSpecial(cells);
+        if (result == null) result = Recipes.matchCrafting(cells, grid.width());
         grid.inv().setItemStack(grid.resultSlot(), result);
     }
 
     private static void consumeIngredients(Grid grid) {
+        ItemStack[] cells = readGrid(grid);
+        // BannerDuplicateRecipe.getRemainingItems: the source (patterned) banner survives at
+        // quantity 1 instead of being consumed like every other crafting-grid ingredient in
+        // this project — the one asymmetric-consumption recipe, so it needs its own path.
+        if (Banners.isDuplicateRecipe(cells)) {
+            Banners.consumeDuplicate(cells, (slot, stack) -> grid.inv().setItemStack(grid.gridSlots()[slot], stack));
+            return;
+        }
         for (int slot : grid.gridSlots()) {
             ItemStack stack = grid.inv().getItemStack(slot);
             if (!stack.isAir()) grid.inv().setItemStack(slot, stack.consume(1));

@@ -192,9 +192,11 @@ leftovers.
   the key-derived mirror of the oxidation handler's own next-stage lookup)
   — both cost 1 durability, no item consumed. Not modeled: axe log-stripping
   (AxeItem.STRIPPABLES — a separate, still-missing gap, no stripped-log
-  system in this codebase at all), sign-waxing (HoneycombItem also
-  implements SignApplicator — no sign block-entity/text system exists to
-  apply it to), particles/sounds (client-visual).
+  system in this codebase at all), particles/sounds (client-visual).
+  ~~sign-waxing (HoneycombItem also implements SignApplicator — no sign
+  block-entity/text system exists to apply it to)~~ **Done 2026-07-17
+  (Sonnet 5, Tier 3 batch 2, `blocks/Signs.java`)** — see the dedicated
+  signs/banners AUDIT entry.
 - ~~No attack-cooldown model~~ **DONE 2026-07-15 (Sonnet 5)** — Combat.java's
   player melee branch, decompile-verified against `Player.getAttackStrengthScale`/
   `getCurrentItemAttackStrengthDelay`/`baseDamageScaleFactor`/`canCriticalAttack`/
@@ -452,13 +454,14 @@ leftovers.
   unloaded space as air/non-obsidian instead of throwing — correct, not
   just safe, since real vanilla wouldn't find a portal frame in
   ungenerated space either.
-- No: chiseled bookshelves, decorated pots (break/insert), cauldrons (water/
-  lava/powder snow storage, bottle fill), bells (raid pings, ring on hit),
-  candles on cakes, item frames, armor stands, banners, signs (editing),
-  skulk, spore blossoms, big dripleaf tilt, pointed dripstone falling/
-  filling, scaffolding, ladders/vine climb speed (client-side anyway),
-  respawn-anchor charge particles. (each S-M; cauldron and bells most
-  player-visible) — ~~lodestone+compass~~ done (`Lodestone.java`, binding +
+- No: skulk, spore blossoms, big dripleaf tilt, pointed dripstone falling/
+  filling, ladders/vine climb speed (client-side anyway),
+  respawn-anchor charge particles. (each S-M) — chiseled bookshelves,
+  decorated pots, cauldrons, bells, candles on cakes, item frames, armor
+  stands, and scaffolding are all done, see their own entries elsewhere in
+  this file (this bullet is old and understates current coverage). ~~banners,
+  signs (editing)~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 2)** — see the
+  dedicated signs/banners entry below (this batch's item 3). ~~lodestone+compass~~ done (`Lodestone.java`, binding +
   splitting a single vs. stacked compass; `scenarioLodestone` playtest
   coverage). Lightning rod done 2026-07-11 (Fable):
   tracked-rod registry + 128-block strike redirect + 8gt pulse, weighted
@@ -927,8 +930,78 @@ leftovers.
   already run that physics locally and just report position, so only the
   parts a client can't authoritatively decide were modeled server-side).
   no eye of ender flight (locatestronghold
-  command instead), no maps, no bundles, no spyglass, no goat horns, no
-  shields BANNER patterns, no totem. (each S-M) ~~no ender pearl teleport~~
+  command instead), no bundles, no spyglass, no goat horns, no
+  shields BANNER patterns (see banners entry below), no totem. (each S-M)
+  ~~no maps~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 2)** —
+  `survival/Maps.java` (decompile-verified against `EmptyMapItem`/`MapItem`/
+  `MapItemSavedData`, 26.2) + `data/MapColors.java` (the ported `MapColor`
+  fixed table, id/RGB/brightness, selftest-verified) + `block_map_colors.json`
+  (`scripts/extract_map_colors.py`, parses the decompiled `Blocks.java`
+  registration calls directly — 612 block -> MapColor entries, `--validate`
+  checked against the live `MapColor.java` decompile). Empty map -> filled map
+  on use (centred + snapped to the scale's map-area grid, matching
+  `MapItemSavedData.createFresh`'s exact formula); identity (id/scale/centre/
+  tracking flags) rides on the item's own tags rather than a separate saved-
+  data file this project doesn't have, with the map id itself derived from
+  `hash(centerX, centerZ, scale)` instead of vanilla's insertion-order counter
+  (documented consequence: two maps created over the identical area+scale
+  share one color buffer, a deliberate simplification, not vanilla's own
+  behavior); color sampling (base color x brightness — water-depth or height-
+  delta shading, the real per-pixel formula) on a periodic full-radius pass
+  rather than vanilla's budgeted 1/16-columns-per-tick sweep (a bandwidth
+  optimization with no behavioral difference to the eventual color); the
+  holder's own player-marker decoration with real heading
+  (`calculateRotation`'s non-Nether branch); zoom crafting
+  (`MapExtendingRecipe`: filled map + 8 paper -> scale+1, capped at 4).
+  Not modeled: fog-of-war beyond the held-scan radius, banner/item-frame/
+  other-players' decorations, biome-preview (explorer) maps, the Nether's
+  spinning-icon branch, at-scale>0 per-pixel averaging (samples one corner
+  block instead of the full scale x scale footprint — exact at scale 0), and
+  persistence of the color buffer across a restart (session-scoped; the
+  item's own tags carry enough identity to rebuild it live on the next hold-
+  tick, matching this project's other "cheap enough not to persist" gaps).
+- ~~Signs (editing) + banners~~ **Done 2026-07-17 (Sonnet 5, Tier 3 batch 2)**
+  — `blocks/Signs.java` (decompile-verified against `SignBlockEntity`/
+  `SignBlock`/`SignText`/`StandingSignBlock`/`WallSignBlock`/`DyeItem`/
+  `GlowInkSacItem`/`InkSacItem`/`HoneycombItem`, all freshly decompiled) +
+  `blocks/Banners.java` (against `BannerBlockEntity`, plus the two
+  crafting-grid special recipes `BannerDuplicateRecipe`/
+  `ShieldDecorationRecipe`, recipes.json's already-bundled
+  `*_banner_duplicate`/`shield_decoration`). Signs: front+back text
+  independently tracked (4 lines/color/glow each), front-vs-back routed by
+  the real angle formula (`isFacingFrontText` — the sign's own yaw vs. the
+  ANGLE FROM THE SIGN TO THE PLAYER, not the player's own facing, a real
+  vanilla quirk ported faithfully), placing a sign auto-opens the real
+  client editor protocol (`OpenSignEditorPacket` -> client's
+  `ClientUpdateSignPacket` -> Minestom's own `PlayerEditSignEvent`, both
+  already built into Minestom and just wired up), `SignApplicator` items
+  (dye sets color, glow ink sac/ink sac toggle glow, honeycomb waxes) only
+  apply to a face that already has a message (`canApplyToSign`'s real gate
+  — honeycomb is the one exception, always allowed), waxing locks out every
+  further edit/dye/glow change, full persistence (front/back/color/glow/
+  waxed) round-trips a save/wipe/reload. Banners: patterns captured from
+  the placed item's `DataComponents.BANNER_PATTERNS` at place time (this
+  project has no generic block-entity/item-component bridge, same pattern
+  as DecoratedPot's held item), the two crafting-special recipes wired
+  ahead of the generic shaped/shapeless matcher in `Crafting.java`
+  (duplication needs the asymmetric consumption path — the source banner
+  survives, only the one recipe in this project that doesn't uniformly
+  consume every filled grid slot).
+  Simplifications: the client-rendered block NBT this project attaches for
+  sign text (`Signs.syncNbt`) is a best-effort vanilla-shaped compound not
+  independently verified against a live client in this headless-playtest
+  environment (the state machine itself — text/color/glow/wax routing,
+  persistence — is what PlayTest verifies); no click-command execution on
+  sign text (no rich-text click-event authoring path exists for players to
+  create one); no hanging signs (a distinct chain-suspended block family);
+  no banner custom name (`Nameable`); **the Loom UI/mechanic itself — the
+  only way real vanilla lets a player ORIGINATE a pattern layer (choosing a
+  pattern+dye combination with a live preview) — is not modeled at all**;
+  the two crafting-special recipes above are real and correct once a
+  patterned banner exists by some other means (loot, a command, or a
+  future loom pass), matching this batch's own "if cheap" framing for the
+  banner-on-shield ask.
+  ~~no ender pearl teleport~~
   **DONE 2026-07-15 (Sonnet 5, `survival/EnderPearls.java`)** — decompile-
   verified against EnderpearlItem/ThrownEnderpearl (26.2, freshly decompiled,
   no cached copy existed before): 1.5-shoot-unit throw, teleport-on-land

@@ -200,6 +200,8 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.ChiseledBookshelf.register(events);
         dev.pointofpressure.minecom.blocks.Lodestone.register(events);
         dev.pointofpressure.minecom.blocks.ItemFrames.register(events);
+        dev.pointofpressure.minecom.blocks.Signs.register(events, overworld);
+        dev.pointofpressure.minecom.blocks.Banners.register(events, overworld);
         dev.pointofpressure.minecom.blocks.ArmorStands.register(events);
         dev.pointofpressure.minecom.blocks.Beacons.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Conduits.register(events, overworld);
@@ -218,6 +220,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.survival.Crossbow.register(events);
         dev.pointofpressure.minecom.survival.Trident.register(events);
         dev.pointofpressure.minecom.survival.EnderPearls.register(events);
+        dev.pointofpressure.minecom.survival.Maps.register(events, overworld);
         dev.pointofpressure.minecom.survival.Elytra.register(events);
         dev.pointofpressure.minecom.blocks.Portals.register(events, overworld, nether);
         WeatherCycle.start(overworld);

@@ -14,6 +14,64 @@ of what got escalated and why.
 
 ---
 
+## Tier 3 parity batch 2 CLOSED (2026-07-17, Sonnet 5) — v0.27.0, maps + signs/banners land items 2+3, no escalation
+
+Finishes the batch item 1 (bees/beehives) started below. Both items landed as one commit
+(they shared a review/verification pass and neither is independently tag-worthy alone).
+
+**Maps** (`survival/Maps.java`, decompile-verified against `EmptyMapItem`/`MapItem`/
+`MapItemSavedData`) + `data/MapColors.java` (the ported `MapColor` fixed table) +
+`block_map_colors.json` (`scripts/extract_map_colors.py`, parses the decompiled
+`Blocks.java` registration calls — 612 block -> MapColor entries). Empty map -> filled map
+on use, real color sampling (base color x brightness, water-depth/height-delta shading),
+the holder's own player marker + heading, zoom crafting (`MapExtendingRecipe`). Full detail
+in AUDIT.md's maps entry.
+
+**Signs + banners** (`blocks/Signs.java` + `blocks/Banners.java`, decompile-verified against
+`SignBlockEntity`/`SignBlock`/`SignText`/the `SignApplicator` items, and
+`BannerBlockEntity`/`BannerDuplicateRecipe`/`ShieldDecorationRecipe`). Signs: front+back
+text edit/persistence via the real client protocol round trip (already built into
+Minestom, just wired up), dye/glow/wax application gated exactly like real vanilla
+(`canApplyToSign`'s hasMessage check). Banners: pattern capture at place time + the two
+crafting-special recipes (banner duplication, shield decoration) wired into `Crafting.java`
+ahead of the generic matcher. **Deliberately NOT modeled: the Loom UI itself** — the only
+way a player originates a pattern in real vanilla — out of scope for this batch's "S" sizing;
+the two crafting recipes above are real and correct once a patterned banner exists by some
+other means. Full detail in AUDIT.md's signs/banners entry.
+
+**Two real bugs found and fixed during verification (not shrugged off, per rule 8):**
+1. `Signs.applyItem` called `held.consume(1);` without capturing the return value —
+   `ItemStack` is immutable, so this was a silent no-op; the dye/glow/wax items were never
+   actually consumed from the player's hand (only the sign-side state changed). Caught by a
+   playtest check that verifies BOTH the resulting state AND the consumption, not just one —
+   a reminder that a check verifying only half of a two-sided interaction can pass on a
+   broken implementation.
+2. The scenario's own first draft called `Signs.track(pos)` directly to register a sign
+   instead of going through a real `PlayerBlockPlaceEvent`, which never set the "allowed
+   editor" UUID a real placement does — every text-edit check failed until the scenario was
+   rewritten to drive the actual place-event flow, which is also just a more honest test of
+   the real interaction path.
+
+**Two more PRE-EXISTING, unrelated flakes surfaced across the repeated full-suite runs this
+session while chasing a clean pair** (not caused by this batch — none of the touched files):
+`[crossbow] piercing level 1 hits both the near and far target` and `[fire spread] fire
+spreads onto an air block near (not touching) a flammable neighbor` and `[conduit] a dry
+player gains no Conduit Power` — same class as the already-logged trident/elder-guardian/
+enderman/crossbow flakes elsewhere in this file (real-time `waitFor` on physics/probability
+under system load; this laptop had an active desktop session with several Brave tabs +
+another Claude instance running during some of these runs, load average up to 4.85). Two
+final consecutive fully-green PlayTest runs achieved once load dropped below 2
+(test-logs/tier3b2_full_pt_7.log, tier3b2_full_pt_8.log — 890/890 both times, no DIAG silk,
+no check-count drift) plus a clean SelfTest (242/242, was 234 — the +8 are the new MapColors
+checks). Logged per rule 3/8 rather than chased further — none of these scenarios' files were
+touched this session.
+
+**Coverage**: +6 PlayTest checks (scenarioMap), +18 PlayTest checks (scenarioSignsAndBanners),
++8 SelfTest checks (MapColors fixed-table). EXPECTED_CHECK_COUNT 866 -> 890 (bee's 866 + 24).
+Tagged v0.27.0.
+
+---
+
 ## Tier 3 parity batch 2, item 1/3 landed (2026-07-17, Sonnet 5) — bees + beehives, no escalation
 
 Not an escalation — a progress note (mid-batch: maps and signs/banners still in flight this

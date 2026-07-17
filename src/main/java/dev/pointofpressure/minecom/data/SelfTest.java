@@ -1499,6 +1499,51 @@ public final class SelfTest {
                         && dev.pointofpressure.minecom.blocks.Conduits.effectRange(36) == 80
                         && dev.pointofpressure.minecom.blocks.Conduits.effectRange(42) == 96);
 
+        // MapColors: the fixed 62-entry id/RGB table + brightness/pack-id roundtrip, ported
+        // verbatim from decompiled MapColor.java (a "perfect fixed-table" case per its own
+        // class doc — every value here is a literal transcription, not a formula).
+        check("MapColor: id 0 is NONE (RGB 0, transparent)",
+                dev.pointofpressure.minecom.data.MapColors.NONE.id() == 0
+                        && dev.pointofpressure.minecom.data.MapColors.NONE.rgb() == 0);
+        check("MapColor: id/RGB spot-checks match the decompiled table (GRASS=1/8368696, "
+                + "WATER=12/4210943, DIAMOND=31/6085589, DEEPSLATE=59/6579300, GLOW_LICHEN=61/8365974)",
+                dev.pointofpressure.minecom.data.MapColors.GRASS.id() == 1
+                        && dev.pointofpressure.minecom.data.MapColors.GRASS.rgb() == 8368696
+                        && dev.pointofpressure.minecom.data.MapColors.WATER.id() == 12
+                        && dev.pointofpressure.minecom.data.MapColors.WATER.rgb() == 4210943
+                        && dev.pointofpressure.minecom.data.MapColors.DIAMOND.id() == 31
+                        && dev.pointofpressure.minecom.data.MapColors.DIAMOND.rgb() == 6085589
+                        && dev.pointofpressure.minecom.data.MapColors.DEEPSLATE.id() == 59
+                        && dev.pointofpressure.minecom.data.MapColors.DEEPSLATE.rgb() == 6579300
+                        && dev.pointofpressure.minecom.data.MapColors.GLOW_LICHEN.id() == 61
+                        && dev.pointofpressure.minecom.data.MapColors.GLOW_LICHEN.rgb() == 8365974);
+        check("MapColor.byId(0..61) round-trips every defined constant, byId(62) falls back to NONE (only 0-61 are defined)",
+                dev.pointofpressure.minecom.data.MapColors.byId(11) == dev.pointofpressure.minecom.data.MapColors.STONE
+                        && dev.pointofpressure.minecom.data.MapColors.byId(62) == dev.pointofpressure.minecom.data.MapColors.NONE
+                        && dev.pointofpressure.minecom.data.MapColors.byId(63) == dev.pointofpressure.minecom.data.MapColors.NONE);
+        check("MapColor.byName resolves block_map_colors.json's exact constant-name strings, unknown names fall back to NONE",
+                dev.pointofpressure.minecom.data.MapColors.byName("WOOD") == dev.pointofpressure.minecom.data.MapColors.WOOD
+                        && dev.pointofpressure.minecom.data.MapColors.byName("NOT_A_REAL_COLOR") == dev.pointofpressure.minecom.data.MapColors.NONE
+                        && dev.pointofpressure.minecom.data.MapColors.byName(null) == dev.pointofpressure.minecom.data.MapColors.NONE);
+        check("MapColor.calculateARGB: NONE is fully transparent (0) regardless of brightness",
+                dev.pointofpressure.minecom.data.MapColors.calculateARGB(
+                        dev.pointofpressure.minecom.data.MapColors.NONE,
+                        dev.pointofpressure.minecom.data.MapColors.Brightness.HIGH) == 0);
+        check("MapColor.calculateARGB: HIGH (255/255) reproduces the base RGB exactly, opaque alpha",
+                dev.pointofpressure.minecom.data.MapColors.calculateARGB(
+                        dev.pointofpressure.minecom.data.MapColors.GRASS,
+                        dev.pointofpressure.minecom.data.MapColors.Brightness.HIGH)
+                        == (0xFF000000 | 8368696));
+        check("MapColor.calculateARGB: LOW/NORMAL/LOWEST scale each channel by modifier/255 (ARGB.scaleRGB), "
+                + "STONE(7368816) LOW channel-by-channel",
+                argbMatches(dev.pointofpressure.minecom.data.MapColors.calculateARGB(
+                                dev.pointofpressure.minecom.data.MapColors.STONE,
+                                dev.pointofpressure.minecom.data.MapColors.Brightness.LOW),
+                        7368816, 180));
+        check("MapColor.getPackedId/colorFromPackedId round-trip every (id, brightness) pair losslessly "
+                + "(the id<<2|brightness byte packing every map pixel uses)",
+                packedIdRoundTrips());
+
         emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
             emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
@@ -1526,6 +1571,30 @@ public final class SelfTest {
 
     private static ItemStack stack(Material m) {
         return m == null ? ItemStack.AIR : ItemStack.of(m);
+    }
+
+    /** ARGB.scaleRGB(color, int scale): each channel independently channel*scale/255, clamped. */
+    private static boolean argbMatches(int argb, int baseRgb, int modifier) {
+        int expectedR = Math.min(255, (baseRgb >> 16 & 0xFF) * modifier / 255);
+        int expectedG = Math.min(255, (baseRgb >> 8 & 0xFF) * modifier / 255);
+        int expectedB = Math.min(255, (baseRgb & 0xFF) * modifier / 255);
+        int expected = (0xFF << 24) | (expectedR << 16) | (expectedG << 8) | expectedB;
+        return argb == expected;
+    }
+
+    private static boolean packedIdRoundTrips() {
+        for (int id = 0; id <= 61; id++) {
+            MapColors.Color color = MapColors.byId(id);
+            for (MapColors.Brightness b : MapColors.Brightness.values()) {
+                byte packed = MapColors.getPackedId(color, b);
+                int decodedArgb = MapColors.colorFromPackedId(packed);
+                int expectedArgb = MapColors.calculateARGB(color, b);
+                if (decodedArgb != expectedArgb) return false;
+                if (((packed & 0xFF) >> 2) != id) return false;
+                if (((packed & 0xFF) & 3) != b.id) return false;
+            }
+        }
+        return true;
     }
 
     private static void check(String name, boolean ok) {
