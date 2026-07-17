@@ -850,9 +850,14 @@ public final class PlayTest {
                         && world.getBlock(pos3).key().value().equals("suspicious_sand"));
         check("the dusted property resets to 0 alongside the decayed count", "0".equals(dustedOf(pos3)));
 
-        world.setBlock(pos, Block.AIR);
-        world.setBlock(pos2, Block.AIR);
-        world.setBlock(pos3, Block.AIR);
+        // Restore STONE, not AIR: these positions are at Y (the shared flat
+        // floor is fillHeight(...STONE)), so AIR-ing them punched holes a later
+        // scenario's mob pathfinding refused to cross — it broke the
+        // piglin-flees-soul-campfire check downstream (full-run only, clean in
+        // isolation; 2026-07-17 batch-4 determinism fix).
+        world.setBlock(pos, Block.STONE);
+        world.setBlock(pos2, Block.STONE);
+        world.setBlock(pos3, Block.STONE);
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

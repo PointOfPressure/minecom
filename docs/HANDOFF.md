@@ -14,6 +14,33 @@ of what got escalated and why.
 
 ---
 
+## v0.29.0 gate: archaeology floor-hole determinism bug fixed + fragile-check population flagged (2026-07-17, Fable)
+
+Batch-4's full playtest failed 940/941 on `[piglin] flees a nearby soul
+campfire` — TWICE consecutively, but clean 3/3 in isolation. Root-caused to a
+REAL cross-scenario determinism bug (not a flake): `scenarioArchaeology`
+places suspicious blocks at floor level (0,Y,0)/(4,Y,0)/(8,Y,0) then cleaned
+up with `Block.AIR`, punching holes in the shared STONE floor. The piglin
+(spawned 4.5,Y+1,0.5) flees WEST straight across (4,Y,0); mob pathfinding
+won't cross a gap, so it couldn't flee 2 blocks -> check failed. In isolation
+no archaeology runs, floor intact, passes. Fixed at source: archaeology now
+restores `Block.STONE`, not AIR (PlayTest.java ~:853). Verified 941/941 clean.
+(waitFor is tick-counted/load-immune — confirming the failure was STATE, not
+timing, which is what pointed at contamination.)
+
+**Backlog item — fragile-check population is regrowing (needs a v0.21.1-style
+hardening pass).** Chasing the clean 941 run also surfaced a variance flake
+`[combat] sprint vs standing knockback` (single-sample physics comparison,
+isolation-clean 3/3). This is the same class v0.21.1 structurally fixed, and
+it's regrowing as the suite passes ~940 checks: the last few releases needed
+2-3 full-run attempts to hit a clean gate. Known members: trident riptide,
+crossbow piercing, fire spread, elder guardian, enderman, conduit dry-player,
+combat sprint-knockback. A dedicated pass converting these measurement-window
+checks to conserved-quantity/state gates (the grindstone-fix pattern) would
+remove the per-release flake tax. Not a 5am one-off — scope it as its own task.
+
+---
+
 ## Tier 3 parity batch 4 (2026-07-17, Sonnet 5) — bundles + archaeology + goat horns, no escalation
 
 Not an escalation — a progress note, same convention as batches 1-2. Picked up after
