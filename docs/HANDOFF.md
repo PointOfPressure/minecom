@@ -59,6 +59,21 @@ combat sprint-knockback. A dedicated pass converting these measurement-window
 checks to conserved-quantity/state gates (the grindstone-fix pattern) would
 remove the per-release flake tax. Not a 5am one-off — scope it as its own task.
 
+Head starts for that pass (root-caused 2026-07-17, fixes deliberately NOT
+rushed):
+- **allay carry-slot** — FIXED (bounded pickup budget vs single-tick assert,
+  commit a80fb0d). The clean template for the timing-margin ones.
+- **combat sprint-knockback** (PlayTest ~5050-5072) — NOT a charge issue (both
+  hits reset charge). The sprint impulse is added in the player's facing/move
+  direction while base knockback points attacker->target; the player's facing
+  relative to the zombie is uncontrolled, so the sprint impulse sometimes
+  partially cancels the base knockback and the sprint total drops below the
+  standing total (observed sprint=13.92 < standing=14.29). Fix: pin the
+  player's yaw to face the zombie (align impulse with base knockback) before
+  both hits, OR assert the sprint impulse magnitude directly rather than the
+  net-velocity comparison. Needs a careful read of Combat's knockback-direction
+  logic first — physics-direction, easy to mask a real bug if rushed.
+
 ---
 
 ## Tier 3 parity batch 4 (2026-07-17, Sonnet 5) — bundles + archaeology + goat horns, no escalation
