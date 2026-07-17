@@ -1649,10 +1649,20 @@ public final class PlayTest {
         ItemEntity dropped = new ItemEntity(ItemStack.of(Material.COMPASS, 2));
         dropped.setInstance(world, new Pos(cx + 0.5, cy + 1, cz + 0.5));
         for (int i = 0; i < 12; i++) tick(1); // ItemEntity settle gate (aliveTicks >= 10)
-        dev.pointofpressure.minecom.mobs.Allays.tickForTest(allay);
+        // Give the allay a bounded budget to path-and-collect rather than
+        // asserting after exactly one tick — a single tickForTest was ~1/3
+        // flaky (the pickup logic isn't guaranteed in one tick). Still asserts
+        // the exact result (COMPASS x2 in the carry slot), just robustly
+        // (2026-07-17 fragile-check hardening, grindstone/v0.21.1 pattern).
+        boolean carried = false;
+        for (int i = 0; i < 20 && !carried; i++) {
+            dev.pointofpressure.minecom.mobs.Allays.tickForTest(allay);
+            tick(1);
+            var carry = dev.pointofpressure.minecom.mobs.Allays.extraInventory(allay);
+            carried = carry.material() == Material.COMPASS && carry.amount() == 2;
+        }
         check("a matching dropped item within reach is picked up into the allay's carry slot (2 compasses)",
-                dev.pointofpressure.minecom.mobs.Allays.extraInventory(allay).material() == Material.COMPASS
-                        && dev.pointofpressure.minecom.mobs.Allays.extraInventory(allay).amount() == 2);
+                carried);
 
         // --- deposit: back within range, the carried extras get thrown at the liked player ---
         player.teleport(new Pos(cx + 0.5, cy + 1, cz + 0.5)).join();
