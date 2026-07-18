@@ -14,6 +14,49 @@ of what got escalated and why.
 
 ---
 
+## Fragile-check hardening: allay deposit + totem (2026-07-18, Sonnet 5)
+
+Closes the two items the masterplan's "fragile-check lane" flagged (allay-deposit/
+totem-offhand observed load-flakes). Both root-caused by reproducing under real
+CPU contention (a `nice -n 0` busy loop stealing a core, `nice -n 15` on the
+suite itself — the CONVENTIONS §10 flake SLO's own prescribed method) rather than
+guessed at:
+
+1. **Allay deposit** (`scenarioAllay`, PlayTest ~1673) — the exact same shape as
+   the already-fixed pickup check (commit a80fb0d): asserted after exactly one
+   `tickForTest`, but the deposit-and-throw isn't guaranteed in one tick. 4/5
+   failures reproduced under one-core contention; fixed with the identical
+   bounded-budget pattern (up to 20 tick-cycles), still asserting the exact
+   result. 20/20 clean under the same contention after the fix.
+2. **Totem of undying** (`scenarioTotem`, PlayTest ~6127) — NOT actually
+   off-hand-specific (a batch of 15 isolated runs under load caught the
+   MAIN-hand check failing too, disproving the original hand-order framing).
+   Real mechanism, found via a failure-only DIAG print (health/isDead/
+   effects at failure): the `tick(1)` after `player.damage()` bought a free
+   chance for `Potions.tickEffects` — a GLOBAL `TaskSchedule.tick(25)`
+   scheduled task, independent of any single player's state — to fire and
+   heal +1 HP for whichever player has Regeneration active, which the totem
+   itself had *just* granted. Health landed at 2.0 instead of 1.0 (totem
+   correctly consumed, effects correctly granted — a background-scheduler
+   collision, not a `Totems.java` bug). Fix: removed the `tick(1)` entirely —
+   everything `Totems.checkDeathProtection` does runs synchronously inside
+   `player.damage()`'s own event dispatch (`Entity.addEffect` has no
+   queueing), so nothing here ever needed a tick to settle; checking
+   immediately closes the window instead of masking it. 40/40 clean under
+   one-core contention after the fix (a first attempt that instead gated on
+   `player.setFood()` to suppress the OTHER (unrelated, Survival.java-side)
+   natural-regen path only cut the failure rate, confirming it was treating
+   a red herring — left out of the final diff).
+
+Also landed in the same session (separate AUDIT gap, not fragile-check related):
+`crafting_imbue` special recipe wiring (`data/Recipes.java`) — see AUDIT.md's
+Potions.java entry. EXPECTED_CHECK_COUNT 1002 -> 1005. Full suite: 1005/1005
+clean, no WARNING. Not tagged — per orchestration convention this session
+reports commits/counts, the orchestrator runs the final green-bar and tags
+v0.34.0.
+
+---
+
 ## P1 opening move landed on the Threadripper — what's left in the noise era (2026-07-17, Fable)
 
 Four commits on `p1-noise` (c5eaaba, 3dbd9d9, d31494b, 0145e10), each gated

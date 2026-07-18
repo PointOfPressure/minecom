@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 1002;
+    private static final int EXPECTED_CHECK_COUNT = 1005;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -1672,9 +1672,18 @@ public final class PlayTest {
 
         // --- deposit: back within range, the carried extras get thrown at the liked player ---
         player.teleport(new Pos(cx + 0.5, cy + 1, cz + 0.5)).join();
-        dev.pointofpressure.minecom.mobs.Allays.tickForTest(allay);
+        // Same bounded-budget pattern as the pickup check above: a single
+        // tickForTest isn't guaranteed to complete the deposit-and-throw in one
+        // tick, so this was ~load-sensitive-flaky asserting after exactly one
+        // (2026-07-18 fragile-check hardening, allay pickup precedent a80fb0d).
+        boolean deposited = false;
+        for (int i = 0; i < 20 && !deposited; i++) {
+            dev.pointofpressure.minecom.mobs.Allays.tickForTest(allay);
+            tick(1);
+            deposited = dev.pointofpressure.minecom.mobs.Allays.extraInventory(allay).isAir();
+        }
         check("once back within throw range of its liked player, the allay deposits its carried extras",
-                dev.pointofpressure.minecom.mobs.Allays.extraInventory(allay).isAir());
+                deposited);
 
         // --- take: an empty-handed approach gives the held item back and forgets the player ---
         player.setItemInMainHand(ItemStack.AIR);
@@ -5561,6 +5570,34 @@ public final class PlayTest {
                 zombie.getActiveEffects().stream()
                         .anyMatch(t -> t.potion().effect() == net.minestom.server.potion.PotionEffect.SLOWNESS));
 
+        // --- crafting_imbue: the acquisition-pipeline gap AUDIT.md flagged (arrows + a
+        // lingering potion -> real tipped arrows), ImbueRecipe.matches/assemble (26.2,
+        // vanilla-src/net/minecraft/world/item/crafting/ImbueRecipe.java): source ingredient
+        // in the exact center of a full 3x3, material filling the other 8, no sliding/mirror
+        // like a normal shaped recipe. Direct grid array against Recipes.matchCrafting, same
+        // precedent as BannerDuplicateRecipe/ShieldDecorationRecipe's tests above (a real
+        // crafting-table UI adds nothing this doesn't already exercise).
+        ItemStack lingeringPotion = ItemStack.of(Material.LINGERING_POTION).with(b ->
+                b.set(net.minestom.server.component.DataComponents.POTION_CONTENTS,
+                        new net.minestom.server.item.component.PotionContents(
+                                net.minestom.server.potion.PotionType.SLOWNESS)));
+        ItemStack[] imbueGrid = new ItemStack[9];
+        for (int i = 0; i < 9; i++) imbueGrid[i] = i == 4 ? lingeringPotion : ItemStack.of(Material.ARROW);
+        ItemStack imbueResult = dev.pointofpressure.minecom.data.Recipes.matchCrafting(imbueGrid, 3);
+        check("crafting_imbue: 8 arrows + a lingering potion (center) yields 8 tipped arrows "
+                        + "carrying the potion's effect",
+                imbueResult.material() == Material.TIPPED_ARROW && imbueResult.amount() == 8
+                        && imbueResult.get(net.minestom.server.component.DataComponents.POTION_CONTENTS) != null
+                        && imbueResult.get(net.minestom.server.component.DataComponents.POTION_CONTENTS).potion()
+                                == net.minestom.server.potion.PotionType.SLOWNESS);
+        imbueGrid[0] = ItemStack.of(Material.STICK); // one non-arrow cell breaks the match
+        check("crafting_imbue rejects a non-material item in a surrounding cell",
+                dev.pointofpressure.minecom.data.Recipes.matchCrafting(imbueGrid, 3).isAir());
+        ItemStack[] imbueOnPlayerGrid = new ItemStack[4];
+        for (int i = 0; i < 4; i++) imbueOnPlayerGrid[i] = i == 0 ? lingeringPotion : ItemStack.of(Material.ARROW);
+        check("crafting_imbue never matches the player's 2x2 grid (real recipe needs a full 3x3)",
+                dev.pointofpressure.minecom.data.Recipes.matchCrafting(imbueOnPlayerGrid, 2).isAir());
+
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
@@ -6092,7 +6129,20 @@ public final class PlayTest {
         player.setHealth(1f);
         player.setItemInMainHand(ItemStack.of(Material.TOTEM_OF_UNDYING));
         player.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 5f);
-        tick(1);
+        // No tick() here, deliberately: Totems.checkDeathProtection runs synchronously inside
+        // player.damage()'s own EntityDamageEvent dispatch (cancel, consume the totem,
+        // player.setHealth(1f), grant the 3 effects — all direct calls, Entity.addEffect has no
+        // queueing, see Entity.java's own addEffect: straight list mutation), so every one of
+        // these checks is already true the instant damage() returns. A tick() used to run here
+        // anyway, which bought Potions.tickEffects — a GLOBAL scheduled task
+        // (MinecraftServer.getSchedulerManager()...repeat(TaskSchedule.tick(25)), Potions.java)
+        // that heals +1 HP for ANY player with Regeneration active — a free chance to fire in
+        // the exact window between the totem's setHealth(1f) and this assertion, since the totem
+        // itself just granted Regeneration II. Root-caused 2026-07-18 fragile-check hardening:
+        // reproduced under load with a DIAG print, health landed at 2.0 (totem correctly
+        // consumed, Regeneration correctly granted — an unrelated background scheduler
+        // collision, not a Totems.java bug). Removing the needless tick() closes the window
+        // instead of masking it (CLAUDE.md rule 8: state gates, not wider tolerances).
         check("a lethal hit with a totem in the main hand survives at 1 HP instead of dying",
                 !player.isDead() && player.getHealth() == 1f);
         check("the totem is consumed (main hand now empty)", player.getItemInMainHand().isAir());
@@ -6112,7 +6162,7 @@ public final class PlayTest {
         player.setHealth(1f);
         player.setItemInOffHand(ItemStack.of(Material.TOTEM_OF_UNDYING));
         player.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 5f);
-        tick(1);
+        // Same reasoning as the main-hand case above: no tick() needed or wanted here.
         check("an off-hand totem also saves the player (real vanilla checks main then off hand)",
                 !player.isDead() && player.getHealth() == 1f);
         check("the off-hand totem is consumed", player.getItemInOffHand().isAir());

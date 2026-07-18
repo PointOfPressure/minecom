@@ -33,6 +33,16 @@ public final class Recipes {
     private record Shaped(int width, int height, Ingredient[] cells, ItemStack result) {}
     private record Shapeless(List<Ingredient> ingredients, ItemStack result) {}
 
+    /** ImbueRecipe (26.2, freshly decompiled {@code vanilla-src/net/minecraft/world/item/
+     * crafting/ImbueRecipe.java}): a fixed 3x3 shape — source ingredient in the exact center
+     * cell, material ingredient filling all 8 surrounding cells, no sliding/mirroring like
+     * {@link Shaped} (real vanilla's {@code matches} requires {@code input.width() == 3 &&
+     * input.height() == 3} exactly). {@code assemble} copies the center slot's own
+     * {@code POTION_CONTENTS} onto the result — the one recipe kind whose output isn't a
+     * static {@link ItemStack}, hence the dedicated {@link #matchImbue} below rather than
+     * folding into the generic shaped table. */
+    private record Imbue(Ingredient source, Ingredient material, ItemStack result) {}
+
     /** One stonecutting recipe's result, plus its own recipe id — kept alongside the result so
      * {@link #indexStonecutting} can sort each ingredient's candidate list into a stable order
      * once every recipe has been collected (see that method's doc for why). */
@@ -40,6 +50,7 @@ public final class Recipes {
 
     private static final List<Shaped> SHAPED = new ArrayList<>();
     private static final List<Shapeless> SHAPELESS = new ArrayList<>();
+    private static final List<Imbue> IMBUE = new ArrayList<>();
     private static final Map<String, Smelt> SMELTING = new HashMap<>();
     private static final Map<String, Smelt> BLASTING = new HashMap<>();
     private static final Map<String, Smelt> SMOKING = new HashMap<>();
@@ -50,6 +61,7 @@ public final class Recipes {
     static void index() {
         SHAPED.clear();
         SHAPELESS.clear();
+        IMBUE.clear();
         SMELTING.clear();
         BLASTING.clear();
         SMOKING.clear();
@@ -60,6 +72,7 @@ public final class Recipes {
             switch (VanillaData.path(r.get("type").getAsString())) {
                 case "crafting_shaped" -> indexShaped(r);
                 case "crafting_shapeless" -> indexShapeless(r);
+                case "crafting_imbue" -> indexImbue(r);
                 case "smelting" -> indexSmelting(r);
                 case "blasting" -> indexBlasting(r);
                 case "smoking" -> indexSmoking(r);
@@ -164,6 +177,14 @@ public final class Recipes {
         SHAPELESS.add(new Shapeless(ingredients, result));
     }
 
+    private static void indexImbue(JsonObject r) {
+        ItemStack result = result(r);
+        if (result.isAir()) return;
+        Ingredient source = ingredient(r.get("source"));
+        Ingredient material = ingredient(r.get("material"));
+        IMBUE.add(new Imbue(source, material, result));
+    }
+
     private static void indexSmelting(JsonObject r) {
         ItemStack result = result(r);
         if (result.isAir()) return;
@@ -211,6 +232,10 @@ public final class Recipes {
     /** Match a row-major width×width crafting grid; returns result or AIR. */
     public static ItemStack matchCrafting(ItemStack[] grid, int width) {
         int height = grid.length / width;
+        if (width == 3 && height == 3) {
+            ItemStack imbued = matchImbue(grid);
+            if (!imbued.isAir()) return imbued;
+        }
         for (Shaped s : SHAPED) {
             if (s.width() <= width && s.height() <= height && matchShaped(s, grid, width, height)) {
                 return s.result();
@@ -234,6 +259,29 @@ public final class Recipes {
                 if (!found) continue outer;
             }
             return s.result();
+        }
+        return ItemStack.AIR;
+    }
+
+    /** ImbueRecipe.matches/assemble: exact-center source, all 8 surrounding cells the
+     * material, result carries the center slot's own POTION_CONTENTS (e.g. a lingering
+     * potion's effect riding onto the tipped arrows it imbues). */
+    private static ItemStack matchImbue(ItemStack[] grid) {
+        if (grid.length != 9) return ItemStack.AIR;
+        ItemStack center = grid[4];
+        if (center == null || center.isAir()) return ItemStack.AIR;
+        for (Imbue r : IMBUE) {
+            if (!r.source().matches(center)) continue;
+            boolean ok = true;
+            for (int i = 0; i < grid.length && ok; i++) {
+                if (i == 4) continue;
+                ItemStack stack = grid[i];
+                if (stack == null || stack.isAir() || !r.material().matches(stack)) ok = false;
+            }
+            if (!ok) continue;
+            var potion = center.get(net.minestom.server.component.DataComponents.POTION_CONTENTS);
+            ItemStack result = r.result();
+            return potion != null ? result.with(net.minestom.server.component.DataComponents.POTION_CONTENTS, potion) : result;
         }
         return ItemStack.AIR;
     }

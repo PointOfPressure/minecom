@@ -1144,12 +1144,23 @@ leftovers.
   timing to test `Combat.projectileHit`'s effect application in isolation
   (real projectile flight/collision is this project's own documented flake
   class — trident riptide, crossbow piercing, etc. — irrelevant to what this
-  change actually touches). Not modeled: the `crafting_imbue` special
-  recipe (8 arrows + a lingering potion -> 8 tipped arrows) — bundled recipe
-  data exists (`recipes.json`'s `tipped_arrow` entry) but `Crafting.java`
-  doesn't dispatch that recipe type yet, a separate acquisition-pipeline gap,
-  not blocking since loot already supplies real tipped arrows; a
-  creative-mode or Infinity-enchanted shot still always fires a plain arrow
+  change actually touches). ~~Not modeled: the `crafting_imbue` special
+  recipe (8 arrows + a lingering potion -> 8 tipped arrows)~~ **done
+  2026-07-18 (Sonnet 5)** — decompile-verified against freshly-decompiled
+  `ImbueRecipe` (26.2, `vanilla-src/net/minecraft/world/item/crafting/
+  ImbueRecipe.java`): a fixed 3x3 shape (source ingredient in the exact
+  center cell, material filling the other 8, no sliding/mirroring like a
+  normal shaped recipe — real vanilla's `matches` requires the input to BE
+  a 3x3, so it never matches the player's 2x2 grid), `assemble` copying the
+  center slot's own `POTION_CONTENTS` onto the result. `Recipes.java` gained
+  a dedicated `Imbue` record + `matchImbue` (the one recipe kind whose
+  output isn't a static `ItemStack`, so it couldn't fold into the generic
+  shaped/shapeless matcher), wired into `matchCrafting` ahead of the shaped
+  table when the grid is a full 3x3. 3 new PlayTest checks
+  (`scenarioTippedSpectralArrows`): yields 8 tipped arrows carrying the
+  center potion's effect, rejects a non-material item in a surrounding
+  cell, never matches a 2x2 grid. A creative-mode or Infinity-enchanted shot
+  still always fires a plain arrow
   regardless of what's nocked (real vanilla reads the type without consuming
   it in both cases — this project's pre-existing simplification, unchanged
   by this pass). Still missing: turtle master, slow falling (check),
