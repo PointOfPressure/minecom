@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 1005;
+    private static final int EXPECTED_CHECK_COUNT = 1015;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -178,6 +178,7 @@ public final class PlayTest {
         scenario("leads + name tags + pig/strider saddles: attach/detach, fence knot, pull/break distance, name-tag persistence, forward-steered saddle riding with a boost", PlayTest::scenarioLeashingNameTagsSteering);
         scenario("slime sizes: setSize attributes, split-on-death chain, tiny-slime pacifism, magma armor", PlayTest::scenarioSlimeSizes);
         scenario("sulfur cube: split-on-death is always exactly 2 children, terminal at size 1", PlayTest::scenarioSulfurCubeSplit);
+        scenario("sulfur cube archetypes: swallowing an item assigns its data-driven attribute modifiers/explosion/contact-damage, re-swallowing removes the old set first", PlayTest::scenarioSulfurCubeArchetype);
         scenario("bubble columns: soul sand grows push-up, item + boat launch, magma flips to drag, revert to water", PlayTest::scenarioBubbleColumns);
         scenario("piston: reorder-at-collision rig (late honey line walks into an earlier-claimed cell)", PlayTest::scenarioPistonReorderCollision);
         scenario("piston: differential vs real vanilla 26.1.2 (slime/honey fixture incl. reorder-collision family)", PlayTest::scenarioPistonDifferential);
@@ -8751,6 +8752,77 @@ public final class PlayTest {
         tick(10);
         check("size-1 sulfur cubes die without splitting (terminal — MIN_SIZE=1)", world.getEntities().stream()
                 .noneMatch(e -> e.getEntityType() == EntityType.SULFUR_CUBE && !((EntityCreature) e).isDead()));
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Sulfur cube archetype assignment (SulfurCubeArchetypes.bootstrap +
+     * SulfurCube.collectEquipmentChanges, 26.2 decompile-verified): swallowing an item into the
+     * BODY slot assigns whichever archetype's real item tag it matches, applying that
+     * archetype's real attribute modifiers (mobs/SulfurCubes.java, new this pass). Exercises
+     * {@code SulfurCubes.equipBody} directly rather than through a player-facing swallow
+     * interaction — that interaction doesn't exist yet (AUDIT.md), this pass is the data model
+     * + assignment + stats only.
+     */
+    private static void scenarioSulfurCubeArchetype() {
+        int z = 282;
+        clearEntitiesExceptPlayer();
+        var cube = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.sulfurCube(world, new Pos(50.5, Y + 1, z + 0.5));
+        double baseBounciness = cube.getAttributeValue(net.minestom.server.entity.attribute.Attribute.BOUNCINESS);
+
+        // bouncy: #minecraft:planks (tags_item.json's sulfur_cube_archetype/bouncy)
+        dev.pointofpressure.minecom.mobs.SulfurCubes.equipBody(cube, ItemStack.of(Material.OAK_PLANKS));
+        check("swallowing oak planks assigns the bouncy archetype",
+                dev.pointofpressure.minecom.mobs.SulfurCubes.archetypesOf(cube).stream()
+                        .anyMatch(a -> a.tagName().equals("bouncy")));
+        // BOUNCINESS is a plain ADD_VALUE +0.9f (SulfurCubeArchetypes.archetype's "bounce" param,
+        // stored as float same as vanilla's own decompiled constants) with no clamp-floor risk
+        // at a typical base of 0.0, unlike KNOCKBACK_RESISTANCE's -speed term (bouncy's
+        // speed=2.0 -> amount=-2.0), which real vanilla's own attribute range floor-clamps at 0
+        // for a base-0 mob — not a meaningful exact-value target. Comparing against
+        // baseBounciness + (double) 0.9f, not the double literal 0.9 — 0.9f's exact float bit
+        // pattern (~0.8999999762) widens to a different double than the double literal 0.9
+        // would, and that's the real value the production code (float archetype constants
+        // widened into a double AttributeModifier amount) actually produces.
+        check("bouncy's real BOUNCINESS modifier applies (archetype(2.0,0.9,...)'s bounce param, ADD_VALUE +0.9)",
+                cube.getAttributeValue(net.minestom.server.entity.attribute.Attribute.BOUNCINESS) == baseBounciness + (double) 0.9f);
+        check("the swallowed item is the BODY equipment", cube.getEquipment(EquipmentSlot.BODY).material() == Material.OAK_PLANKS
+                && dev.pointofpressure.minecom.mobs.SulfurCubes.bodyItem(cube).material() == Material.OAK_PLANKS);
+        check("bouncy carries no explosion or contact damage", dev.pointofpressure.minecom.mobs.SulfurCubes.explosionOf(cube).isEmpty()
+                && dev.pointofpressure.minecom.mobs.SulfurCubes.contactDamagesOf(cube).isEmpty());
+
+        // re-swallow: hot (magma_block) must remove bouncy's modifiers before applying its own
+        dev.pointofpressure.minecom.mobs.SulfurCubes.equipBody(cube, ItemStack.of(Material.MAGMA_BLOCK));
+        check("re-swallowing magma block replaces bouncy with the hot archetype (not both)",
+                dev.pointofpressure.minecom.mobs.SulfurCubes.archetypesOf(cube).size() == 1
+                        && dev.pointofpressure.minecom.mobs.SulfurCubes.archetypesOf(cube).get(0).tagName().equals("hot"));
+        // hot's own bounce param is 0.5 (archetype(1.0,0.5,0.3,0.1)) — not 0.0 — so this proves
+        // bouncy's +0.9 modifier was actually REMOVED (not left stacked underneath hot's own
+        // +0.5): if it were still present the total would be +1.4, not +0.5.
+        check("bouncy's BOUNCINESS modifier was removed, not stacked underneath hot's own (+0.5, not +1.4)",
+                cube.getAttributeValue(net.minestom.server.entity.attribute.Attribute.BOUNCINESS) == baseBounciness + 0.5);
+        check("hot carries a real contact-damage entry (SulfurCube.hot's DamageTypes.SULFUR_CUBE_HOT, amount 1.0)",
+                dev.pointofpressure.minecom.mobs.SulfurCubes.contactDamagesOf(cube).size() == 1
+                        && dev.pointofpressure.minecom.mobs.SulfurCubes.contactDamagesOf(cube).get(0).amount() == 1.0f);
+
+        // explosive (tnt): the one archetype carrying ExplosionData
+        dev.pointofpressure.minecom.mobs.SulfurCubes.equipBody(cube, ItemStack.of(Material.TNT));
+        check("swallowing tnt assigns the explosive archetype with its real fuse/power (power=3, fuse=120)",
+                dev.pointofpressure.minecom.mobs.SulfurCubes.explosionOf(cube).isPresent()
+                        && dev.pointofpressure.minecom.mobs.SulfurCubes.explosionOf(cube).get().power() == 3
+                        && dev.pointofpressure.minecom.mobs.SulfurCubes.explosionOf(cube).get().fuse() == 120
+                        && !dev.pointofpressure.minecom.mobs.SulfurCubes.explosionOf(cube).get().causesFire());
+
+        // an item matching no archetype tag at all (a stick isn't in any sulfur_cube_archetype/* tag)
+        dev.pointofpressure.minecom.mobs.SulfurCubes.equipBody(cube, ItemStack.of(Material.STICK));
+        check("an item matching no archetype tag assigns none, and clears the previous archetype's state",
+                dev.pointofpressure.minecom.mobs.SulfurCubes.archetypesOf(cube).isEmpty()
+                        && dev.pointofpressure.minecom.mobs.SulfurCubes.explosionOf(cube).isEmpty());
+        check("BOUNCINESS is back to base with no archetype assigned",
+                cube.getAttributeValue(net.minestom.server.entity.attribute.Attribute.BOUNCINESS) == baseBounciness);
+
+        cube.remove();
         clearEntitiesExceptPlayer();
         resetPlayer();
     }

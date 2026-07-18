@@ -1528,10 +1528,13 @@ public final class VanillaMobs {
      * and slime hop movement. Split-on-death matches real vanilla (maybeSplitSlime
      * below — SulfurCube.getSplitCount/setUpSplitCube, decompile-verified): a
      * dying size-2 cube splits into exactly 2 size-1 children, terminal there
-     * (MIN_SIZE=1/MAX_SIZE=2, unlike slime/magma's 1/2/4/.../127 ladder). Still
-     * deliberately not modeled (AUDIT.md — full sulfur parity is a Tier
-     * follow-up, this pass is split-on-death only): the archetype system
-     * (bouncy/explosive/hot...), item swallowing, bucketing, shearing, and
+     * (MIN_SIZE=1/MAX_SIZE=2, unlike slime/magma's 1/2/4/.../127 ladder). The
+     * archetype system's data model + assignment + attribute stats now exist
+     * ({@link dev.pointofpressure.minecom.mobs.SulfurCubes#equipBody}), but
+     * nothing calls it from gameplay yet — still deliberately not modeled
+     * (AUDIT.md, Tier follow-up): the swallow/give/bucket/shear player
+     * interactions, the archetype-driven physics/gameplay consumption
+     * (floating, fuse-priming, touch damage, knockback-scale reaction), and
      * breeding/baby state.
      */
     public static EntityCreature sulfurCube(Instance instance, Pos pos) {

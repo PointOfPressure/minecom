@@ -1487,13 +1487,52 @@ leftovers.
   always the terminal one — no fuse/archetype system exists yet to ever make
   `getSplitCount` return 0 (the `isPrimed()` branch), so the unconditional-2
   case is the only reachable one. 4 new PlayTest checks
-  (`scenarioSulfurCubeSplit`). Still open, unchanged by this pass: the full
-  `SulfurCubeArchetype` system (bouncy/explosive/hot/sticky... modifiers),
-  item swallowing, bucketing, shearing, breeding/baby-growth state, and fuse
-  priming — decompiles cached at
+  (`scenarioSulfurCubeSplit`). ~~Still open: the full `SulfurCubeArchetype`
+  system~~ **slice (a) done 2026-07-18 (Sonnet 5)**: new file `mobs/
+  SulfurCubes.java`, decompile-verified against `SulfurCubeArchetype`/
+  `SulfurCubeArchetypes` (26.2, `vanilla-src/net/minecraft/world/entity/
+  SulfurCubeArchetype*.java`) and `SulfurCube.collectEquipmentChanges`
+  (`vanilla-src/.../monster/cubemob/SulfurCube.java`). All 12 real archetypes
+  (regular/bouncy/slow_bouncy/slow_flat/fast_flat/light/fast_sliding/
+  slow_sliding/high_resistance/sticky/explosive/hot) ported verbatim —
+  `SulfurCubes.equipBody(mob, item)` matches the item against the real
+  `sulfur_cube_archetype/*` item tags (already bundled in `tags_item.json`,
+  no data-extractor changes needed) and applies every matching archetype's
+  real `AttributeModifier`s onto the 5 real Minestom attributes vanilla's
+  own archetype data drives (`KNOCKBACK_RESISTANCE`,
+  `EXPLOSION_KNOCKBACK_RESISTANCE`, `BOUNCINESS`, `FRICTION_MODIFIER`,
+  `AIR_DRAG_MODIFIER` — all 5 already exist in Minestom, no new attributes
+  needed), removing the previous archetype's modifiers first (matches
+  vanilla's re-swallow behavior: the newest item's archetypes replace the
+  old ones, they don't stack). Buoyant/explosion/contact-damage/
+  knockback-scale data is stored per-mob for the next slice to consume.
+  State is session-scoped, same simplification `Allays.java`'s own State map
+  already documents — real vanilla doesn't persist any of this either
+  (`SulfurCube.addAdditionalSaveData` only saves pickup_timer/from_bucket/
+  fuse), it's re-derived from the BODY item on equip, and this project has
+  no generic "entity reloaded" hook yet to re-run that derivation after a
+  world restart. 10 new PlayTest checks (`scenarioSulfurCubeArchetype`) —
+  caught one real bug in the test itself while landing it: comparing a
+  `float` archetype constant (`0.9f`) widened to `double` against the
+  double literal `0.9` is a float-precision mismatch (`0.9f` widens to
+  ~0.8999999762), not a product bug — fixed by computing the expected value
+  via the same `(double) 0.9f` widening the production code does. Still
+  open (this pass is data model + assignment + attribute stats only, Tier
+  follow-up): the actual swallow/give/bucket/shear PLAYER interactions
+  (nothing calls `equipBody` from gameplay yet — still nothing right-clicks
+  a sulfur cube), and the physics/gameplay CONSUMPTION of the stored
+  buoyant/explosion/contactDamage/knockback state (floating, fuse-priming,
+  touch damage, knockback-scale hit reaction) plus per-archetype sound
+  data (deliberately not ported — nothing consumes it yet). Breeding/
+  baby-growth state also still open. Decompiles cached at
   `vanilla-src/net/minecraft/world/entity/monster/cubemob/` +
-  `SulfurCubeArchetype*.java`. Part of the sulfur-caves Tier-parity
-  follow-up. (L)
+  `SulfurCubeArchetype*.java` + (this pass, newly decompiled)
+  `vanilla-src/net/minecraft/world/item/component/SulfurCubeContent.java` +
+  `vanilla-src/net/minecraft/core/dispenser/
+  SulfurCubeBlockDispenseItemBehavior.java` (bucket-content tooltip data and
+  the dispenser-feeds-a-cube behavior, both needed by the next slice). Part
+  of the sulfur-caves Tier-parity follow-up. (L, in progress — slice (a) of
+  4 landed, (b) physics/(c) interactions/(d) breeding still open)
 - **Sulfur-caves biome decoration no-ops.** The 26.2 data regen brought in
   the biome, its features and 10 spring structure templates; its surface
   rules and `sulfur_cave_gradient` noise are in the loaded data, but the
