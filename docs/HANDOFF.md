@@ -14,6 +14,50 @@ of what got escalated and why.
 
 ---
 
+## Sulfur cube explosion fuse-priming: attempted and REVERTED, escalating (2026-07-18, Sonnet 5)
+
+After landing slice (a) of the archetype system (commit d3b21f1 — data model,
+assignment, attribute stats, 1015/1015 clean), attempted a self-contained slice-(b)
+increment: fuse-priming for the "explosive" archetype (fire/explosion damage arms a
+fuse, counts down, detonates via `Explosions.explode`, matching decompiled
+`SulfurCube.hurtServer`/`primeTime`/`tickFuse`). Implementation: `SulfurCubes.
+primeFuse`/`watchFuse`/`register` (an `EntityDamageEvent` listener + a per-mob
+`TaskSchedule.tick(1)` task, same shape as `Allays.spawn`'s own task), wired from
+`VanillaMobs.sulfurCube` and `Bootstrap`.
+
+**Reverted — do not re-land without more investigation.** First stress batch (3
+runs) showed 2/3 failing on the detonation check. Root-caused (correctly, I
+believe) one real contributing factor: `AbstractCubeMob`'s own passive
+random-direction hop AI (real vanilla behavior, unrelated to this archetype) wanders
+the cube away from its spawn column during the ~120-tick fuse wait, so a check
+anchored to a fixed block position can miss the actual blast radius — fixed by
+caging the spawn column in solid walls so the cube physically can't wander (a state
+gate, not a wider tolerance). **This did not fix it — it got dramatically worse: a
+15-run stress batch afterward failed 13/15**, including failures on the
+main-hand-equivalent "fuse primes to exactly 120" check taken with NO intervening
+tick() (i.e. failing on a value that should be read synchronously off the same
+thread that set it), which means the wandering theory was at best a partial
+explanation, not the real root cause. Suspect but UNCONFIRMED: a genuine race
+between `primeFuse` (runs inside `EntityDamageEvent`'s synchronous dispatch, called
+from the test/caller thread) and `watchFuse`'s per-mob `scheduler()` task (which may
+run on a different tick/entity thread) — i.e. this may be the same class of
+thread-affinity hazard Minestom's thread-per-region model can produce when entity
+mutations happen from outside the entity's own tick thread, worth checking whether
+`EntityCreature.scheduler()` tasks and direct `.damage()` calls are actually
+guaranteed to serialize the way `Player`'s did in the totem fix earlier this
+session (which never showed this kind of escalating flakiness). Do NOT re-attempt
+by iterating on the test's timing/waits again — that pattern (tick fix -> gets
+worse) is itself a signal the mechanism isn't understood yet. Next session should
+instrument `watchFuse`'s task and the `register` listener with thread-name logging
+to confirm or rule out the thread-affinity hypothesis before touching the test
+again. Fully reverted from `main` (Bootstrap.java, SulfurCubes.java, VanillaMobs.java,
+PlayTest.java all back to their d3b21f1 content) — slice (a) stands alone, clean,
+1015/1015. The decompiled `PrimedTnt.java` (`getRandomShortFuse`'s formula,
+`nextInt(max(1,fuse/4)) + fuse/8`) is still cached in `vanilla-src/` for whoever
+picks this back up.
+
+---
+
 ## Fragile-check hardening: allay deposit + totem (2026-07-18, Sonnet 5)
 
 Closes the two items the masterplan's "fragile-check lane" flagged (allay-deposit/

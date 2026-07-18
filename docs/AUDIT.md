@@ -1532,7 +1532,10 @@ leftovers.
   SulfurCubeBlockDispenseItemBehavior.java` (bucket-content tooltip data and
   the dispenser-feeds-a-cube behavior, both needed by the next slice). Part
   of the sulfur-caves Tier-parity follow-up. (L, in progress — slice (a) of
-  4 landed, (b) physics/(c) interactions/(d) breeding still open)
+  4 landed, (b) physics/(c) interactions/(d) breeding still open. A slice-(b)
+  fuse-priming attempt was made and REVERTED 2026-07-18 after an escalating,
+  not-yet-understood flake — see HANDOFF.md's "Sulfur cube explosion
+  fuse-priming" entry before re-attempting; don't just re-tune the test.)
 - **Sulfur-caves biome decoration no-ops.** The 26.2 data regen brought in
   the biome, its features and 10 spring structure templates; its surface
   rules and `sulfur_cave_gradient` noise are in the loaded data, but the
