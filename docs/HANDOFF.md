@@ -195,7 +195,59 @@ Reproduce: worktree `main-sulfur`, `MINECOM_TEST_PORT=25568`,
 
 ---
 
-## nether_vibenilla region-diff is NONDETERMINISTIC — driver alignment is now measurement-blocking (2026-07-19, Fable)
+## nether_vibenilla region-diff DETERMINISTIC — sequential gen, 99.419259% clears the 99% floor (2026-07-19, Opus 4.8) — DONE
+
+Resolves the entry below. **Mechanism found** (decompiled the pinned dep
+`rocks.minestom:worldgen:26.2-ffaafa1`, class `WorldGenerator` +
+`feature/GenerationUnitAdapter`): the vibenilla generator decorates with a
+cross-chunk *spill* model. When a feature in chunk A writes a block into a
+neighbour B (`GenerationUnitAdapter.setBlock`, out-of-buffer branch), it first
+mutates B's shared `TerrainData` cache in place, then calls
+`TerrainLookup.writePending(B, …)`:
+- if B is **not yet** in `WorldGenerator.fullyDecorated` → the write is queued in
+  `pendingCrossWrites[B]` and applied when B later generates (line 140-145) — the
+  correct, vanilla-like path;
+- if B **is already** fully decorated → `writePending` returns false and the write
+  instead lands through **A's own fork modifier** (a different physical Anvil
+  write), while the earlier in-place mutation of B's now-orphaned terrain cache is
+  lost.
+
+Which branch a border spill takes depends entirely on whether B finished
+decorating before A ran, i.e. on chunk **completion order**. The old harness path
+loaded chunks in batches of 64 via `instance.loadChunk` (parallel), so the order —
+and the shared-`TerrainData` writes at line 127 — raced, producing the ~±0.04pp
+noise band (98.75 / 98.7267 / 98.8002 / 98.757935 / 98.786962).
+
+**Fix (harness-only, `GenRegions.java`):** for `nether_vibenilla` only, generate one
+chunk fully (terrain + decoration) before starting the next, in fixed row-major
+order (`sequential`/`batchLimit=1`; join each `loadChunk`). This makes
+`fullyDecorated` deterministic at every decoration and removes the shared-cache
+race. Other dimensions keep the fast batched path; live server (Bootstrap)
+untouched.
+
+**Determinism proven** — two identical same-binary same-flags r18 runs from the
+worktree jar (`nether-determinism` branch), seed 20260708, center (0,0), 1,296
+chunks, 42,467,328 blocks (sections 0..7), while other agents loaded the machine:
+
+> **run 1** matched 42,220,703 → **99.419259%**
+> **run 2** matched 42,220,703 → **99.419259%**  (identical to the block)
+
+Logs `test-logs/regiondiff_nether_vibenilla_seed20260708_r18_20260719-235353.log`
+and `…-235519.log`.
+
+**Floor verdict:** 99.419259% **clears the ≥99% adopt floor** on a now-reproducible
+number (and beats the old noisy ~98.75% point estimate by ~0.67pp — the parallel
+path was *losing* border spills, not just jittering). The §6 exit bar ("residual
+explained") is a separate, later gate: the remaining 0.58% is still decoration-layer
+(basalt-delta / forest-vegetation swaps in the mismatch top-40), now measurable and
+stable. Next optional step per the original entry is order-faithfulness tuning
+(matching vibenilla's own harness order toward their self-reported 99.765%) — now
+safe to A/B because the baseline is deterministic. Not merged to main; on branch
+`nether-determinism`.
+
+---
+
+## nether_vibenilla region-diff is NONDETERMINISTIC — driver alignment is now measurement-blocking (2026-07-19, Fable) — RESOLVED (see entry above)
 
 Five r18 measures of the UNCHANGED vibenilla adopt path landed in a ~±0.04pp
 band: 98.75 (v0.36 baseline), 98.7267, 98.8002, then a same-binary same-flags
