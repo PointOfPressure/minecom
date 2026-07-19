@@ -27,6 +27,7 @@ public final class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) {
+        applyHardeningDefaults(); // must precede any ServerFlag read (MinecraftServer.init)
         if (args.length > 0 && args[0].equals("--selftest")) {
             MinecraftServer.init(); // binds registries so component reads work
             SelfTest.run(); // streams per-check via emit()
@@ -48,6 +49,7 @@ public final class Main {
 
         GlobalEventHandler events = MinecraftServer.getGlobalEventHandler();
         registerConnectionFlow(events, overworld, spawn);
+        Connections.register(events); // SECURITY-HARDENING §4.1/§4.2: admission control + login deadline
         BenchSetup.register(events, overworld); // MASTERPLAN §4 P0; no-op unless MINECOM_BENCH_SCENARIO is set
 
         // day/night: advance time manually unless the instance already does
@@ -113,7 +115,30 @@ public final class Main {
         events.addListener(ServerListPingEvent.class, event -> event.setStatus(Status.builder()
                 .description(Component.text("Minecom", NamedTextColor.GREEN)
                         .append(Component.text(" — vanilla, rebuilt on Minestom", NamedTextColor.GRAY)))
-                .playerInfo(MinecraftServer.getConnectionManager().getOnlinePlayers().size(), 20)
+                .playerInfo(MinecraftServer.getConnectionManager().getOnlinePlayers().size(),
+                        Connections.maxPlayers())
                 .build()));
+    }
+
+    /**
+     * SECURITY-HARDENING §4.3: give production a deliberate packet-queue size
+     * instead of inheriting Minestom's bare 1000 default (the P0 self-DoS — a
+     * value only the bench harness set). Also honours MINECOM_REQUIRE_PROXY_PROTOCOL
+     * for the documented behind-a-proxy topology (§4.1.1). Must run before any
+     * ServerFlag field is read, i.e. before MinecraftServer.init().
+     */
+    private static void applyHardeningDefaults() {
+        // 20000 = the P0-proven ceiling for this 5400 rpm HDD's worst-case tick
+        // stall; a memory ceiling, so operators on fast storage may lower it.
+        setDefaultProperty("minestom.packet-queue-size",
+                System.getenv().getOrDefault("MINECOM_PACKET_QUEUE_SIZE", "20000"));
+        if (Boolean.parseBoolean(System.getenv().getOrDefault("MINECOM_REQUIRE_PROXY_PROTOCOL", "false"))) {
+            setDefaultProperty("minestom.proxy-protocol", "true");
+        }
+    }
+
+    /** Set a system property only if the operator has not already set one. */
+    private static void setDefaultProperty(String key, String value) {
+        if (System.getProperty(key) == null) System.setProperty(key, value);
     }
 }
