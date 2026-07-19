@@ -14,6 +14,69 @@ of what got escalated and why.
 
 ---
 
+## MERGE-READINESS: security hardening P0/P1 implemented (2026-07-19, Opus 4.8) — branch `security-hardening`
+
+The `docs/SECURITY-HARDENING.md` spec (§4) is now implemented on this branch. It
+does **not** touch gameplay; ready to merge to `main` once a full idle-machine
+playtest confirms green (see "suite status" below). Nothing here was merged.
+
+**Implemented (with test coverage):**
+
+- **V1 connection admission — `Connections.java` (new), wired in `Main`.**
+  Per-IP accept-rate token bucket, per-IP concurrent cap, global player cap, and
+  loopback + trusted-CIDR (`MINECOM_TRUSTED_CIDRS`) exemption. Decisions are pure
+  functions (`rateAllow`/`perIpConcurrentAllow`/`globalAllow`/`exempt`), so they
+  are covered deterministically in SelfTest (13 new checks, all green — no real
+  sockets needed). Gates hang off `AsyncPlayerPreLoginEvent` (rate + deadline)
+  and `AsyncPlayerConfigurationEvent` (global + per-IP concurrent, counted from
+  `getOnlinePlayers()` so there is no accounting leak / no release hook needed).
+  The advertised ping `max` now reads the real `MINECOM_MAX_PLAYERS` (was a
+  cosmetic `20`). Config via env: `MINECOM_MAX_PLAYERS`,
+  `MINECOM_MAX_CONNECTIONS_PER_IP`, `MINECOM_CONN_RATE_PER_IP`,
+  `MINECOM_CONN_RATE_WINDOW_MS`, `MINECOM_TRUSTED_CIDRS`.
+- **V2 login-completion deadline — `Connections.scheduleLoginDeadline`.** A
+  connection that reaches LOGIN and does not transition to PLAY within
+  `MINECOM_LOGIN_DEADLINE_MS` (default 30 s) is disconnected, independent of the
+  `SO_TIMEOUT` question.
+- **V3 packet-queue production default — `Main.applyHardeningDefaults`.** Sets
+  `minestom.packet-queue-size` to 20 000 (the P0-proven ceiling; overridable via
+  `MINECOM_PACKET_QUEUE_SIZE` or the JVM flag) before `MinecraftServer.init()`,
+  so production no longer inherits the bare 1000 that caused the P0 self-DoS.
+  Also honours `MINECOM_REQUIRE_PROXY_PROTOCOL` for the behind-a-proxy topology.
+- **V6 command gating — `Commands.gate`/`operatorGate`/`cooldownOk`, wired in
+  `Bootstrap`.** Under `MINECOM_PUBLIC_MODE`, operator/worldedit-class commands
+  are op-gated (op via `MINECOM_OPS` or permission-level ≥ 2) and `/fill`,
+  `/summon` are per-player cooldown-limited; `/spawn` and `/killme` stay open. Off
+  public mode nothing is gated (existing admin-command coverage untouched). 4 new
+  PlayTest checks (`scenarioCommandGating`), green in isolation.
+- **V4/V7 (P2) — audited, no code needed.** No minecom handler reads a
+  client-supplied count/length ahead of Minestom's frame caps (details in
+  SECURITY-HARDENING §4.5 "audit result").
+
+**Deferred / escalated (logged, not half-attempted per CLAUDE.md rule 3):**
+
+- **Pre-TCP silent idle-hold (V1/V2 residual) — needs Minestom upstream.**
+  Minestom fires no event at raw TCP accept, so a socket that completes the TCP
+  handshake and sends no protocol bytes is unreachable from in-process code. The
+  gates cover login floods + LOGIN-state stalls but not the pure silent hold.
+  Closing it needs an accept-side hook (or the `SO_TIMEOUT`-on-blocking-channel
+  verification) contributed upstream — SECURITY-HARDENING §4.6. **Needs a live
+  loopback repro + Minestom-maintainer coordination; a stronger/longer session
+  should drive the upstream contribution.**
+- **V3 structural fix (chunk-I/O off the tick thread) — MASTERPLAN §5.0 / P1.**
+  The production default above is slack, not the root-cause fix; the decouple is
+  tracked as P1 work, not part of this security pass.
+
+**Suite status:** SelfTest **247/0 green** (`test-logs/security_selftest.log`),
+including all 13 admission/gating checks. Filtered `--playtest security` **4/0
+green** (`test-logs/security_playtest_filtered.log`). Full `--playtest`
+(`EXPECTED_CHECK_COUNT` 866 → **870**) launched on this branch — SEE
+`test-logs/security_playtest_full.log`; this machine was under heavy load
+(load avg ~10) at run time, so a release tag still needs the CLAUDE.md rule 8
+idle-machine green before merge.
+
+---
+
 ## Ore/stone-patch drift ISOLATED: partial-discard ores' per-voxel RNG draws desync the shared count-loop stream (2026-07-19, Opus 4.8)
 
 Picked up the "Secondary" item from the previous entry (ore/stone-patch drift,

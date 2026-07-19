@@ -1643,11 +1643,85 @@ public final class SelfTest {
                         .limit(50).flatMap(List::stream)
                         .anyMatch(s -> s.material().key().value().endsWith("_armor_trim_smithing_template")));
 
+        securityChecks();
+
         emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
             emit("FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.\n");
         }
         return REPORT.toString();
+    }
+
+    /**
+     * SECURITY-HARDENING §4.1/§4.2: the connection-admission decisions are pure
+     * functions so they can be verified deterministically here (no real sockets).
+     * Loopback must always be exempt or the bench harness would throttle itself.
+     */
+    private static void securityChecks() {
+        // maxPlayers=3, maxPerIp=2, rate=3 per 1000ms, trust the 10.0.0.0/8 block.
+        dev.pointofpressure.minecom.Connections.configureForTest(3, 2, 3, 1000, "10.0.0.0/8");
+        java.net.InetAddress lo = ipv4(127, 0, 0, 1);
+        java.net.InetAddress pub = ipv4(203, 0, 113, 5);
+        java.net.InetAddress trusted = ipv4(10, 4, 2, 1);
+
+        check("admission: loopback is exempt from every per-IP control",
+                dev.pointofpressure.minecom.Connections.exempt(lo));
+        check("admission: a configured trusted CIDR is exempt (10.4.2.1 in 10.0.0.0/8)",
+                dev.pointofpressure.minecom.Connections.exempt(trusted));
+        check("admission: an ordinary public address is NOT exempt",
+                !dev.pointofpressure.minecom.Connections.exempt(pub));
+        check("admission: CIDR boundary — 10.255.255.255 in /8 exempt, 11.0.0.0 not",
+                dev.pointofpressure.minecom.Connections.exempt(ipv4(10, 255, 255, 255))
+                        && !dev.pointofpressure.minecom.Connections.exempt(ipv4(11, 0, 0, 0)));
+
+        // rate: with the same nowMs, 3 arrivals pass then the 4th is denied.
+        long now = 1_000_000L;
+        boolean rateShape = dev.pointofpressure.minecom.Connections.rateAllow(pub, now)
+                && dev.pointofpressure.minecom.Connections.rateAllow(pub, now)
+                && dev.pointofpressure.minecom.Connections.rateAllow(pub, now)
+                && !dev.pointofpressure.minecom.Connections.rateAllow(pub, now);
+        check("admission: accept-rate lets 3 through the window then denies the 4th", rateShape);
+        check("admission: the window slides — a later arrival past 1000ms is allowed again",
+                dev.pointofpressure.minecom.Connections.rateAllow(pub, now + 1001));
+        // loopback ignores the rate entirely even under a flood
+        boolean loopFlood = true;
+        for (int i = 0; i < 50; i++) {
+            loopFlood &= dev.pointofpressure.minecom.Connections.rateAllow(lo, now);
+        }
+        check("admission: loopback is never rate-limited (50 rapid arrivals all pass)", loopFlood);
+
+        check("admission: per-IP concurrent cap — 0,1 allowed, 2 denied (maxPerIp=2)",
+                dev.pointofpressure.minecom.Connections.perIpConcurrentAllow(pub, 0)
+                        && dev.pointofpressure.minecom.Connections.perIpConcurrentAllow(pub, 1)
+                        && !dev.pointofpressure.minecom.Connections.perIpConcurrentAllow(pub, 2));
+        check("admission: loopback bypasses the per-IP concurrent cap",
+                dev.pointofpressure.minecom.Connections.perIpConcurrentAllow(lo, 99));
+        check("admission: trusted CIDR bypasses the per-IP concurrent cap (proxy fan-in)",
+                dev.pointofpressure.minecom.Connections.perIpConcurrentAllow(trusted, 99));
+
+        check("admission: global player cap — under-max joins, at-max rejected (maxPlayers=3)",
+                dev.pointofpressure.minecom.Connections.globalAllow(2)
+                        && !dev.pointofpressure.minecom.Connections.globalAllow(3));
+
+        // V6 command gating (SECURITY-HARDENING §4.4) — the sender-independent half.
+        dev.pointofpressure.minecom.Commands.configurePublicMode(false);
+        check("gating: off public mode nothing is operator-gated (console sender allowed)",
+                dev.pointofpressure.minecom.Commands.mayUseOperator(
+                        net.minestom.server.MinecraftServer.getCommandManager().getConsoleSender()));
+        dev.pointofpressure.minecom.Commands.configurePublicMode(true);
+        check("gating: public mode still allows the console/server sender",
+                dev.pointofpressure.minecom.Commands.mayUseOperator(
+                        net.minestom.server.MinecraftServer.getCommandManager().getConsoleSender()));
+        dev.pointofpressure.minecom.Commands.configurePublicMode(false); // restore default
+    }
+
+    private static java.net.InetAddress ipv4(int a, int b, int c, int d) {
+        try {
+            return java.net.InetAddress.getByAddress(
+                    new byte[]{(byte) a, (byte) b, (byte) c, (byte) d});
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static List<String> drops(Block block, ItemStack tool) {
