@@ -1528,7 +1528,14 @@ larger design pass. Landed nothing rather than ship a speculative regression.
   extracts the centre. High-value (unlocks ~560k toward 99.9%) but HIGH-RISK
   under the ratchet: it changes cells the current approximation happens to match,
   so it must be built + measured carefully, not landed blind. Escalated in
-  HANDOFF.md (2026-07-19).
+  HANDOFF.md (2026-07-19). **LANDED 2026-07-19 (Fable): shared-canvas pass in
+  scan order, r3 A/B picked z-major (99.194% vs x-major 99.176% vs old model
+  98.951%); full r18 ratchet-positive 99.361284% -> 99.381792%. Gain is far
+  below the 560k ceiling: the 3x3 window is the next binding constraint —
+  sculk-ON measured net-NEGATIVE at r3 even on the shared canvas (98.997% vs
+  99.194% off), so SCULK_ENABLED stays off and neighbourhood-radius widening
+  (vanilla features write >1 chunk away) is the named follow-up, with the
+  order property (-Dminecom.decoOrder) kept for re-A/B at the wider radius.**
 
 - **Ore / stone-patch drift (families #5/#6, ~110k) is a placement-ORIGIN RNG
   drift, NOT the carver/air cascade and NOT the scatter.** Verified against

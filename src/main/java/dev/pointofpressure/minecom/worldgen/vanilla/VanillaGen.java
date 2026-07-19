@@ -115,11 +115,22 @@ public final class VanillaGen implements Generator {
         return data;
     }
 
+    /** Chunk decoration order within the shared-canvas pass: vanilla decorates
+     *  chunks in world scan order, and which axis is outer is an empirical
+     *  question (AUDIT.md 2026-07-19) — z-major default, -Dminecom.decoOrder=xz
+     *  flips to x-major for the radius-3 A/B. */
+    private static final boolean DECO_ORDER_X_MAJOR = "xz".equals(System.getProperty("minecom.decoOrder"));
+
     /**
      * Decorated output for one chunk: copy of the undecorated chunk plus every
-     * write that this chunk and its 8 neighbors' decorations make into it. Each
-     * neighbor is decorated on a scratch overlay (its own writes visible to
-     * itself) and only writes landing in the target chunk are exported.
+     * write that this chunk and its 8 neighbors' decorations make into it.
+     * All 9 chunks decorate ONE shared canvas in scan order — each chunk fully,
+     * in GenerationStep order, reading prior chunks' cross-boundary writes —
+     * then only writes landing in the target chunk are exported. The previous
+     * independent-overlay-per-neighbor model lost vanilla's cross-chunk feature
+     * order/visibility and drove ~69% of the r18 residual (AUDIT.md 2026-07-19,
+     * proven on the boundary-straddling spruce at (-209,-126): self-chunk snow
+     * must see, not overwrite, a neighbor's spilled canopy leaf).
      */
     public VSurface.ChunkData decoratedData(int chunkX, int chunkZ) {
         VSurface.ChunkData base = cachedData(chunkX, chunkZ);
@@ -130,20 +141,21 @@ public final class VanillaGen implements Generator {
         // structures: place every intersecting piece's blocks clipped to this chunk
         structures.placeInChunk(chunkX, chunkZ, new StructureCanvas(out, chunkX, chunkZ));
 
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                int sourceX = chunkX + dx, sourceZ = chunkZ + dz;
-                OverlayCanvas overlay = new OverlayCanvas();
-                features.decorate(overlay, sourceX, sourceZ);
-                for (var e : overlay.writes.entrySet()) {
-                    long pos = e.getKey();
-                    int x = (int) (pos >> 38);
-                    int y = (int) (pos << 52 >> 52);
-                    int z = (int) (pos << 26 >> 38);
-                    if ((x >> 4) == chunkX && (z >> 4) == chunkZ) {
-                        out.set(x & 15, y, z & 15, e.getValue() == OverlayCanvas.AIR_SENTINEL ? null : e.getValue());
-                    }
-                }
+        OverlayCanvas overlay = new OverlayCanvas();
+        for (int outer = -1; outer <= 1; outer++) {
+            for (int inner = -1; inner <= 1; inner++) {
+                int dx = DECO_ORDER_X_MAJOR ? outer : inner;
+                int dz = DECO_ORDER_X_MAJOR ? inner : outer;
+                features.decorate(overlay, chunkX + dx, chunkZ + dz);
+            }
+        }
+        for (var e : overlay.writes.entrySet()) {
+            long pos = e.getKey();
+            int x = (int) (pos >> 38);
+            int y = (int) (pos << 52 >> 52);
+            int z = (int) (pos << 26 >> 38);
+            if ((x >> 4) == chunkX && (z >> 4) == chunkZ) {
+                out.set(x & 15, y, z & 15, e.getValue() == OverlayCanvas.AIR_SENTINEL ? null : e.getValue());
             }
         }
         return out;
