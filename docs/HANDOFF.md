@@ -14,6 +14,116 @@ of what got escalated and why.
 
 ---
 
+## Ore/stone-patch drift ISOLATED: partial-discard ores' per-voxel RNG draws desync the shared count-loop stream (2026-07-19, Opus 4.8)
+
+Picked up the "Secondary" item from the previous entry (ore/stone-patch drift,
+~110k of the 814k residual, seed 20260708 r18). Full diagnosis in
+docs/AUDIT.md's "Ore / stone-patch drift" bullet. Outcome: **isolated the
+diverging mechanism with concrete block-level evidence, landed no code** (the
+mechanism traces back into terrain-state fidelity, not a standalone bug with
+an obvious patch — see "why no fix" below).
+
+**Method**: instrumented `VFeature` (temporarily, reverted before commit —
+gated behind `-Dminecom.orerng.cx/.cz/.features`, prints `decorationSeed`,
+per-`count`-iteration `in_square`/`height_range`/`biome` draws, and each
+`placeOre` call's `origin`/`dir`/`y0`/`y1`/`anyBelowSurface`) and ran
+`--genregions 20260708 2 0 -3 overworld` (one small isolated area, NOT a full
+region diff) to dump `ore_coal_upper`/`ore_coal_lower`'s placement-origin
+sequence for chunk (0,-3) (picked from
+`test-logs/regiondiff_overworld_seed20260708_r18_20260719-200830.log`'s ore
+mismatch classes; a real coal/iron/diorite mismatch chunk was found by
+scanning the cached 20260708_r3_0x0_26.2 vanilla+minecom worlds in
+`~/minecom-region-diff`, read-only, never regenerated — a concurrent r18 run
+was live in that dir tree, untouched). A from-scratch Python port of
+`XRandom`/`XWorldgenRandom` (Xoroshiro128++, Java int32/int64 wraparound
+semantics) replayed `setDecorationSeed`/`setFeatureSeed` + the
+`count`/`in_square`/`height_range` providers and validated **bit-exact**
+against the live instrumented dump (all 30 `ore_coal_upper` iterations:
+origin, `dir`, `y0`, `y1` matched to the float ULP) — confirming the RNG port
+itself, the `count`/`in_square`/`height_range` providers, and the
+feature-sort `globalIndex` (coal is fixed at step=6, index=9/10, from the
+static `features_per_step.json`, independent of chunk) are ALL faithful, as
+AUDIT already suspected.
+
+**The diverging feature**: `ore_coal_lower` (`ore_coal_buried`,
+`discard_chance_on_air_exposure=0.5`) — NOT `ore_coal_upper`
+(`discard_chance_on_air_exposure=0.0`). `VFeature.canPlaceOre` (~line 906-918):
+
+```java
+if (discard <= 0.0F) return true;
+if (discard < 1.0F && random.nextFloat() >= discard) return true;   // <-- here
+return !isAdjacentToAir(canvas, x, y, z);
+```
+
+For any ore with `0 < discard_chance_on_air_exposure < 1`, every candidate
+voxel in the ellipsoid fill loop that matches the target's block tag
+(`stone_ore_replaceables`/`deepslate_ore_replaceables`) consumes **one extra
+`random.nextFloat()` draw**, regardless of whether the voxel ends up
+replaced. AUDIT's already-ruled-out "air-adjacency" empirical check
+(0-2/5000 differ) covers the `isAdjacentToAir` branch, which only fires for
+`discard>=1.0` ores (diamond's non-buried variants, emerald) — coal_buried
+never reaches it, so that ruling-out doesn't cover this path. Affected
+features (`discard` strictly between 0 and 1, grepped from
+`configured_features.json`): `ore_coal_buried` (0.5), `ore_gold_buried`
+(0.5), `ore_diamond_small`/`_medium` (0.5), `ore_diamond_large` (0.7).
+
+Since all 20 `count` iterations of one placed feature share ONE
+`XWorldgenRandom` stream (reseeded once via `setFeatureSeed`, not
+per-iteration), a draw-count difference on ANY iteration — driven purely by
+whether minecom's and vanilla's terrain at that moment agree on which
+candidate voxels are still stone-tagged — desyncs `in_square`/`height_range`
+(and hence origin, `dir`, `y0`, `y1`, `ss`) for every iteration after it.
+Concrete evidence in chunk (0,-3), seed 20260708:
+
+- `ore_coal_lower` iterations 10, 13, 15 (origins `(11,47,-46)`,
+  `(13,42,-48)`, `(15,96,-46)`): minecom placed real, sizeable ore clusters
+  (30/32/39 nearby blocks) there; vanilla's real world has **zero** nearby —
+  minecom is drawing from a desynced stream by this point.
+- Iteration 2 (origin `(10,138,-48)`, both engines agree
+  `anyBelowSurface=true`) already shows a large count mismatch: 54 vanilla
+  vs 18 minecom nearby coal blocks at the *identical* origin — the earliest
+  candidate for where the stream first desyncs.
+- Direct cross-ore-type contamination confirms the knock-on effect on
+  LATER-`globalIndex` ore features sharing the same stone-tag voxel pool
+  (iron runs at index 11-13, right after coal at 9-10): 3 positions in a
+  13x13x13 box around iteration 2's origin show `iron_ore` in vanilla vs
+  `coal_ore` in minecom at the same coordinates — in minecom, coal's
+  (wrongly-computed) blob claims the voxel first, so iron's own
+  independently-correct draw later skips it (already non-stone); in vanilla,
+  coal's real blob never reaches that voxel, so iron claims it instead. This
+  also explains AUDIT's own top-40 line `2493 diorite<-coal_ore` (minecom
+  left diorite where vanilla successfully converted it to coal_ore) — same
+  mechanism, opposite direction.
+
+**Why no fix landed**: this isn't a standalone bug with an obvious patch —
+the draw-count *depends on* minecom's terrain matching vanilla's exactly at
+every candidate voxel a partial-discard ore's ellipsoid touches, at the
+moment that feature runs. `canPlaceOre`'s `canvas.get(x,y,z)` reads through
+`VanillaGen.OverlayCanvas`, which is the SAME incomplete-canvas
+infrastructure AUDIT's ROOT #1 already flagged: it sees this chunk's own
+earlier-in-step writes (fine — granite/diorite/andesite/tuff variants at
+globalIndex 2-8 all precede coal) but falls back to raw `cachedData` (shape+
+surface+carve only) for everything else, meaning it's blind to **structures**
+placed later in `decoratedData()` and to **cross-chunk decoration state**
+from neighbors, exactly like the heightmap gap already documented for trees/
+sculk. The ore family therefore isn't a separable "clean win" as AUDIT's
+"Bounded but unconfirmed" hoped — it's very likely a second casualty of the
+SAME cross-chunk/incomplete-canvas gap (ROOT #1), just manifesting through
+RNG-draw-count sensitivity instead of direct overwrite. Fixing ROOT #1's
+order-faithful shared-canvas decoration pass should be measured for its
+effect on the ore family too, not treated as a separate ~110k target.
+
+Diagnostic instrumentation was reverted before this commit (kept the branch
+to the HANDOFF entry alone, per the escalation format); the `-Dminecom.
+orerng.*`-gated debug prints in `VFeature.decorate`/`placeRecursive`/
+`placeOre` and the Python `XRandom`/`XWorldgenRandom` port are easy to
+reproduce from this entry if a future session wants to pick this back up
+(e.g. to instrument `canPlaceOre`'s per-voxel tag-match/discard draws
+directly and prove the exact desync point, or to test the ROOT #1 fix's
+effect on this family once it lands).
+
+---
+
 ## Sulfur fuse-priming flake DIAGNOSED: cross-thread race CONFIRMED (2026-07-19, Opus 4.8)
 
 Diagnosis-only follow-up to "Sulfur cube explosion fuse-priming: attempted and
