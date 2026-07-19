@@ -1,11 +1,44 @@
 # Security Hardening — threat model, audit, and mitigation spec
 
-Status: **design doc, not yet implemented.** This is the read-only security
-analysis that MASTERPLAN §6 ("Protocol hardening is our job") and the §10
-launch sequence step 6 ("Security sweep + protocol hardening") require before
-launch. It is written as an implementation spec: a future coding session
-executes the mitigations in [§4](#4-mitigation-spec-prioritized); nothing here
-has been coded yet.
+Status: **P0/P1 implemented on `security-hardening` (2026-07-19); P2 audited.**
+This began as the read-only security analysis that MASTERPLAN §6 ("Protocol
+hardening is our job") and the §10 launch sequence step 6 require before launch,
+written as an implementation spec. The mitigations in
+[§4](#4-mitigation-spec-prioritized) are now coded on this branch — see the
+implementation status just below and the merge-readiness note at the top of
+`docs/HANDOFF.md`. The threat model and audit (§1–§3) remain the reference.
+
+### Implementation status (branch `security-hardening`)
+
+| Item | Status | Where |
+|---|---|---|
+| §4.1 V1 admission control (rate / per-IP concurrent / global+player cap / CIDR+loopback exempt) | **Done** | `Connections.java`, wired in `Main` |
+| §4.2 V2 login-completion deadline | **Done (partial — see gap)** | `Connections.scheduleLoginDeadline` |
+| §4.3 V3 packet-queue production default (immediate half) | **Done** | `Main.applyHardeningDefaults` |
+| §4.3 V3 structural chunk-I/O decouple | Deferred → MASTERPLAN §5.0 / P1 (`Main` inherits the tuned default meanwhile) | — |
+| §4.1.1 require-proxy-protocol toggle | **Done** | `Main.applyHardeningDefaults` (`MINECOM_REQUIRE_PROXY_PROTOCOL`) |
+| §4.4 V6 command gating (public-mode op gate) + /fill,/summon cooldown | **Done** | `Commands.gate` / `operatorGate` / `cooldownOk`, wired in `Bootstrap` |
+| §4.5 V4/V7 content bounds | **Audited — no unbounded client-controlled read found in minecom handlers** (see note) | — |
+| §4.6 upstream contribution (SO_TIMEOUT / accept hook) | Deferred → HANDOFF (needs live-repro + Minestom coordination) | — |
+
+**Known gap (V1/V2 pre-TCP idle-hold).** Minestom exposes no event at raw TCP
+accept, so a connection that completes the TCP handshake but sends **no**
+protocol bytes fires no listener and is unreachable from in-process code. The
+admission gates and the login deadline both hang off `AsyncPlayerPreLoginEvent`
+(LOGIN state), so they cover a connection that *reaches LOGIN and then stalls*,
+plus login floods and per-IP/global concurrency — but not the pure silent-socket
+hold. Closing that needs an accept-side hook upstream (§4.6). Logged in HANDOFF.
+
+**§4.5 audit result.** A grep of minecom's event handlers found no handler that
+reads a client-supplied count/length ahead of Minestom's frame caps: the one
+`BinaryTagIO.unlimitedReader()` (`VTemplate.java:209`) is on **bundled** GZIP,
+not a client stream; minecom registers no `PlayerChatEvent` handler (the join
+broadcast in `Main` is server-triggered and login-cap-gated); book text
+(`Lectern` reads `WRITABLE_BOOK_CONTENT`) and anvil-rename text
+(`Anvils` / `PlayerAnvilInputEvent`) arrive inside already-deserialized item
+components, bounded by Minestom's post-auth 2 MiB frame cap and vanilla
+component limits — minecom re-parses no raw client bytes. No new bounds were
+required; re-audit on the #3179 packet rework (§5 item 4).
 
 Audited against:
 
