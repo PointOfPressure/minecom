@@ -1,10 +1,12 @@
 package dev.pointofpressure.minecom;
 
 import dev.pointofpressure.minecom.data.VanillaData;
+import dev.pointofpressure.minecom.worldgen.NetherGen;
 import dev.pointofpressure.minecom.worldgen.vanilla.VanillaGen;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.anvil.AnvilLoader;
+import net.minestom.server.world.DimensionType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,7 +22,13 @@ import java.util.concurrent.CompletableFuture;
  * this in a disposable work dir and compares the output block-for-block
  * against a real vanilla server's regions.
  *
- * Usage: java -jar minecom.jar --genregions <seed> <radius> [centerCx centerCz]
+ * Usage: java -jar minecom.jar --genregions <seed> <radius> [centerCx centerCz [dimension]]
+ *
+ * dimension (optional, default "overworld"): "nether" builds today's approximate
+ * {@link NetherGen} into world/dimensions/minecraft/the_nether/region so the
+ * region-diff harness can measure nether parity (docs/TIER4-NETHER-DESIGN.md §4
+ * S0 — the honest baseline). This is a harness-only entry point; the live server
+ * (Bootstrap) is unchanged, so shipped behavior does not move.
  *
  * No margin chunks are needed: VanillaGen.decoratedData re-runs the 8
  * neighbours' decorations and clips their spill into each generated chunk, so
@@ -31,19 +39,39 @@ public final class GenRegions {
 
     public static int run(String[] args) {
         if (args.length < 3) {
-            System.err.println("usage: --genregions <seed> <radius> [centerCx centerCz]");
+            System.err.println("usage: --genregions <seed> <radius> [centerCx centerCz [dimension]]");
             return 2;
         }
         long seed = Long.parseLong(args[1]);
         int radius = Integer.parseInt(args[2]);
         int centerCx = args.length > 3 ? Integer.parseInt(args[3]) : 0;
         int centerCz = args.length > 4 ? Integer.parseInt(args[4]) : 0;
+        String dimension = args.length > 5 ? args[5] : "overworld";
 
         MinecraftServer server = MinecraftServer.init();
         VanillaData.load();
-        InstanceContainer overworld = MinecraftServer.getInstanceManager()
-                .createInstanceContainer(new AnvilLoader("world"));
-        overworld.setGenerator(new VanillaGen(seed));
+        InstanceContainer instance;
+        switch (dimension) {
+            case "overworld" -> {
+                instance = MinecraftServer.getInstanceManager()
+                        .createInstanceContainer(new AnvilLoader("world"));
+                instance.setGenerator(new VanillaGen(seed));
+            }
+            case "nether" -> {
+                // per-dimension Anvil subtree matches the vanilla oracle layout
+                // (world/dimensions/minecraft/the_nether/region); the seed is
+                // accepted for symmetry but NetherGen keys off its own internal
+                // constant (why its baseline parity is ~0 — the point of S0).
+                instance = MinecraftServer.getInstanceManager().createInstanceContainer(
+                        DimensionType.THE_NETHER,
+                        new AnvilLoader("world/dimensions/minecraft/the_nether"));
+                instance.setGenerator(new NetherGen());
+            }
+            default -> {
+                System.err.println("unknown dimension: " + dimension + " (overworld|nether)");
+                return 2;
+            }
+        }
         // ephemeral port, same trick as PlayTest: never collides, port is unused
         server.start("127.0.0.1", 0);
 
@@ -54,7 +82,7 @@ public final class GenRegions {
         int done = 0;
         for (int cx = centerCx - radius; cx < centerCx + radius; cx++) {
             for (int cz = centerCz - radius; cz < centerCz + radius; cz++) {
-                batch.add(overworld.loadChunk(cx, cz));
+                batch.add(instance.loadChunk(cx, cz));
                 if (batch.size() == 64) {
                     done += join(batch);
                     System.out.printf("genregions: %d/%d chunks, %dms%n",
@@ -63,9 +91,9 @@ public final class GenRegions {
             }
         }
         done += join(batch);
-        overworld.saveChunksToStorage().join();
-        System.out.printf("genregions done: %d chunks, seed %d, center (%d,%d), radius %d, %dms%n",
-                done, seed, centerCx, centerCz, radius, System.currentTimeMillis() - start);
+        instance.saveChunksToStorage().join();
+        System.out.printf("genregions done: %d chunks, %s, seed %d, center (%d,%d), radius %d, %dms%n",
+                done, dimension, seed, centerCx, centerCz, radius, System.currentTimeMillis() - start);
         return 0;
     }
 

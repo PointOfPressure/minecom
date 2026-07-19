@@ -135,6 +135,31 @@ data generator: `java -cp <jar>:<libraries...> net.minecraft.data.Main --reports
       minecraft:repairable component — which raw materials repair an item on
       the anvil (e.g. diamond_sword -> "#minecraft:diamond_tool_materials").
 
+NETHER inputs (Tier 4 S0, docs/TIER4-NETHER-DESIGN.md §4/§5 — staged so nether
+parity is *measurable* from day one; nothing consumes them yet, the live server
+keeps the approximate NetherGen until the S5 cutover). All are NEW files that
+mirror an existing overworld/end analog's provenance; no existing bundled file
+is touched:
+  noise_settings_nether.json   data/minecraft/worldgen/noise_settings/nether.json
+      (verbatim copy, sibling of noise_settings_overworld/end.json; CARRIES the
+      nether surface_rule, sea_level 32, netherrack/lava, aquifers_enabled=false)
+  worldgen_noise_nether.json   data/minecraft/worldgen/noise/nether/**  (the 2
+      NormalNoise params — temperature, vegetation — the nether noise_router
+      references; worldgen_noise.json excludes nether/* by design, so they get
+      their own file, keyed "nether/<name>" like the overworld aggregate would)
+  biome_parameters_nether.json reports/biome_parameters/minecraft/nether.json
+      (5 rows; same datagen source + quantize as biome_parameters_overworld —
+      the jar's multi_noise .../nether.json is just {"preset":"minecraft:nether"})
+  carvers_nether.json          data/minecraft/worldgen/configured_carver/nether_cave.json
+      keyed "minecraft:nether_cave" (carvers.json is an overworld-only subset;
+      all 5 nether biomes reference minecraft:nether_cave), debug_settings stripped
+  biome_features_nether.json   "features" field of the 5 nether biomes' worldgen/
+      biome/*.json (biome_features.json is the 54 overworld biomes only)
+  structure_biomes/nether_fortress.json  <- has_structure/nether_fortress.json
+  structure_biomes/nether_fossil.json    <- has_structure/nether_fossil.json
+      (same resolve() as the other structure_biomes/; previously excluded because
+      the structures were unported — now bundled as nether structure biome-gates)
+
 NOT COVERED (deliberately): piston_reorder_cases.json is not jar-derived — it is a
 behavior capture recorded from a live vanilla server by scripts/piston_vanilla_capture.py.
 """
@@ -185,6 +210,8 @@ STRUCTURE_BIOMES_DIRECT = [
     "shipwreck", "shipwreck_beached", "swamp_hut", "trail_ruins",
     "trial_chambers", "village_desert", "village_plains", "village_savanna",
     "village_snowy", "village_taiga", "woodland_mansion",
+    # Nether structure biome-gates (Tier 4 S0) — previously excluded as unported.
+    "nether_fortress", "nether_fossil",
 ]
 
 
@@ -487,6 +514,43 @@ def build_biome_projections(jar, biome_order):
     }
 
 
+NETHER_BIOMES = ("nether_wastes", "soul_sand_valley", "crimson_forest",
+                 "warped_forest", "basalt_deltas")
+
+
+def build_nether(jar, nether_report):
+    """Nether worldgen inputs (Tier 4 S0 — see this module's docstring NETHER
+    block). All NEW files paralleling their overworld/end analogs; nothing
+    consumes them yet (staged for VNetherGen, S1+). No existing file is touched."""
+    # nether_cave carver defs (carvers.json is an overworld-only subset)
+    used = []
+    for b in NETHER_BIOMES:
+        c = jar.json("data/minecraft/worldgen/biome/%s.json" % b).get("carvers", [])
+        for cid in ([c] if isinstance(c, str) else c):
+            if cid not in used:
+                used.append(cid)
+    carver_defs = {}
+    for cid in used:
+        d = jar.json("data/minecraft/worldgen/configured_carver/%s.json" % cid.split(":", 1)[1])
+        d.get("config", {}).pop("debug_settings", None)  # debug-only, stripped like carvers.json
+        carver_defs[cid] = d
+    return {
+        "noise_settings_nether.json": ("raw", jar.bytes(
+            "data/minecraft/worldgen/noise_settings/nether.json")),
+        # nether/* NormalNoise params, keyed like the overworld aggregate would
+        # ("nether/temperature", "nether/vegetation"); worldgen_noise.json omits nether/*
+        "worldgen_noise_nether.json": ("json", {
+            k: v for k, v in aggregate(jar, "data/minecraft/worldgen/noise/").items()
+            if k.startswith("nether/")}),
+        "biome_parameters_nether.json": ("json", build_biome_parameters(nether_report)),
+        "carvers_nether.json": ("json", carver_defs),
+        "biome_features_nether.json": ("json", {
+            "minecraft:" + b: jar.json(
+                "data/minecraft/worldgen/biome/%s.json" % b)["features"]
+            for b in NETHER_BIOMES}),
+    }
+
+
 def build_all(jar_path, reports_dir=None):
     jar = Jar(jar_path)
     reports_root = find_reports_root(jar_path, reports_dir)
@@ -502,6 +566,9 @@ def build_all(jar_path, reports_dir=None):
     enchantability, repairable = build_item_data(reports_root)
     out["item_enchantability.json"] = ("json", enchantability)
     out["item_repairable.json"] = ("json", repairable)
+    nether_report = json.load(open(os.path.join(
+        reports_root, "biome_parameters", "minecraft", "nether.json")))
+    out.update(build_nether(jar, nether_report))
     return out
 
 

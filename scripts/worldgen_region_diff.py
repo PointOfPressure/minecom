@@ -5,6 +5,14 @@ ONE command that answers "how bit-exact is minecom's overworld?":
 
     python3 scripts/worldgen_region_diff.py            # seed 20260708, 36x36 chunks
     python3 scripts/worldgen_region_diff.py --seed 123 --radius 4   # quick spot-check
+    python3 scripts/worldgen_region_diff.py --dimension nether      # Nether diff
+
+Dimension-parameterized (docs/TIER4-NETHER-DESIGN.md §4): --dimension overworld
+(default) scans sections -4..19; --dimension nether drives the vanilla side with
+`execute in minecraft:the_nether run forceload ...`, compares the per-dimension
+region subtree world/dimensions/minecraft/the_nether/region on both sides, and
+scans sections 0..7 (y 0..127). The two run as fully independent work dirs, so
+the overworld baseline can never be regressed by nether work.
 
 It (1) generates the chunk square [center-radius, center+radius)^2 on a REAL
 vanilla dedicated server (version = vanilla_oracle.MC_VERSION; driven over
@@ -44,14 +52,30 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from vanilla_oracle import (JAR, MC_VERSION, VANILLA_REGION_SUBDIR,
-                            RegionReader, Server, default_block_properties,
-                            prepare_workdir, section_indices)
+from vanilla_oracle import (JAR, MC_VERSION, VANILLA_NETHER_REGION_SUBDIR,
+                            VANILLA_REGION_SUBDIR, RegionReader, Server,
+                            default_block_properties, prepare_workdir,
+                            section_indices)
 
 REPO = Path(__file__).resolve().parent.parent
-SECTION_MIN, SECTION_MAX = -4, 19          # overworld y -64..319
-BLOCKS_PER_CHUNK = (SECTION_MAX - SECTION_MIN + 1) * 4096
 TILE = 12                                  # chunks per forceload tile (144 < vanilla's 256 cap)
+
+# Per-dimension harness config (docs/TIER4-NETHER-DESIGN.md §4). The overworld
+# row reproduces the historical setup exactly — minecom writes world/region and
+# the comparator scans sections -4..19 (y -64..319). The nether writes into the
+# per-dimension subtree on BOTH sides and scans sections 0..7 (y 0..127): the
+# nether noise_settings height is 128 and a bedrock roof caps content near y=127,
+# so sections 8..15 are all-air and not compared.
+DIMENSIONS = {
+    "overworld": dict(vanilla_subdir=VANILLA_REGION_SUBDIR,
+                      minecom_subdir="world/region",
+                      mc_dimension="minecraft:overworld",
+                      section_min=-4, section_max=19),
+    "nether": dict(vanilla_subdir=VANILLA_NETHER_REGION_SUBDIR,
+                   minecom_subdir=VANILLA_NETHER_REGION_SUBDIR,
+                   mc_dimension="minecraft:the_nether",
+                   section_min=0, section_max=7),
+}
 
 
 class Tee:
@@ -66,7 +90,7 @@ class Tee:
 
 # ---------------------------------------------------------------- generation
 
-def gen_vanilla(work, seed, cx0, cx1, cz0, cz1, port, log):
+def gen_vanilla(work, seed, cx0, cx1, cz0, cz1, port, dim, log):
     # max-tick-time=-1: save-all flush of a freshly generated tile can block the
     # main thread >60s on an HDD, and the watchdog would crash the server.
     # sync-chunk-writes=false: no per-chunk fsync (crash-safety only, and the
@@ -80,7 +104,7 @@ def gen_vanilla(work, seed, cx0, cx1, cz0, cz1, port, log):
         "max-tick-time=-1\nsync-chunk-writes=false\n"
         "motd=region diff capture\n", fresh=False)
     srv = Server(work, xmx="2048M")
-    log(f"vanilla: starting dedicated server (seed {seed})...")
+    log(f"vanilla: starting dedicated server (seed {seed}, dim {dim['mc_dimension']})...")
     srv.start()
     for rule in ("doMobSpawning", "doWeatherCycle", "doDaylightCycle",
                  "doFireTick", "doTraderSpawning", "doMobGriefing"):
@@ -89,13 +113,17 @@ def gen_vanilla(work, seed, cx0, cx1, cz0, cz1, port, log):
     srv.cmd("gamerule spawnChunkRadius 0")
     srv.barrier("setup")
 
-    region_dir = work / VANILLA_REGION_SUBDIR
+    # forceload runs in the target dimension: bare in the overworld (byte-
+    # identical to the historical run), `execute in <dim> run ...` otherwise.
+    pre = ("" if dim["mc_dimension"] == "minecraft:overworld"
+           else f"execute in {dim['mc_dimension']} run ")
+    region_dir = work / dim["vanilla_subdir"]
     start = time.time()
     for tx in range(cx0, cx1, TILE):
         for tz in range(cz0, cz1, TILE):
             ex, ez = min(tx + TILE, cx1) - 1, min(tz + TILE, cz1) - 1
             tile = [(cx, cz) for cx in range(tx, ex + 1) for cz in range(tz, ez + 1)]
-            srv.cmd(f"forceload add {tx * 16} {tz * 16} {ex * 16 + 15} {ez * 16 + 15}")
+            srv.cmd(f"{pre}forceload add {tx * 16} {tz * 16} {ex * 16 + 15} {ez * 16 + 15}")
             deadline = time.time() + 900
             while True:
                 srv.save_flush()
@@ -108,26 +136,26 @@ def gen_vanilla(work, seed, cx0, cx1, cz0, cz1, port, log):
                     raise RuntimeError(
                         f"tile ({tx},{tz}): only {full}/{len(tile)} chunks full after 900s")
                 time.sleep(8)
-            srv.cmd("forceload remove all")
+            srv.cmd(f"{pre}forceload remove all")
             log(f"vanilla: tile ({tx},{tz})..({ex},{ez}) full "
                 f"({len(tile)} chunks, {time.time() - start:.0f}s elapsed)")
     srv.stop()
     log(f"vanilla: done in {time.time() - start:.0f}s")
 
 
-def gen_minecom(work, jar, seed, radius, ccx, ccz, log):
+def gen_minecom(work, jar, seed, radius, ccx, ccz, dimension, log):
     if work.exists():
         shutil.rmtree(work)
     work.mkdir(parents=True)
     # run from a copy so a concurrent `mvn package` can't rewrite the jar
     # under a live JVM (other agents may be building in the same tree)
     jar = shutil.copy2(jar, work / "minecom.jar")
-    log(f"minecom: java -jar {Path(jar).name} --genregions {seed} {radius} {ccx} {ccz} ...")
+    log(f"minecom: java -jar {Path(jar).name} --genregions {seed} {radius} {ccx} {ccz} {dimension} ...")
     start = time.time()
     with open(work / "genregions.log", "w") as out:
         rc = subprocess.run(
             ["java", "-Xmx3G", "-jar", str(jar),
-             "--genregions", str(seed), str(radius), str(ccx), str(ccz)],
+             "--genregions", str(seed), str(radius), str(ccx), str(ccz), dimension],
             cwd=work, stdout=out, stderr=subprocess.STDOUT).returncode
     if rc != 0:
         tail = (work / "genregions.log").read_text().splitlines()[-20:]
@@ -173,7 +201,9 @@ def section_canon(interned, canon_names, defaults, sec, air_id):
     return None, [ids[i] for i in indices]
 
 
-def compare(vanilla_region, minecom_region, chunks, top, defaults, log):
+def compare(vanilla_region, minecom_region, chunks, top, defaults,
+            section_min, section_max, log):
+    blocks_per_chunk = (section_max - section_min + 1) * 4096
     interned, canon_names = {}, []
     air_id = canonize(interned, canon_names, defaults, [("air", {})])[0]
     vr = RegionReader(vanilla_region)
@@ -198,7 +228,7 @@ def compare(vanilla_region, minecom_region, chunks, top, defaults, log):
             continue
         vsecs = vr.sections(cx, cz)
         compared_chunks += 1
-        for sy in range(SECTION_MIN, SECTION_MAX + 1):
+        for sy in range(section_min, section_max + 1):
             vu, vlist = section_canon(interned, canon_names, defaults, vsecs.get(sy), air_id)
             mu, mlist = section_canon(interned, canon_names, defaults, msecs.get(sy), air_id)
             if vlist is None and mlist is None:
@@ -225,11 +255,11 @@ def compare(vanilla_region, minecom_region, chunks, top, defaults, log):
         vr.forget(cx, cz)
         mr.forget(cx, cz)
         if n % 100 == 0:
-            total = compared_chunks * BLOCKS_PER_CHUNK
+            total = compared_chunks * blocks_per_chunk
             log(f"progress: {n} chunks compared, {int((time.time() - start) * 1000)}ms "
                 f"elapsed, running match rate {100 * matched / total:.4f}%")
 
-    total = compared_chunks * BLOCKS_PER_CHUNK
+    total = compared_chunks * blocks_per_chunk
     log("=== FINAL RESULT ===")
     log(f"chunks compared: {compared_chunks}, chunks missing/not-full: {bad_chunks}")
     log(f"total blocks: {total}")
@@ -250,6 +280,8 @@ def main():
     ap.add_argument("--radius", type=int, default=18,
                     help="chunks in each direction from center; 18 -> 36x36 = 1296 chunks")
     ap.add_argument("--center", type=int, nargs=2, default=[0, 0], metavar=("CX", "CZ"))
+    ap.add_argument("--dimension", choices=sorted(DIMENSIONS), default="overworld",
+                    help="which dimension to diff (docs/TIER4-NETHER-DESIGN.md §4)")
     ap.add_argument("--port", type=int, default=25598)
     ap.add_argument("--top", type=int, default=40, help="mismatch classes to print")
     ap.add_argument("--fresh", action="store_true", help="wipe cached vanilla + minecom worlds")
@@ -259,6 +291,7 @@ def main():
     ap.add_argument("--work", type=Path, default=Path.home() / "minecom-region-diff")
     args = ap.parse_args()
 
+    dim = DIMENSIONS[args.dimension]
     ccx, ccz = args.center
     cx0, cx1 = ccx - args.radius, ccx + args.radius
     cz0, cz1 = ccz - args.radius, ccz + args.radius
@@ -272,38 +305,44 @@ def main():
     # Per-MC-version work dirs: the vanilla world cache is only valid for the
     # server version that generated it (the 26.1.2 cache lives in the
     # unsuffixed pre-26.2 dirs and is deliberately kept).
-    work = args.work / f"{args.seed}_r{args.radius}_{ccx}x{ccz}_{MC_VERSION}"
+    # overworld dir name is unchanged (reuses the hours-to-build cached vanilla
+    # side); the nether diff is a fully independent work dir via the suffix.
+    dimtag = "" if args.dimension == "overworld" else f"_{args.dimension}"
+    work = args.work / f"{args.seed}_r{args.radius}_{ccx}x{ccz}_{MC_VERSION}{dimtag}"
     vanilla_dir, minecom_dir = work / "vanilla", work / "minecom"
     if args.fresh and work.exists():
         shutil.rmtree(work)
     work.mkdir(parents=True, exist_ok=True)
 
     ts = time.strftime("%Y%m%d-%H%M%S")
-    log_path = REPO / f"test-logs/regiondiff_seed{args.seed}_r{args.radius}_{ts}.log"
+    log_path = REPO / f"test-logs/regiondiff_{args.dimension}_seed{args.seed}_r{args.radius}_{ts}.log"
     log_path.parent.mkdir(exist_ok=True)
     log = Tee(log_path)
-    log(f"region diff: seed {args.seed}, chunks ({cx0},{cz0})..({cx1 - 1},{cz1 - 1}) "
-        f"= {len(chunks)} chunks, work dir {work}")
+    log(f"region diff: dimension {args.dimension}, seed {args.seed}, "
+        f"chunks ({cx0},{cz0})..({cx1 - 1},{cz1 - 1}) = {len(chunks)} chunks, work dir {work}")
 
     marker = vanilla_dir / ".complete"
     if marker.exists():
         log("vanilla: cached world found, skipping generation (--fresh to regen)")
     else:
-        gen_vanilla(vanilla_dir, args.seed, cx0, cx1, cz0, cz1, args.port, log)
+        gen_vanilla(vanilla_dir, args.seed, cx0, cx1, cz0, cz1, args.port, dim, log)
         marker.write_text(json.dumps(dict(
-            seed=args.seed, radius=args.radius, center=[ccx, ccz])) + "\n")
+            seed=args.seed, radius=args.radius, center=[ccx, ccz],
+            dimension=args.dimension)) + "\n")
 
-    if args.reuse_minecom and (minecom_dir / "world/region").exists():
+    if args.reuse_minecom and (minecom_dir / dim["minecom_subdir"]).exists():
         log("minecom: --reuse-minecom, comparing existing output")
     else:
-        gen_minecom(minecom_dir, args.jar, args.seed, args.radius, ccx, ccz, log)
+        gen_minecom(minecom_dir, args.jar, args.seed, args.radius, ccx, ccz,
+                    args.dimension, log)
 
     log("loading vanilla blocks report (default-state property table)...")
     # per-version like the world caches: the report enumerates every block's
     # default-state properties, and 26.2 added blocks (sulfur family)
     defaults = default_block_properties(args.work / f"blocks_report_{MC_VERSION}")
-    rate, bad = compare(vanilla_dir / VANILLA_REGION_SUBDIR,
-                        minecom_dir / "world/region", chunks, args.top, defaults, log)
+    rate, bad = compare(vanilla_dir / dim["vanilla_subdir"],
+                        minecom_dir / dim["minecom_subdir"], chunks, args.top,
+                        defaults, dim["section_min"], dim["section_max"], log)
     log(f"log: {log_path}")
     return 1 if bad else 0
 

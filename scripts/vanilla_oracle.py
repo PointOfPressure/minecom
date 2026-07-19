@@ -36,6 +36,16 @@ JAR = Path.home() / "mc-26.2/versions/26.2/server-26.2.jar"
 LIBS = Path.home() / "mc-26.2/libraries"
 
 VANILLA_REGION_SUBDIR = "world/dimensions/minecraft/overworld/region"
+# 26.x per-dimension region layout; the Nether side of the region-diff harness
+# (docs/TIER4-NETHER-DESIGN.md §4). RegionReader takes an explicit dir, so it is
+# already dimension-agnostic — callers pick the subdir via region_subdir().
+VANILLA_NETHER_REGION_SUBDIR = "world/dimensions/minecraft/the_nether/region"
+
+
+def region_subdir(dimension):
+    """Vanilla Anvil region subdir for a dimension token ('overworld'|'nether')."""
+    return {"overworld": VANILLA_REGION_SUBDIR,
+            "nether": VANILLA_NETHER_REGION_SUBDIR}[dimension]
 
 
 def prepare_workdir(work, properties, fresh=True):

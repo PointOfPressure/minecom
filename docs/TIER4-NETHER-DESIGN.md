@@ -95,6 +95,61 @@ So the committed 99.3613% north-star number is overworld-only. **The Nether's
 approximation is currently unmeasured.** Extending the harness to the Nether
 is therefore the hard prerequisite (S0 below), exactly as MASTERPLAN demands.
 
+### S0 DONE (2026-07-19, `nether-s0` branch) — the gap is now closed
+
+The harness and extractor were extended per §4/§5 below; the Nether is now
+**measured**. All four §4 changes landed (harness + data only, no production
+`src/` behavior change — the live server keeps `NetherGen`, Bootstrap.java:99):
+
+- `vanilla_oracle.py` — `VANILLA_NETHER_REGION_SUBDIR` +
+  `region_subdir(dimension)`.
+- `worldgen_region_diff.py` — `--dimension {overworld,nether}`, a per-dimension
+  `DIMENSIONS` table (section window, region subtrees, `mc_dimension`), the
+  vanilla side drives `execute in minecraft:the_nether run forceload ...`, and
+  the nether runs in an independent work dir (`_nether` suffix) so the overworld
+  cache/baseline can never be perturbed. Nether scans sections 0..7 (y 0..127).
+- `GenRegions.java` — `--genregions <seed> <radius> [cx cz [dimension]]`;
+  `nether` builds today's `NetherGen` into
+  `world/dimensions/minecraft/the_nether/region` (per-dimension Anvil subtree).
+- `extract_vanilla_data.py` — bundles the nether inputs (all NEW files, no
+  existing file touched): `noise_settings_nether.json` (carries the nether
+  **surface rule**, sea_level 32, netherrack/lava, aquifers off),
+  `worldgen_noise_nether.json` (nether temperature/vegetation NormalNoise),
+  `biome_parameters_nether.json` (5-biome quantized climate table),
+  `carvers_nether.json` (`nether_cave`), `biome_features_nether.json` (the 5
+  nether biomes' feature steps), and `structure_biomes/nether_fortress.json` +
+  `nether_fossil.json` (the nether structure biome-gates).
+
+**Honest baseline for today's `NetherGen` (the *before* number):**
+
+> **41.796950% full-state** — seed 20260708, radius 18, center (0,0): 1,296
+> chunks, 42,467,328 blocks (sections 0..7), 17,750,048 matched, 0 chunks
+> missing. Cached at `~/minecom-region-diff/20260708_r18_0x0_26.2_nether/`;
+> log `test-logs/regiondiff_nether_41.80pct_s0_baseline.log`.
+
+This 41.8% is *coincidental* full-state overlap (both generators fill the 0..127
+band with large volumes of netherrack, air and lava, so those cells match by
+chance); the **non-air structural** correspondence is ~0, exactly as §1's
+five-fact verdict predicts (wrong seed, wrong noise). Dominant mismatch classes,
+each a target for S1..S4:
+
+| count | minecom ← vanilla | what it is |
+|---|---|---|
+| 9,715,432 | `netherrack ← air` | solid where vanilla has open cavern (wrong terrain/noise) |
+| 2,622,325 | `lava ← netherrack` | lava sea pinned at y=31 vs vanilla's noise terrain |
+| 2,455,259 | `air ← netherrack` | cavern where vanilla has solid |
+| 1,400,805 | `netherrack ← basalt` | basalt_deltas surface never generated (S2) |
+| 620,730 + 227,559 | `netherrack/air ← cave_air` | vanilla marks carved nether air as **`cave_air`**; `NetherGen` writes plain `air` — a systematic block-state class S1 must reproduce |
+| 512,943 | `blackstone ← netherrack` | blackstone placement differs |
+| 448,632 / 436,100 | `netherrack ↔ bedrock` | bedrock floor/roof shells at the wrong y (S1) |
+
+Gates held for this step (§5, any miss reverts): overworld extractor outputs
+byte-identical (`--validate`: every overworld file PASS, only the pre-existing
+non-jar-derived `block_map_colors.json` uncovered, + the 7 new nether files
+PASS); overworld region-diff **exactly 99.361284%** (cached vanilla side reused,
+not `--fresh`); suites **258 selftest + 1015 playtest** green on an idle machine
+(the doc's original 228+822 predates the current release).
+
 ---
 
 ## 2. Why the engine is ready — the leverage
@@ -263,7 +318,7 @@ climbs from its S0 baseline. Any step that misses its bar reverts, not
 
 | step | change | proves / gate |
 |---|---|---|
-| **S0** | Extend region-diff to the Nether (§4) **and** extend `extract_vanilla_data.py` to bundle nether inputs (noise_settings_nether, biome_parameters_nether, nether surface rule, nether carvers/features, nether structure biome-gates). Data-only + harness-only; production behavior unchanged; overworld extractor outputs byte-identical (rule 9 `--validate`). | Nether parity is now **measurable**. Records the *before* number for today's `NetherGen` (expected near-0 non-air match) as the honest baseline. |
+| **S0** | Extend region-diff to the Nether (§4) **and** extend `extract_vanilla_data.py` to bundle nether inputs (noise_settings_nether, biome_parameters_nether, nether surface rule, nether carvers/features, nether structure biome-gates). Data-only + harness-only; production behavior unchanged; overworld extractor outputs byte-identical (rule 9 `--validate`). | Nether parity is now **measurable**. Records the *before* number for today's `NetherGen` (expected near-0 non-air match) as the honest baseline. **DONE 2026-07-19 (`nether-s0`): 41.796950% full-state; non-air ~0. See §1 "S0 DONE".** |
 | **S1** | `VNetherGen` terrain — Phase A (final_density + fill + bedrock shells). Wired **only** into `--genregions nether`; the live server keeps `NetherGen` (Bootstrap.java:98) so shipped behavior can't regress before parity is proven. | Nether terrain (netherrack/lava/air + bedrock floor/roof) bit-matches vanilla where biomes don't matter; nether % jumps to the terrain-shape match. |
 | **S2** | Nether multi-noise biomes (5) + nether surface rules — Phase B. | Surface substances (soul_soil, gravel, basalt/blackstone) and the biome plane match vanilla. |
 | **S3** | Nether carvers + configured/placed features — Phase C part 1 (glowstone, real ore features, fungi/vines/columns/fire). | Decoration matches; nether % approaches the structure-free ceiling. |
