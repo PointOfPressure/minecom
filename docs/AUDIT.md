@@ -1536,6 +1536,18 @@ larger design pass. Landed nothing rather than ship a speculative regression.
   99.194% off), so SCULK_ENABLED stays off and neighbourhood-radius widening
   (vanilla features write >1 chunk away) is the named follow-up, with the
   order property (-Dminecom.decoOrder) kept for re-A/B at the wider radius.**
+  **RADIUS WIDENING MEASURED net-NEGATIVE 2026-07-20 (Opus 4.8): parameterized
+  the window via -Dminecom.decoRadius=N (default 1, byte-identical to this
+  baseline); r3 matrix (radius x sculk x order) shows monotonic r1 > r2 —
+  radius 2 sculk-off 99.191567% (−0.0025), radius 2 sculk-ON 98.978594% (the
+  wider ring does NOT flip sculk positive, it worsens it), xz still loses to
+  z-major at r2. The 3x3 window is a genuine sweet spot: a fixed-window
+  re-assembly has divergent BORDER chunks (decorated without their own full
+  neighbourhood); widening just adds a new ring of divergent borders whose
+  spurious writes now reach the target. SCULK_ENABLED stays off, ratchet stays
+  99.381792%, no config change landed (knob only). The true fix is a
+  persistent world-scan-order decoration buffer (decorate each chunk once in
+  global order), not a wider fixed window. See HANDOFF.md 2026-07-20.**
 
 - **Ore / stone-patch drift (families #5/#6, ~110k) is a placement-ORIGIN RNG
   drift, NOT the carver/air cascade and NOT the scatter.** Verified against
