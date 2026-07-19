@@ -32,25 +32,37 @@ behavior — see [License](#license) for the full boundary.
 This isn't "it looks about right in the client." Three layers of
 verification run continuously as the project grows:
 
-- **A real region-diff against real vanilla.** A genuine vanilla 26.1.2
+- **A real region-diff against real vanilla.** A genuine vanilla 26.2
   dedicated server generates a large region of terrain for a fixed seed;
   Minecom generates the same region; every block is diffed. This is the
-  project's north star number and it's currently **99.38%+ bit-exact**
-  across a 1,296-chunk (36×36) sample — every mismatch class in the
-  remaining gap is individually identified, root-caused, and tracked
+  project's north star number: currently **99.381792% bit-exact** across
+  a 1,296-chunk (36×36, 127.4M-block) overworld sample, and **99.419259%**
+  in the Nether — measured deterministically (two identical runs, identical
+  block counts) after this project found and fixed a chunk-scheduling race
+  in its own measurement path rather than shipping a noisy number. Every
+  mismatch class in the remaining gap is individually identified,
+  root-caused, and tracked
   (some are deliberately deferred architectural work, most are down to a
   handful of blocks per hundred thousand).
 - **`--selftest`** — a deterministic battery of data-engine checks
-  (currently 180+) covering world generation, structures, loot tables,
+  (currently 250+) covering world generation, structures, loot tables,
   recipes, and biome logic without needing a live server.
-- **`--playtest`** — headless gameplay verification (currently 220+
-  checks) that boots the real server wiring, joins a fake player, and
+- **`--playtest`** — headless gameplay verification (currently **1,000+
+  checks**) that boots the real server wiring, joins a fake player, and
   drives actual gameplay through the same event pipeline a real client
   uses: combat, mob AI, structures, minecarts, boats, redstone, potions,
   enchanting, the Nether, the End, raids, and more.
 
 Every change lands only after both suites pass clean and, for anything
-touching world generation, after a fresh region-diff measurement.
+touching world generation, after a fresh region-diff measurement — the
+worldgen number is a one-way ratchet: a change that lowers it does not
+land, however elegant.
+
+Performance is measured the same way: identical hardware, identical
+seeds, real bot load, side-by-side against vanilla and Paper — Minecom
+currently matches or beats both on tick latency under a 15-bot load
+(spawn-area p99 2.4× better than vanilla). Methodology and full numbers:
+[`docs/BENCHMARKS.md`](./docs/BENCHMARKS.md).
 
 ## Current scope
 
@@ -111,20 +123,32 @@ change is verified against the test suites and, for worldgen, against
 real vanilla output before it lands — nothing ships on vibes alone, the
 tests have to actually pass.
 
+The engineering process itself is public: [`docs/HANDOFF.md`](./docs/HANDOFF.md)
+is the live escalation log (including the failed attempts and the reverted
+experiments, kept deliberately), and [`docs/AUDIT.md`](./docs/AUDIT.md) is
+the known-gaps ledger — every deliberate simplification is written down
+there rather than silently faked. If you want to check the parity claim
+yourself: `scripts/worldgen_region_diff.py` regenerates the comparison
+from scratch against a real vanilla server (see its docstring).
+
 ## License
 
-**This repository is public for visibility, not for reuse.** Every file
-here is `Copyright (c) 2026 PointOfPressure`, all rights reserved — see
-[`LICENSE`](./LICENSE) for the full notice and the reasoning behind it.
-Short version: the project is moving too fast right now for a fork to be
-worth much, and once it stabilizes the intent is to release it under a
-proper permissive open-source license. Until then: look, learn, open
-issues — but don't redistribute or reuse the code without asking first.
+**AGPL-3.0** — see [`LICENSE`](./LICENSE). Free to use, run, modify, and
+host; if you run a modified version as a network service, you share your
+modifications with your users. Contributions will require a CLA (details
+coming with the contribution guide).
+
+The legal boundary the project has held since day one: **no Mojang code
+is in this repository and never has been** — decompiled vanilla source is
+used strictly as an offline behavioral reference and is explicitly
+uncommittable (see `CLAUDE.md` rule 2). All bundled game data
+(`src/main/resources/vanilla/`) is mechanically extracted from the
+official server jar by a documented, re-runnable script.
 
 ## Requirements & running
 
 - Java 25+
-- Client Minecraft **26.1.2**
+- Client Minecraft **26.2**
 
 ```sh
 mvn package
