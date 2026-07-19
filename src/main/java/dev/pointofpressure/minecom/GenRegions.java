@@ -88,6 +88,21 @@ public final class GenRegions {
         // ephemeral port, same trick as PlayTest: never collides, port is unused
         server.start("127.0.0.1", 0);
 
+        // The vibenilla generator decorates with a cross-chunk spill model
+        // (rocks.minestom.worldgen.WorldGenerator: a feature that writes into a
+        // neighbour routes through that neighbour's terrain buffer +
+        // pendingCrossWrites when the neighbour is NOT yet in `fullyDecorated`,
+        // but through the SOURCE chunk's own fork modifier when it already IS —
+        // and it mutates a shared TerrainData cache non-atomically). Which branch
+        // a border spill takes therefore depends on the completion ORDER of
+        // neighbouring chunks, so parallel (batched) generation is nondeterministic
+        // for this path (docs/HANDOFF.md 2026-07-19). Generating one chunk fully
+        // before the next, in a fixed row-major order, makes `fullyDecorated`
+        // deterministic at every decoration and yields bit-identical runs. Only the
+        // adopted vibenilla path needs this; the others keep the fast batched path.
+        boolean sequential = dimension.equals("nether_vibenilla");
+        int batchLimit = sequential ? 1 : 64;
+
         int side = radius * 2;
         int total = side * side;
         long start = System.currentTimeMillis();
@@ -96,10 +111,12 @@ public final class GenRegions {
         for (int cx = centerCx - radius; cx < centerCx + radius; cx++) {
             for (int cz = centerCz - radius; cz < centerCz + radius; cz++) {
                 batch.add(instance.loadChunk(cx, cz));
-                if (batch.size() == 64) {
+                if (batch.size() == batchLimit) {
                     done += join(batch);
-                    System.out.printf("genregions: %d/%d chunks, %dms%n",
-                            done, total, System.currentTimeMillis() - start);
+                    if (!sequential || done % 64 == 0) {
+                        System.out.printf("genregions: %d/%d chunks, %dms%n",
+                                done, total, System.currentTimeMillis() - start);
+                    }
                 }
             }
         }
