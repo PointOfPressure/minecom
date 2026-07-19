@@ -14,6 +14,70 @@ of what got escalated and why.
 
 ---
 
+## Decoration neighbourhood-radius widening MEASURED net-NEGATIVE — 3x3 window is optimal, ratchet stands at 99.381792% (2026-07-20, Opus 4.8)
+
+Picked up the named follow-up from the shared-canvas landing (AUDIT.md "Overworld
+worldgen residual root-cause", LANDED addendum): the 3x3 (radius-1) neighbourhood
+WINDOW in `VanillaGen.decoratedData` is the binding constraint on the overworld
+residual because vanilla features can write >1 chunk away; hypothesis was that a
+wider ring would capture more cross-boundary spill and, in particular, flip
+ancient-city-scale sculk patches (SCULK_ENABLED, ~262k blocks) from net-negative
+to net-positive on the shared canvas.
+
+**Outcome: widening the radius is net-NEGATIVE at every configuration tested. The
+3x3 window (radius 1) with sculk-off, z-major stays optimal; SCULK_ENABLED stays
+off; the r18 ratchet is unchanged at 99.381792%. Landed a documented diagnostic
+knob only (`-Dminecom.decoRadius=N`, default 1 = behaviour byte-identical to the
+375c7e3 baseline by construction — the loop bounds at N=1 are exactly the prior
+-1..1), NOT a config change.**
+
+Measurement matrix (seed 20260708, `--radius 3` quick cut; the overworld measure
+is deterministic so single runs are valid). r3 harness re-validated: my jar
+reproduces the radius-1 sculk-off baseline to the digit (99.194025%), so the
+radius-2 deltas are trustworthy:
+
+| decoRadius | window | sculk | order   | r3 bit-exact |
+|-----------:|:------:|:-----:|:--------|-------------:|
+| 1          | 3x3    | off   | z-major | **99.194025%** (baseline) |
+| 1          | 3x3    | on    | z-major | 98.996565% (prior-measured) |
+| 2          | 5x5    | off   | z-major | 99.191567% (−0.0025) |
+| 2          | 5x5    | on    | z-major | 98.978594% (−0.018 vs r2-off; worse than r1-on too) |
+| 2          | 5x5    | off   | xz      | 99.172945% (−0.021; z-major still wins, consistent with r1 A/B) |
+
+Interpretation: the trend is monotonic r1 > r2 (and z-major > xz at both radii),
+so radius 3+ was not run — it would be strictly worse and 5.4x the decoration
+work. The wider window does NOT fix sculk; it makes it worse. Mechanism: the
+shared canvas is assembled fresh per target chunk over a fixed window, so the
+window's BORDER chunks decorate without their own full neighbourhood and their
+boundary-reading features (top-layer/tree spill, sculk spread) diverge. Widening
+just moves the border out and adds a new ring of divergent border chunks whose
+now-in-range spurious writes reach the target — net more error introduced than
+correct spill captured. The 3x3 is a genuine sweet spot, not an under-shoot.
+
+No full r18 was run for radius 2: per the up-only protocol, r18 is spent only on
+a winner, and radius 2 loses at the deterministic r3 proxy. The winner is the
+already-landed radius-1 config (r18 = 99.381792%). Ratchet untouched.
+
+Perf cost (minecom-side generation of the r3 tile, wall-clock, as a rough proxy):
+radius 1 sculk-off = 45s; radius 2 sculk-off = 46s (~+2%); radius 2 sculk-ON =
+57s (sculk's own spread cost). The 5x5 window's ~2.8x decoration work barely
+moves wall-clock because decoration is NOT the bottleneck — terrain noise
+(final_density) dominates — so the naive full-window widen is cheap in practice.
+It just doesn't help parity, so the two-tier "only far-writing features trigger
+the wider ring" design was not built (it would add complexity for a knob whose
+best setting is 1). The knob is left in for future re-A/B (mirrors the existing
+`-Dminecom.decoOrder`/`-Dminecom.sculk` diagnostic knobs).
+
+Where the overworld residual goes next (unchanged by this pass): the border-chunk
+divergence above is intrinsic to a fixed-window re-assembly — a true fix is a
+persistent, world-scan-order decoration buffer (decorate each chunk exactly once,
+in vanilla's global chunk order, features reading the ONE evolving world), not a
+wider window over a per-target re-decoration. That is a larger design pass than a
+radius knob; the AUDIT ROOT #1 note already frames it. Sculk (~262k, ~32% of the
+residual) is gated on that same buffer.
+
+---
+
 ## Ore/stone-patch drift ISOLATED: partial-discard ores' per-voxel RNG draws desync the shared count-loop stream (2026-07-19, Opus 4.8)
 
 Picked up the "Secondary" item from the previous entry (ore/stone-patch drift,

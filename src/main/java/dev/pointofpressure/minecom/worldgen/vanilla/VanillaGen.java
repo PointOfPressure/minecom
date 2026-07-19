@@ -121,12 +121,20 @@ public final class VanillaGen implements Generator {
      *  flips to x-major for the radius-3 A/B. */
     private static final boolean DECO_ORDER_X_MAJOR = "xz".equals(System.getProperty("minecom.decoOrder"));
 
+    /** Neighbourhood radius (in chunks) of the shared-canvas decoration window.
+     *  The default 1 = a 3x3 window (8 neighbours). Vanilla features can write
+     *  more than one chunk away (ancient-city-scale sculk patches, large trees),
+     *  so a wider ring can capture more cross-boundary spill at the cost of
+     *  ~((2R+1)/3)^2 the decoration work per chunk (R=2 -> 25/9 ≈ 2.8x). Tunable
+     *  via -Dminecom.decoRadius=N for the radius A/B (AUDIT.md 2026-07-19). */
+    private static final int DECO_RADIUS = Math.max(1, Integer.getInteger("minecom.decoRadius", 1));
+
     /**
      * Decorated output for one chunk: copy of the undecorated chunk plus every
-     * write that this chunk and its 8 neighbors' decorations make into it.
-     * All 9 chunks decorate ONE shared canvas in scan order — each chunk fully,
-     * in GenerationStep order, reading prior chunks' cross-boundary writes —
-     * then only writes landing in the target chunk are exported. The previous
+     * write that this chunk and its neighbourhood's decorations make into it.
+     * All (2R+1)^2 chunks decorate ONE shared canvas in scan order — each chunk
+     * fully, in GenerationStep order, reading prior chunks' cross-boundary writes
+     * — then only writes landing in the target chunk are exported. The previous
      * independent-overlay-per-neighbor model lost vanilla's cross-chunk feature
      * order/visibility and drove ~69% of the r18 residual (AUDIT.md 2026-07-19,
      * proven on the boundary-straddling spruce at (-209,-126): self-chunk snow
@@ -142,8 +150,8 @@ public final class VanillaGen implements Generator {
         structures.placeInChunk(chunkX, chunkZ, new StructureCanvas(out, chunkX, chunkZ));
 
         OverlayCanvas overlay = new OverlayCanvas();
-        for (int outer = -1; outer <= 1; outer++) {
-            for (int inner = -1; inner <= 1; inner++) {
+        for (int outer = -DECO_RADIUS; outer <= DECO_RADIUS; outer++) {
+            for (int inner = -DECO_RADIUS; inner <= DECO_RADIUS; inner++) {
                 int dx = DECO_ORDER_X_MAJOR ? outer : inner;
                 int dz = DECO_ORDER_X_MAJOR ? inner : outer;
                 features.decorate(overlay, chunkX + dx, chunkZ + dz);
