@@ -1548,6 +1548,21 @@ larger design pass. Landed nothing rather than ship a speculative regression.
   99.381792%, no config change landed (knob only). The true fix is a
   persistent world-scan-order decoration buffer (decorate each chunk once in
   global order), not a wider fixed window. See HANDOFF.md 2026-07-20.**
+  **PERSISTENT BUFFER BUILT + MEASURED net-neutral 2026-07-20 (Opus 4.8): the
+  named true fix (each chunk decorated ONCE in global scan order on a persistent
+  cross-chunk canvas, sliding-frontier extraction) was implemented harness-only
+  (`VanillaGen.generateBufferedRegion`, `-Dminecom.decoBuffer=true`) and TIES the
+  window ratchet — r18 99.381500% vs 99.381792% (−379 blocks/127.4M). Root cause
+  of the tie: the window's per-target 3x3 z-major scan is ORDER-EQUIVALENT to the
+  buffer's global z-major scan on each chunk's immediate 8-neighbour ring, so the
+  shared-canvas landing had ALREADY captured vanilla's first-ring feature order —
+  the ROOT #1 spruce/snow case is fixed by both. **The sculk hypothesis above is
+  FALSIFIED:** the buffer does NOT unlock `SCULK_ENABLED` (−0.22pp at both margin
+  M=1 and M=2) — sculk's divergence is intrinsic to the stochastic `VSculk`
+  port/its charge spread, not the cross-chunk decoration infrastructure. The
+  overworld residual's next lever is single-feature parity (sculk-spread RNG replay,
+  ore placement-origin drift), NOT the decoration model. Full matrix + verdict in
+  HANDOFF.md 2026-07-20.**
 
 - **Ore / stone-patch drift (families #5/#6, ~110k) is a placement-ORIGIN RNG
   drift, NOT the carver/air cascade and NOT the scatter.** Verified against

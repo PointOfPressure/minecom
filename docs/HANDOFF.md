@@ -14,6 +14,98 @@ of what got escalated and why.
 
 ---
 
+## Persistent world-scan-order decoration buffer BUILT + MEASURED net-neutral — ties (a hair below) the window ratchet, does NOT unlock sculk; ratchet stands at 99.381792% (2026-07-20, Opus 4.8) — DONE (negative result)
+
+Picked up the named "true fix" from AUDIT ROOT #1 / the deco-radius entry below: replace
+the per-target 3x3 window re-decoration (`VanillaGen.decoratedData`) with a PERSISTENT
+world-scan-order decoration buffer — each chunk's features run ONCE, in a defined global
+order, on ONE canvas whose cross-chunk writes persist, exactly like vanilla's own
+generation; a chunk is extracted only after every chunk within the feature write-distance
+has decorated. Built it; measured it; it does NOT beat the ratchet. Landed as a documented
+harness-only path behind a knob (default OFF, so the shipped/ratchet config is byte-identical),
+NOT a config change. This is a negative result of the same kind (and value) as the deco-radius
+widening below.
+
+**Design (as implemented, branch `deco-buffer`):**
+- New `VanillaGen.generateBufferedRegion(centerCx, centerCz, radius, ChunkSink)` +
+  private `BufferCanvas` (a read-through-over-`cachedData` canvas whose write overlay is
+  PERSISTENT and per-chunk-bucketed, never reset between chunks). Decorates the whole
+  region in row-major global scan order (z-major default, `-Dminecom.decoOrder=xz` for
+  x-major), each chunk's `features.decorate` run exactly ONCE, cross-chunk writes visible
+  to all later chunks — the true evolving world.
+- **Sliding frontier + margin ring** honour the memory constraint (r18's 1296 chunks are
+  never all held live): a one-chunk (M = `DECO_RADIUS`) margin ring around the save region
+  is decorated but not extracted (so save-edge chunks still get outside-region spill, parity
+  with the window's `cachedData` neighbours); after decorating primary row `p`, save row
+  `p-M` is extracted (its full ±M neighbourhood is now decorated) and row `p-2M` is evicted.
+  Only ~(2M+1) rows of overlay writes stay live.
+- **LIVE-SERVER split (constraint c):** `decoratedData` (the 3x3 window) is UNCHANGED and
+  stays the live-server fallback — on-demand generation has no global order. The buffer is
+  wired HARNESS-ONLY through `GenRegions` behind `-Dminecom.decoBuffer=true` (overworld
+  only), the same harness-only pattern the nether_vibenilla sequential fix used: `GenRegions`
+  drives `generateBufferedRegion`, feeding each extracted chunk into the instance via a small
+  `precomputed` map that `decoratedData` short-circuits on (empty on the live server, so the
+  live path is byte-identical). A dependency-ordered LIVE variant is future work if the buffer
+  ever proves worth it — it does not, so it was not built.
+
+**r3 iteration matrix (seed 20260708, `--radius 3`; overworld is deterministic, single runs
+valid). Baseline reproduced byte-for-byte (99.194025%), so the deltas are trustworthy:**
+
+| config                              | r3 bit-exact |
+|:------------------------------------|-------------:|
+| window baseline (buffer OFF)        | **99.194025%** |
+| buffer M=1 sculk-off z-major        | 99.192104% (−0.0019) |
+| buffer M=1 sculk-off x-major        | 99.173652% (z-major still wins) |
+| buffer M=1 sculk-**ON** z-major     | 98.976022% (−0.22; sculk NOT flipped) |
+| buffer M=2 sculk-off z-major        | 99.191454% (wider margin slightly worse) |
+| buffer M=2 sculk-**ON** z-major     | 98.976107% (sculk unmoved by margin) |
+
+**r18 verdict — buffer M=1 sculk-off z-major (the best config) vs the ratchet:**
+
+> **buffer** matched 126,614,003 → **99.381500%**
+> **ratchet (window)** → **99.381792%**
+> Δ = **−0.000292pp (−379 blocks / 127.4M)** — a statistical tie, a hair BELOW the ratchet.
+
+Log `test-logs/regiondiff_overworld_seed20260708_r18_20260720-001920.log`.
+
+**WHY it ties instead of winning (the real finding — this is not a bug; the baseline
+reproduces to the digit):** the window model's per-target 3x3 z-major scan is *order-equivalent*
+to the persistent buffer's global z-major scan on each chunk's immediate 8-neighbour ring —
+they produce the identical before/after partition of a chunk's 8 neighbours (proof: in the
+window, self sits 5th of 9 in the dz-outer/dx-inner scan; in the buffer's z-major global order,
+the chunks decorated before self are exactly row `cz-1` + `(cx-1,cz)`, and after are `(cx+1,cz)`
++ row `cz+1` — the same set). So the shared-canvas landing (which already replaced the old
+"independent overlay per neighbour" model) had ALREADY captured vanilla's first-ring cross-chunk
+feature order — the AUDIT ROOT #1 spruce/snow case is fixed by BOTH models. The buffer's *only*
+additional lever over the window is capturing writes from features that spill FARTHER than 1
+chunk. Widening the buffer margin to M=2 to exploit that (no per-target divergent borders,
+unlike the deco-radius *window* widen) measured slightly WORSE, not better: trees/ground-cover
+don't spill far enough to net positive, and the wider margin's own under-decorated edge chunks
+inject more wrong second-order spill than correct far spill they capture — the same border
+mechanism as the deco-radius result, one level out.
+
+**What moved / didn't:** trees (leaves/logs), ground-cover (leaf_litter/short_grass/snow/
+glow_lichen) and leaf-props — the ROOT #1 families — did NOT net-move; they were already
+order-correct under the shared canvas. **Sculk (~262k, ~32% of the residual) did NOT unlock**
+— it is −0.22pp at BOTH M=1 and M=2, i.e. the buffer's order/visibility fidelity is not what
+sculk needs. Corrected conclusion for the AUDIT note: sculk's divergence is NOT the
+cross-chunk-decoration infrastructure (the hypothesis that gated `SCULK_ENABLED` on "the
+persistent buffer ROOT #1's fix provides"); it is intrinsic to the stochastic `VSculk` port /
+its multi-chunk charge spread diverging from vanilla's own RNG/order regardless of the canvas.
+`SCULK_ENABLED` stays OFF. The ore family was not separately probed here (sculk-off top-40 is
+unchanged in kind from the ratchet).
+
+**Verdict:** the persistent buffer is architecturally the "right" model but has no measurable
+interior surface to act on, because the window it replaces was already order-faithful on the
+only ring that matters. Ratchet UNCHANGED at 99.381792%; `decoBuffer` stays off by default.
+Committed on branch `deco-buffer` (not merged, cherry-pickable). Where the overworld residual
+actually goes next is NOT the decoration model — it is the individual feature ports: the
+intrinsic sculk-spread divergence (needs a Python RNG replay of `SculkPatchFeature` vs `VSculk`,
+like the ore entry proposes for `OreFeature`), and the ore placement-origin RNG drift (AUDIT
+"Ore / stone-patch drift"). Both are single-feature parity bugs, not infrastructure.
+
+---
+
 ## Sulfur cube archetype slice (b) LANDED: thread-confined fuse-priming (2026-07-20, Sonnet 5, branch `sulfur-slice-b`, commit e9d5214)
 
 Re-lands the fuse-priming/detonation the entry below diagnosed, in the exact
