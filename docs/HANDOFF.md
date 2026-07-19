@@ -528,6 +528,15 @@ safe to A/B because the baseline is deterministic. Not merged to main; on branch
 
 ---
 
+**ADDENDUM (Fable, post-verdict):** a full sculk-ON r18 on the buffer measured
+99.380747% — only ~960 net blocks below sculk-off (r3's -0.22pp was border
+distortion). VSculk is near-breakeven at scale: it recovers roughly as many of
+the ~262k gated sculk blocks as it mis-places. The sculk-spread RNG replay
+(same Python-replay method as the ore diagnosis) is therefore the highest-value
+single-feature target on the overworld: a modest alignment flips ~0.2pp positive.
+
+---
+
 ## nether_vibenilla region-diff is NONDETERMINISTIC — driver alignment is now measurement-blocking (2026-07-19, Fable) — RESOLVED (see entry above)
 
 Five r18 measures of the UNCHANGED vibenilla adopt path landed in a ~±0.04pp
