@@ -1478,7 +1478,78 @@ leftovers.
   reports it as the `x_leaves<-x_leaves (props)` mismatch class. Gameplay
   impact latent (no leaf-decay system yet), but any future decay port would
   treat worldgen leaves as trunkless. (S — compute distances in the leaf pass,
-  or port vanilla's scheduled distance updates.)
+  or port vanilla's scheduled distance updates.) **SUPERSEDED 2026-07-19:**
+  `VTree.updateLeaves` (a faithful port of `TreeFeature.updateLeaves`) now DOES
+  compute the gradient; the residual `(props)` mismatches are downstream of a
+  foliage-SHAPE bug, not the distance pass — see the root-cause entry below.
+
+## Overworld worldgen residual root-cause — 99.361284% cut line (2026-07-19, Opus 4.8)
+
+Deep diagnosis of the r18 residual (seed 20260708, 814k / 127.4M mismatched;
+log test-logs/regiondiff_overworld_seed20260708_r18_20260719-200830.log). The
+prompt's six "families" were treated as independent bugs; block-level probing
+proved **69% of the residual (~560k) shares ONE architectural root**, and the
+remaining candidate (ore) is not the carver/air cascade it looked like. NO
+code was changed — every fix here either regresses the ratchet or needs a
+larger design pass. Landed nothing rather than ship a speculative regression.
+
+- **ROOT #1 — the independent-overlay decoration model is not order/state-faithful
+  across chunks (VanillaGen.decoratedData:124-150).** For a target chunk it
+  re-decorates each of the 9 neighbourhood chunks on its OWN fresh `OverlayCanvas`
+  and merges only the writes landing in the target. Neighbour overlays never see
+  each other's writes, and vanilla's cross-chunk feature ORDER (a feature in
+  chunk A writing into B, then B's later features reading A's write on the shared
+  world) is lost. Proven on a single spruce at trunk (-209,132..136,-126), chunk
+  boundary x=-208/-209: vanilla's east canopy leaves spill from chunk (-14,-8)
+  into (-13,-8); minecom exports those leaves from (-14)'s overlay, but (-13)'s
+  OWN overlay runs its snow/top-layer feature against *undecorated* terrain,
+  places snow on the bare ground, and because the merge processes self (dx=0)
+  AFTER the -x neighbour, **snow overwrites the neighbour's spilled leaf**
+  (`snow`/`snow_layer` where vanilla has `spruce_leaves`). Vanilla runs vegetal
+  (trees) before top-layer (snow) on the shared world, so the leaf survives.
+  This one root drives:
+    - trees canopy `leaves/logs<->air` (family #3, ~165k),
+    - ground cover `leaf_litter/short_grass/snow/glow_lichen<->air` (family #4, ~80k),
+    - `x_leaves (props)` (family #2-leaf, ~54k) — the leaf-distance +1 is NOT an
+      `updateLeaves` bug (verified: the BFS is a faithful `TreeFeature.updateLeaves`
+      port, hashCode == BlockPos.hashCode). It is fed a wrong foliage set (snow
+      where leaves should be) so the bucket-BFS visits in a different HashSet
+      order and double-pops leaves to distance+1. Fix the shape, the distances
+      resolve. leaf_litter `segment_amount`/`facing` (props) is the same root
+      (positional/order divergence), not a state-calc bug.
+    - **sculk / deep-dark (family #1, ~262k)** is the SAME infrastructure: it is
+      deliberately gated OFF (`VFeature.SCULK_ENABLED`, -Dminecom.sculk) because
+      SculkPatchFeature is a stochastic MULTI-CHUNK post-structure feature and
+      the independent-overlay model diverges it (prior author measured net -0.06%
+      on the ancient_city box). The gated code is a faithful `VSculk` port; it
+      needs the persistent cross-chunk feature buffer that ROOT #1's fix provides.
+  Fixing ROOT #1 = an order-faithful shared 3x3 (or wider) decoration pass that
+  decorates the neighbourhood on ONE canvas in vanilla's chunk+step order, then
+  extracts the centre. High-value (unlocks ~560k toward 99.9%) but HIGH-RISK
+  under the ratchet: it changes cells the current approximation happens to match,
+  so it must be built + measured carefully, not landed blind. Escalated in
+  HANDOFF.md (2026-07-19).
+
+- **Ore / stone-patch drift (families #5/#6, ~110k) is a placement-ORIGIN RNG
+  drift, NOT the carver/air cascade and NOT the scatter.** Verified against
+  re-decompiled 26.2 `OreFeature` (rule 7): `place()` wrapper draw order (dir
+  nextFloat, y0/y1 nextInt(3)), `doPlace` scatter (nextDouble per sphere, overlap
+  cull, ellipsoid fill), `canPlaceOre`/`shouldSkipAirCheck` discard RNG, and the
+  `count`/`in_square`/`height_range` (uniform+trapezoid) providers ALL match
+  minecom exactly. Air-adjacency was ruled out empirically: of ~5000 coal
+  `coal_ore<->stone` mismatches sampled, air-adjacency differs in 0-2. The blobs
+  are shape-preserving TRANSLATES (one coal blob matched exactly, a sibling was
+  shifted a few blocks in x+z), i.e. the per-count-iteration origin diverges from
+  an upstream RNG-state difference (feature-sort index / a sibling feature's draw
+  count). Root not yet isolated; needs a Python replay of the placement RNG for
+  one chunk vs minecom-instrumented origins. Bounded but unconfirmed — could be a
+  clean win or a feature-sort ordering problem. (M-L)
+
+- Reaching 99.9% needs ~84% of the residual (687k) gone; the six families sum to
+  ~674k at *perfect* fix, so 99.9% is only reachable if ROOT #1 (trees+ground+
+  leaf+sculk, ~560k) largely lands PLUS ore PLUS some sub-top-40 long tail
+  (~140k). It is not reachable by picking off independent families — the headline
+  jump is gated on the decoration-model rewrite.
 
 ## 26.2 bump — deliberate simplifications (2026-07-13, Fable)
 

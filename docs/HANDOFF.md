@@ -14,6 +14,44 @@ of what got escalated and why.
 
 ---
 
+## Overworld 99.9% parity is gated on an order-faithful cross-chunk decoration pass (2026-07-19, Opus 4.8)
+
+Task received: ratchet overworld region-diff 99.361284% -> 99.9%, up-only, land
+each of six residual "families" separately. Outcome: **root-caused the residual,
+landed no code** (nothing was a clean ratchet-positive fix; shipping any would
+risk regressing the headline). Full diagnosis in AUDIT.md ("Overworld worldgen
+residual root-cause", 2026-07-19). Source tree left clean at baseline.
+
+Key finding: ~69% of the residual (~560k / 814k blocks) is ONE root — the
+`VanillaGen.decoratedData` independent-overlay model decorates each of the 9
+neighbourhood chunks on its own scratch canvas and merges, so it loses vanilla's
+cross-chunk feature ORDER and cross-overlay visibility. Proven with a single
+boundary-straddling spruce: chunk (-13,-8)'s snow/top-layer feature overwrites a
+leaf spilled in from chunk (-14,-8)'s tree, because the two run on separate
+overlays and the merge lets self-chunk snow win. This same infrastructure gap is
+why sculk is gated off (multi-chunk stochastic feature) and why leaf-distance is
++1 (wrong foliage set feeds a faithful BFS).
+
+**What's needed (the escalation):** replace the independent-overlay merge with an
+order-faithful pass that decorates the neighbourhood on ONE shared canvas in
+vanilla's chunk order (each chunk fully, in GenerationStep order, features able to
+read/write neighbours' prior writes), then extracts the centre chunk. This is the
+prerequisite for trees (#3 ~165k), ground cover (#4 ~80k), leaf props (#2 ~54k)
+AND enabling sculk (#1 ~262k). HIGH-RISK under the ratchet: it will change cells
+the current approximation coincidentally matches, so it must be measured with
+--radius 3 then full r18 and reverted per-change if the number drops — do NOT
+land it blind. Also decide the neighbourhood radius: vanilla features can write
+>1 chunk away; the current 3x3 (8-neighbour) is an approximation.
+
+Secondary (smaller, independent): ore/stone-patch drift (~110k) is a placement-
+ORIGIN RNG-state divergence (every OreFeature component verified matching 26.2;
+air-adjacency ruled out empirically; blobs are shape-preserving translates). Next
+step is a Python replay of the placement RNG (count/in_square/height_range +
+feature-sort index) for one chunk vs a minecom-instrumented origin dump, to find
+which sibling feature's draw count diverges. Bounded but unconfirmed.
+
+---
+
 ## Sulfur cube explosion fuse-priming: attempted and REVERTED, escalating (2026-07-18, Sonnet 5)
 
 After landing slice (a) of the archetype system (commit d3b21f1 — data model,
