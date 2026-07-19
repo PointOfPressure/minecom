@@ -254,26 +254,29 @@ public final class Bootstrap {
                 : findSpawn();
 
         var commands = MinecraftServer.getCommandManager();
-        commands.register(new Commands.Gamemode());
-        commands.register(new Commands.Tp());
-        commands.register(new Commands.Give());
-        commands.register(new Commands.Time(overworld));
+        // SECURITY-HARDENING §4.4: operator/worldedit-class commands are gated to
+        // ops under public mode (Commands.gate); the two genuinely public gameplay
+        // commands (/spawn, /killme) stay open. Off public mode nothing is gated.
+        commands.register(Commands.gate(new Commands.Gamemode()));
+        commands.register(Commands.gate(new Commands.Tp()));
+        commands.register(Commands.gate(new Commands.Give()));
+        commands.register(Commands.gate(new Commands.Time(overworld)));
         commands.register(new Commands.Spawn(spawn));
         commands.register(new Commands.KillMe());
-        commands.register(new Commands.WeatherCmd(overworld));
-        commands.register(new Commands.Drain());
-        commands.register(new Commands.Summon(overworld));
-        commands.register(new Commands.Enchant());
-        commands.register(new Commands.End(overworld, spawn));
-        commands.register(new Commands.RaidCmd());
-        commands.register(new Commands.LocateStrongholdCmd());
-        commands.register(new Commands.DifficultyCmd());
-        commands.register(new Commands.SeedCmd());
-        commands.register(new Commands.EffectCmd());
-        commands.register(new Commands.SetBlockCmd(overworld));
-        commands.register(new Commands.FillCmd(overworld));
-        commands.register(new Commands.XpCmd());
-        commands.register(new Commands.ClearCmd());
+        commands.register(Commands.gate(new Commands.WeatherCmd(overworld)));
+        commands.register(Commands.gate(new Commands.Drain()));
+        commands.register(Commands.gate(new Commands.Summon(overworld)));
+        commands.register(Commands.gate(new Commands.Enchant()));
+        commands.register(Commands.gate(new Commands.End(overworld, spawn)));
+        commands.register(Commands.gate(new Commands.RaidCmd()));
+        commands.register(Commands.gate(new Commands.LocateStrongholdCmd()));
+        commands.register(Commands.gate(new Commands.DifficultyCmd()));
+        commands.register(Commands.gate(new Commands.SeedCmd()));
+        commands.register(Commands.gate(new Commands.EffectCmd()));
+        commands.register(Commands.gate(new Commands.SetBlockCmd(overworld)));
+        commands.register(Commands.gate(new Commands.FillCmd(overworld)));
+        commands.register(Commands.gate(new Commands.XpCmd()));
+        commands.register(Commands.gate(new Commands.ClearCmd()));
 
         Difficulty.startTracking();
 

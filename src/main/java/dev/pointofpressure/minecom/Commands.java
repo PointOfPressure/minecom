@@ -2,17 +2,97 @@ package dev.pointofpressure.minecom;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.minestom.server.command.CommandSender;
 import net.minestom.server.command.builder.Command;
 import net.minestom.server.command.builder.arguments.ArgumentEnum;
 import net.minestom.server.command.builder.arguments.ArgumentType;
+import net.minestom.server.command.builder.condition.CommandCondition;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.GameMode;
 import net.minestom.server.entity.Player;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.item.ItemStack;
 
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 public final class Commands {
     private Commands() {}
+
+    // ---------------------------------------------------------------- V6 gating
+    // SECURITY-HARDENING §4.4: in offline mode every connected client can run
+    // every command. Public mode gates the operator/worldedit-class commands to
+    // ops and rate-limits the two that amplify load even for an op (/fill,
+    // /summon). Trusted (default, non-public) deployments keep the old behaviour,
+    // so the existing admin-command coverage is unaffected.
+
+    // thread: read on command/parse threads, mutated only at boot or by SelfTest.
+    private static volatile boolean publicMode =
+            Boolean.parseBoolean(System.getenv().getOrDefault("MINECOM_PUBLIC_MODE", "false"));
+    private static final Set<String> OPS = ConcurrentHashMap.newKeySet();
+    private static final long FILL_COOLDOWN_MS = envLong("MINECOM_FILL_COOLDOWN_MS", 1_000);
+    private static final long SUMMON_COOLDOWN_MS = envLong("MINECOM_SUMMON_COOLDOWN_MS", 1_000);
+    private static final ConcurrentHashMap<String, Long> COOLDOWNS = new ConcurrentHashMap<>();
+
+    static {
+        String ops = System.getenv("MINECOM_OPS");
+        if (ops != null && !ops.isBlank()) {
+            for (String name : ops.split(",")) if (!name.isBlank()) OPS.add(name.trim().toLowerCase());
+        }
+    }
+
+    public static boolean publicMode() { return publicMode; }
+
+    /** Test/boot hook: toggle public mode and set the op allowlist. */
+    public static void configurePublicMode(boolean enabled, String... ops) {
+        publicMode = enabled;
+        OPS.clear();
+        for (String name : ops) if (name != null && !name.isBlank()) OPS.add(name.trim().toLowerCase());
+        COOLDOWNS.clear();
+    }
+
+    private static boolean isOp(Player player) {
+        return player.getPermissionLevel() >= 2 || OPS.contains(player.getUsername().toLowerCase());
+    }
+
+    /** True if this sender may run an operator command (always true off public mode). */
+    public static boolean mayUseOperator(CommandSender sender) {
+        if (!publicMode) return true;
+        if (!(sender instanceof Player player)) return true; // console/server sender
+        return isOp(player);
+    }
+
+    /** The condition wired onto every operator command; null-safe for graph builds. */
+    public static CommandCondition operatorGate() {
+        return (sender, commandString) -> mayUseOperator(sender);
+    }
+
+    /** Gate a command as operator-only under public mode. Returns the same command. */
+    public static Command gate(Command command) {
+        command.setCondition(operatorGate());
+        return command;
+    }
+
+    /**
+     * Per-player cooldown for the load-amplifying commands, enforced only in
+     * public mode (a trusted operator is not throttled). Consumes the slot when
+     * it allows the call.
+     */
+    public static boolean cooldownOk(Player player, String key, long cooldownMs) {
+        if (!publicMode) return true;
+        long now = System.currentTimeMillis();
+        String id = key + ':' + player.getUuid();
+        Long last = COOLDOWNS.get(id);
+        if (last != null && now - last < cooldownMs) return false;
+        COOLDOWNS.put(id, now);
+        return true;
+    }
+
+    private static long envLong(String key, long def) {
+        String v = System.getenv(key);
+        if (v == null || v.isBlank()) return def;
+        try { return Long.parseLong(v.trim()); } catch (NumberFormatException e) { return def; }
+    }
 
     public static final class Gamemode extends Command {
         public Gamemode() {
@@ -165,6 +245,10 @@ public final class Commands {
                     "cow", "pig", "sheep", "chicken", "zombified_piglin", "magma_cube", "blaze", "illusioner", "piglin_brute", "zoglin", "giant");
             addSyntax((sender, context) -> {
                 if (sender instanceof Player player) {
+                    if (!cooldownOk(player, "summon", SUMMON_COOLDOWN_MS)) {
+                        player.sendMessage(Component.text("You're using /summon too fast.", NamedTextColor.RED));
+                        return;
+                    }
                     dev.pointofpressure.minecom.mobs.Mobs.spawn(context.get(kind), instance,
                             player.getPosition().add(2, 0, 0));
                 }
@@ -350,6 +434,10 @@ public final class Commands {
             var z2 = ArgumentType.Integer("z2");
             var block = ArgumentType.BlockState("block");
             addSyntax((sender, context) -> {
+                if (sender instanceof Player player && !cooldownOk(player, "fill", FILL_COOLDOWN_MS)) {
+                    player.sendMessage(Component.text("You're using /fill too fast.", NamedTextColor.RED));
+                    return;
+                }
                 int minX = Math.min(context.get(x1), context.get(x2)), maxX = Math.max(context.get(x1), context.get(x2));
                 int minY = Math.min(context.get(y1), context.get(y2)), maxY = Math.max(context.get(y1), context.get(y2));
                 int minZ = Math.min(context.get(z1), context.get(z2)), maxZ = Math.max(context.get(z1), context.get(z2));

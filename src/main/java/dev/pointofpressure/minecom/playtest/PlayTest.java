@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 866;
+    private static final int EXPECTED_CHECK_COUNT = 870;
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -194,6 +194,7 @@ public final class PlayTest {
         scenario("combat: falling crit 1.5x", PlayTest::scenarioCrit);
         scenario("saturation fast regen: full food + saturation heals every 10 ticks, not just the 80-tick path", PlayTest::scenarioSaturationFastRegen);
         scenario("admin commands: /seed /effect /setblock /fill(+cap) /xp /clear /kill <target> /tp <player>", PlayTest::scenarioAdminCommands);
+        scenario("security: public-mode gates operator commands to ops, /fill cooldown-limits even an op", PlayTest::scenarioCommandGating);
         scenario("leaf decay after logging", PlayTest::scenarioLeafDecay);
         scenario("potions: drink + effects + combat modifiers", PlayTest::scenarioPotions);
         scenario("brewing: wart -> awkward -> swiftness", PlayTest::scenarioBrewing);
@@ -8159,6 +8160,52 @@ public final class PlayTest {
 
         clearEntitiesExceptPlayer();
         resetPlayer();
+    }
+
+    /**
+     * SECURITY-HARDENING §4.4: in public mode operator commands are op-gated and
+     * /fill/summon are per-player cooldown-limited even for an op. Assertions use
+     * world state (not command return codes) and only the deterministic
+     * immediate-repeat cooldown case (no wall-clock recovery wait, per the flake
+     * SLO). Restores non-public mode in a finally so no other scenario is affected.
+     */
+    private static void scenarioCommandGating() {
+        resetPlayer();
+        clearEntitiesExceptPlayer();
+        var commands = MinecraftServer.getCommandManager();
+        int gx = 64, gy = Y + 1, gz = 160;
+        int fx = 64, fz1 = 168, fz2 = 172; // two distinct single-block /fill targets
+        try {
+            // Public mode, player is NOT an op: an operator command must not run.
+            dev.pointofpressure.minecom.Commands.configurePublicMode(true);
+            world.setBlock(gx, gy, gz, Block.AIR);
+            commands.execute(player, "setblock " + gx + " " + gy + " " + gz + " gold_block");
+            check("gating: a non-op in public mode cannot run /setblock (block untouched)",
+                    !world.getBlock(gx, gy, gz).compare(Block.GOLD_BLOCK));
+
+            // Op the player: the same command now takes effect.
+            dev.pointofpressure.minecom.Commands.configurePublicMode(true, player.getUsername());
+            commands.execute(player, "setblock " + gx + " " + gy + " " + gz + " gold_block");
+            check("gating: an op in public mode can run the same /setblock",
+                    world.getBlock(gx, gy, gz).compare(Block.GOLD_BLOCK));
+
+            // /fill cooldown (op): the first single-block fill lands, the immediate
+            // second (a different cell) is cooldown-blocked.
+            world.setBlock(fx, gy, fz1, Block.AIR);
+            world.setBlock(fx, gy, fz2, Block.AIR);
+            commands.execute(player, "fill " + fx + " " + gy + " " + fz1 + " " + fx + " " + gy + " " + fz1 + " diamond_block");
+            check("gating: an op's first /fill lands",
+                    world.getBlock(fx, gy, fz1).compare(Block.DIAMOND_BLOCK));
+            commands.execute(player, "fill " + fx + " " + gy + " " + fz2 + " " + fx + " " + gy + " " + fz2 + " diamond_block");
+            check("gating: an op's immediate second /fill is cooldown-blocked (cell untouched)",
+                    !world.getBlock(fx, gy, fz2).compare(Block.DIAMOND_BLOCK));
+        } finally {
+            dev.pointofpressure.minecom.Commands.configurePublicMode(false);
+            world.setBlock(gx, gy, gz, Block.AIR);
+            world.setBlock(fx, gy, fz1, Block.AIR);
+            world.setBlock(fx, gy, fz2, Block.AIR);
+        }
+        clearEntitiesExceptPlayer();
     }
 
     private static void scenarioLeafDecay() {
