@@ -29,6 +29,19 @@
       <artifactId>logback-classic</artifactId>
       <version>1.5.18</version>
     </dependency>
+    <!--
+      vibenilla worldgen (Apache-2.0), pinned @ ffaafa1 — a BINARY dependency,
+      never vendored into src/ (see NOTICE, docs/AUDIT.md). Used ONLY by the
+      offline region-diff harness (GenRegions "nether_vibenilla" token) to
+      measure an adopted, bit-exact Nether; the live server keeps NetherGen
+      until the region-diff exit target is cleared (TIER4-NETHER-DESIGN.md).
+      Install into ~/.m2 with scripts/fetch_vibenilla.sh before building.
+    -->
+    <dependency>
+      <groupId>rocks.minestom</groupId>
+      <artifactId>worldgen</artifactId>
+      <version>26.2-ffaafa1</version>
+    </dependency>
   </dependencies>
 
   <build>

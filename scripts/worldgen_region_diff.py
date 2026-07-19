@@ -6,6 +6,7 @@ ONE command that answers "how bit-exact is minecom's overworld?":
     python3 scripts/worldgen_region_diff.py            # seed 20260708, 36x36 chunks
     python3 scripts/worldgen_region_diff.py --seed 123 --radius 4   # quick spot-check
     python3 scripts/worldgen_region_diff.py --dimension nether      # Nether diff
+    python3 scripts/worldgen_region_diff.py --dimension nether_vibenilla  # adopted Nether
 
 Dimension-parameterized (docs/TIER4-NETHER-DESIGN.md §4): --dimension overworld
 (default) scans sections -4..19; --dimension nether drives the vanilla side with
@@ -13,6 +14,12 @@ Dimension-parameterized (docs/TIER4-NETHER-DESIGN.md §4): --dimension overworld
 region subtree world/dimensions/minecraft/the_nether/region on both sides, and
 scans sections 0..7 (y 0..127). The two run as fully independent work dirs, so
 the overworld baseline can never be regressed by nether work.
+
+--dimension nether_vibenilla (the "ADOPT" measurement) reuses the `nether`
+vanilla cache byte-for-byte (same seed/section-window/subtree) and only
+regenerates the minecom side with the adopted vibenilla generator, so the
+adopted number is measured against identical vanilla ground truth as the
+NetherGen baseline.
 
 It (1) generates the chunk square [center-radius, center+radius)^2 on a REAL
 vanilla dedicated server (version = vanilla_oracle.MC_VERSION; driven over
@@ -66,15 +73,29 @@ TILE = 12                                  # chunks per forceload tile (144 < va
 # per-dimension subtree on BOTH sides and scans sections 0..7 (y 0..127): the
 # nether noise_settings height is 128 and a bedrock roof caps content near y=127,
 # so sections 8..15 are all-air and not compared.
+# `vanilla_tag` selects which work dir holds the (expensive-to-build, cached)
+# vanilla side: it defaults to the dimension's own name but can point at another
+# dimension's cache. nether_vibenilla reuses the `nether` vanilla ground truth
+# unchanged (same seed/section-window/subtree) and only regenerates the minecom
+# side with the adopted generator — so the two nether numbers are measured
+# against byte-identical vanilla, and --fresh on nether_vibenilla never touches
+# the nether vanilla cache (docs/TIER4-NETHER-DESIGN.md "ADOPT").
 DIMENSIONS = {
     "overworld": dict(vanilla_subdir=VANILLA_REGION_SUBDIR,
                       minecom_subdir="world/region",
                       mc_dimension="minecraft:overworld",
-                      section_min=-4, section_max=19),
+                      section_min=-4, section_max=19,
+                      vanilla_tag="overworld"),
     "nether": dict(vanilla_subdir=VANILLA_NETHER_REGION_SUBDIR,
                    minecom_subdir=VANILLA_NETHER_REGION_SUBDIR,
                    mc_dimension="minecraft:the_nether",
-                   section_min=0, section_max=7),
+                   section_min=0, section_max=7,
+                   vanilla_tag="nether"),
+    "nether_vibenilla": dict(vanilla_subdir=VANILLA_NETHER_REGION_SUBDIR,
+                             minecom_subdir=VANILLA_NETHER_REGION_SUBDIR,
+                             mc_dimension="minecraft:the_nether",
+                             section_min=0, section_max=7,
+                             vanilla_tag="nether"),
 }
 
 
@@ -307,12 +328,24 @@ def main():
     # unsuffixed pre-26.2 dirs and is deliberately kept).
     # overworld dir name is unchanged (reuses the hours-to-build cached vanilla
     # side); the nether diff is a fully independent work dir via the suffix.
-    dimtag = "" if args.dimension == "overworld" else f"_{args.dimension}"
-    work = args.work / f"{args.seed}_r{args.radius}_{ccx}x{ccz}_{MC_VERSION}{dimtag}"
-    vanilla_dir, minecom_dir = work / "vanilla", work / "minecom"
+    def workdir(tag):
+        suffix = "" if tag == "overworld" else f"_{tag}"
+        return args.work / f"{args.seed}_r{args.radius}_{ccx}x{ccz}_{MC_VERSION}{suffix}"
+
+    # The minecom side lives in this dimension's own dir; the vanilla side comes
+    # from `vanilla_tag`'s dir (nether_vibenilla borrows the `nether` cache). For
+    # the two nether dimensions vanilla_tag == "nether", so the vanilla cache is
+    # shared and byte-identical between them.
+    work = workdir(args.dimension)
+    vanilla_dir = workdir(dim["vanilla_tag"]) / "vanilla"
+    minecom_dir = work / "minecom"
     if args.fresh and work.exists():
+        # --fresh only wipes THIS dimension's dir; when the vanilla cache is
+        # borrowed (nether_vibenilla), the lender's vanilla side is never
+        # touched (it lives under a different work dir).
         shutil.rmtree(work)
     work.mkdir(parents=True, exist_ok=True)
+    vanilla_dir.parent.mkdir(parents=True, exist_ok=True)
 
     ts = time.strftime("%Y%m%d-%H%M%S")
     log_path = REPO / f"test-logs/regiondiff_{args.dimension}_seed{args.seed}_r{args.radius}_{ts}.log"

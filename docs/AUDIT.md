@@ -1456,7 +1456,17 @@ leftovers.
 - NetherGen.java — the whole nether is an approximate generator by design
   (documented at :128-136): fortresses are bounded platforms, bastions have
   "fixed stand-ins" — a future bit-exact nether port is the single largest
-  worldgen item left. (XL)
+  worldgen item left. (XL) **ADOPT in progress (2026-07-19):** rather than the
+  planned S1-S5 build-it-ourselves port, minecom adopts the vibenilla worldgen
+  library (github.com/vibenilla/worldgen, Apache-2.0, pinned @ ffaafa1) as a
+  BINARY dependency (rocks.minestom:worldgen:26.2-ffaafa1, never vendored into
+  src/; see NOTICE + docs/licenses/vibenilla-worldgen-LICENSE.txt). Wired ONLY
+  into the offline region-diff harness (GenRegions "nether_vibenilla" token +
+  VibenillaNether.java) so the adopted Nether is measured by our own instrument
+  against our cached vanilla ground truth before any live cutover. The live
+  server keeps NetherGen (Bootstrap unchanged) until the S5-analog cutover,
+  gated on the region-diff exit target — not this step. Apache-2.0 -> AGPLv3 is
+  a compatible direction. See docs/TIER4-NETHER-DESIGN.md "ADOPT".
 - VProcessors.java:110,165 — capped processor + axis-aligned linear-pos
   predicate approximated (TODO markers in place, harmless until a modeled
   structure needs them).

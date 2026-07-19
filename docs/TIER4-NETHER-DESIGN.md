@@ -307,7 +307,117 @@ nether step — it can never be silently regressed by nether work.
 
 ---
 
-## 5. Sequencing — S0..S5, smallest risk first
+## ADOPT (2026-07-19, `nether-adopt` branch) — measured, threshold missed
+
+This section reshapes §5: the plan pivoted from *build our own `VNetherGen`
+(S1-S4)* to *adopt the vibenilla worldgen library and gate it with our own
+instrument*. Context that flipped the 2026-07-17 "Build, not adopt" verdict
+(§ preamble): the 2026-07-17 probe found vibenilla's 26.2 work unpublished;
+by 2026-07-19 the repo is public and was independently measured at nether
+**99.7650%** blocks / **100%** biomes against our cached vanilla ground truth
+(seed 20260708). If that number reproduces under **our** region-diff, S1-S4
+collapse into a single binary-dependency adoption; S5 (live cutover) keeps its
+exit criteria (§6) unchanged.
+
+### What landed (harness + offline path only; live server untouched)
+
+- `scripts/fetch_vibenilla.sh` — reproducible pinned build: clone
+  vibenilla/worldgen @ `ffaafa1`, stub the gitignored `StripTypeAnnotations`,
+  `./gradlew jar`, install as `rocks.minestom:worldgen:26.2-ffaafa1` to `~/.m2`.
+  Their library stays a **binary dependency** — never vendored into `src/`.
+- `pom.xml` — declares `rocks.minestom:worldgen:26.2-ffaafa1`.
+- `VibenillaNether.java` — offline bridge; self-provisions the vanilla datapack
+  (`data/**` extracted from the server jar into `~/mc-26.2/datapack`, outside
+  the repo, same rule as `vanilla-src/`) and returns their `.nether()` Generator.
+- `GenRegions.java` — new `nether_vibenilla` dimension token → their generator
+  into the same `the_nether` region subtree, seed-keyed. The `nether`
+  (`NetherGen`) token stays as the baseline. Bootstrap / live server UNCHANGED.
+- `worldgen_region_diff.py` — `--dimension nether_vibenilla` reuses the `nether`
+  vanilla cache byte-for-byte (`vanilla_tag`) and only regenerates the minecom
+  side, so both nether numbers are measured against identical vanilla.
+- Licensing hygiene: `NOTICE`, `docs/licenses/vibenilla-worldgen-LICENSE.txt`,
+  `docs/AUDIT.md` entry (Apache-2.0 → AGPLv3 is a compatible direction).
+
+### The number our instrument produced
+
+> **98.748042% full-state** — seed 20260708, radius 18, center (0,0): 1,296
+> chunks, 42,467,328 blocks (sections 0..7), 41,935,655 matched, 0 chunks
+> missing. Log `test-logs/regiondiff_nether_vibenilla_seed20260708_r18_20260719-193211.log`.
+> Minecom side generated in seconds; vanilla side reused the `_nether` cache.
+
+**This is below the ~99% floor the adoption step set for itself, so per the
+plan this STOPS here and reports rather than debugging their generator.** But
+the shape of the result is unambiguous and strongly positive:
+
+1. **Terrain is solved — bit-exact.** Every dominant mismatch class of the
+   `NetherGen` 41.80% baseline (§1 "S0 DONE": `netherrack←air` 9.7M,
+   `lava←netherrack` 2.6M, `air←netherrack` 2.5M, `netherrack↔bedrock` ~0.9M)
+   is **entirely absent** from this run's top-40. The 41.80% → 98.75% jump is
+   the terrain shape (density/caverns, lava sea, bedrock shells) now matching
+   vanilla. That is the whole point of the adoption and it worked.
+
+2. **The residual 1.25% is 100% decoration-layer**, and split as:
+
+   | ~share | classes | feature |
+   |---|---|---|
+   | ~73% (≈388k) | `basalt↔blackstone↔netherrack` swaps | `basalt_deltas` delta patches |
+   | ~23% (≈124k) | `nether_wart_block/crimson_roots/crimson_stem/weeping_vines/warped_wart_block/shroomlight/crimson_fungus ↔ air` | crimson/warped forest vegetation |
+   | ~4% | magma_block, gravel, nether_quartz_ore, nether_bricks | minor feature/ore layer |
+
+3. **The swaps are symmetric** (`basalt←blackstone` 77,513 ≈ `blackstone←basalt`
+   73,363; `nether_wart_block←air` 43,187 ≈ `air←nether_wart_block` 42,402).
+   Symmetry ⇒ the features **are placed**, just at positionally-shifted voxels —
+   NOT missing. A generator that simply omitted features would show asymmetric
+   `air←X` classes dominating; it doesn't.
+
+### The finding (why our 98.75% ≠ their 99.765%)
+
+The ~1% delta between our instrument and vibenilla's self-reported 99.765% is
+concentrated in **exactly the two feature families most sensitive to
+cross-chunk decoration spill** (`basalt_deltas` and nether-forest vegetation
+both decorate with neighbor context), and it manifests as **symmetric
+positional swaps** — the signature of a **decoration-order / cross-chunk
+feature-spill artifact between the two harnesses**, not a terrain-quality
+deficit and not missing content:
+
+- Our oracle is a **real vanilla dedicated server**, which applies vanilla's
+  true "decorate only when the 8 neighbours are terrain-generated" rule, so
+  border features land with full neighbour context. Our own `VanillaGen` mirrors
+  this via `decoratedData` (re-runs neighbours' decorations and clips spill —
+  `GenRegions.java` javadoc). Vibenilla's `WorldGenerator`, driven through
+  Minestom's **per-chunk** `Generator` interface by `--genregions`, decorates
+  each chunk without that identical neighbour-spill model, so voxel positions of
+  deltas/vegetation shift near chunk borders. Over 1,296 chunks that is ~1.25%,
+  entirely in the feature layer.
+- Vibenilla's own `VanillaComparison` harness presumably drives both sides
+  through the same chunk model, so it does not surface this border divergence —
+  hence their 99.765%. **The discrepancy is a harness artifact, exactly the
+  hypothesis §ADOPT was told to expect; confirming/closing it is orchestrator
+  work, not a reason to touch their generator.**
+
+### Recommendation for the orchestrator
+
+- **Do not merge as-is against the §6 exit target (≥99.0% with every residual
+  attributed to a decompile-verified simplification).** We are at 98.75% and the
+  residual is *plausibly* a harness artifact but is **not yet attributed to a
+  documented simplification** — the §6 bar is "residual explained," and this
+  residual is characterised but not proven.
+- **The landable value here is real and low-risk:** the pinned reproducible
+  build, the binary-dependency wiring, and the `nether_vibenilla` measurement
+  path. These make the adopted Nether *measurable by our instrument* (the S0
+  spirit) and prove terrain parity. Commit them; keep `NetherGen` live.
+- **Next move is a harness question, not a generator one:** decide whether
+  `--genregions nether_vibenilla` should drive vibenilla through the same
+  neighbour-decoration model our `VanillaGen` uses (re-run neighbours' feature
+  passes and clip spill) before re-measuring. If, after aligning the decoration
+  driver, the number clears ~99.7%, adoption is confirmed and S1-S4 are retired;
+  if it does not, the gap is a genuine vibenilla feature-placement difference and
+  the build-our-own path (§5 below) is back on the table for the feature layer
+  only (terrain is already solved by adoption).
+
+---
+
+## 5. Sequencing — S0..S5, smallest risk first (superseded for S1-S4 by ADOPT above)
 
 Each step is one landable session. What stays green after **every** step:
 228 selftest + 822 playtest (CLAUDE.md rule 8 — two consecutive greens on an

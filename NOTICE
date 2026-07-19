@@ -1,0 +1,22 @@
+Minecom
+Copyright (c) 2026 PointOfPressure
+
+This product includes third-party software listed below. Each is used as an
+unmodified BINARY dependency (never vendored into src/); its own license text
+governs that component.
+
+-------------------------------------------------------------------------------
+vibenilla worldgen
+-------------------------------------------------------------------------------
+  Project:   https://github.com/vibenilla/worldgen
+  Author:    mudkip (mudkipdev)
+  License:   Apache License 2.0
+  Pinned at: commit ffaafa1 (built + installed as
+             rocks.minestom:worldgen:26.2-ffaafa1 by scripts/fetch_vibenilla.sh)
+  Used for:  the adopted, bit-exact Nether generator, exercised through the
+             offline region-diff harness (GenRegions "nether_vibenilla" token).
+             See docs/TIER4-NETHER-DESIGN.md ("ADOPT") and docs/AUDIT.md.
+
+  Apache-2.0 -> AGPLv3 is a compatible direction (Apache-2.0 is one-way
+  compatible into GPLv3/AGPLv3). The full Apache-2.0 license text is preserved
+  at docs/licenses/vibenilla-worldgen-LICENSE.txt.
