@@ -85,7 +85,40 @@ Reproduce: worktree `main-sulfur`, `MINECOM_TEST_PORT=25568`,
 
 ---
 
+## nether_vibenilla region-diff is NONDETERMINISTIC — driver alignment is now measurement-blocking (2026-07-19, Fable)
+
+Five r18 measures of the UNCHANGED vibenilla adopt path landed in a ~±0.04pp
+band: 98.75 (v0.36 baseline), 98.7267, 98.8002, then a same-binary same-flags
+determinism check giving 98.757935 vs 98.786962 (logs
+test-logs/regiondiff_nether_vibenilla_seed20260708_r18_20260719-23*.log).
+VibenillaNether does NOT flow through VanillaGen.decoratedData (verified — no
+reference), so the variance is the adopt path itself: vibenilla decorates on
+live parallel chunk generation, and cross-chunk decoration lands differently
+depending on scheduling. This is the concrete mechanism behind the probe's
+"residual 1.25% = decoration-order harness artifact" — and it means the >=99%
+adopt-floor decision CANNOT be made on a point estimate.
+
+**Task (Opus-sized):** make the nether_vibenilla GenRegions path deterministic —
+either drive chunk generation in a defined sequential order (forceload-style,
+one chunk fully generated+decorated before the next, matching whatever order
+vibenilla's own harness used to get their 99.765%) or serialize their
+decoration stage; then TWO identical-run measures to prove determinism, then
+the floor decision on the reproducible number. Reference: pinned dep
+rocks.minestom:worldgen:26.2-ffaafa1, docs/TIER4-NETHER-DESIGN.md §4,
+GenRegions.java nether_vibenilla case. Do not tune order flags before
+determinism — that experiment was run today and produced only noise.
+
+---
+
 ## Overworld 99.9% parity is gated on an order-faithful cross-chunk decoration pass (2026-07-19, Opus 4.8)
+
+**UPDATE 2026-07-19 (Fable): the escalated pass is LANDED (commit 375c7e3)** —
+shared-canvas, scan-order decoration; r18 ratchet-positive 99.361284% ->
+99.381792%. Remaining from this entry: the gain is far under the 560k ceiling
+because the 3x3 WINDOW is now binding (sculk-ON measured net-negative at r3
+even on the shared canvas -> stays gated); next slice = neighbourhood-radius
+widening + re-A/B via -Dminecom.decoOrder. Ore RNG replay (the Secondary
+below) is in flight with Sonnet. Entry stays open until 99.9 or re-escalated.
 
 Task received: ratchet overworld region-diff 99.361284% -> 99.9%, up-only, land
 each of six residual "families" separately. Outcome: **root-caused the residual,
