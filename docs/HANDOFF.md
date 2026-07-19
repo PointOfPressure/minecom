@@ -14,6 +14,77 @@ of what got escalated and why.
 
 ---
 
+## Sulfur fuse-priming flake DIAGNOSED: cross-thread race CONFIRMED (2026-07-19, Opus 4.8)
+
+Diagnosis-only follow-up to "Sulfur cube explosion fuse-priming: attempted and
+REVERTED" (below). Re-applied the reverted slice-(b) fuse-priming in an isolated
+worktree (`main-sulfur`), purely instrumented, to settle the thread-affinity
+hypothesis with real thread-log evidence. **VERDICT: the race is real and
+confirmed** — it is NOT a test-timing artifact, and no amount of tick/wait tuning
+can fix it. Instrumentation NOT for main; the fix shape below is what re-lands.
+
+**The mechanism.** Two paths mutate the same non-volatile `fuse`/`detonated`
+fields from *different threads* with no happens-before:
+- `primeFuse` runs inside `EntityDamageEvent`'s synchronous dispatch — i.e. on
+  *whatever thread called `mob.damage()`*. In the test that is the caller/main
+  thread; **in production it is also a Minestom tick thread** (see evidence).
+- `watchFuse` is a per-mob `mob.scheduler().repeat(tick(1))` task, which always
+  runs on the entity's own `TickThread` (`Ms-Tick-N`), and the server tick loop
+  is **free-running** — it advances the fuse independently of any test `tick()`
+  call. This is exactly why "add/remove a `tick()`" never helped and why the
+  earlier tick-fix→worse pattern was itself the tell.
+
+This differs from the totem fix (which *did* serialize): the totem has **no
+scheduler task at all** — cancel/consume/setHealth/addEffect all run inside the
+one `player.damage()` dispatch on the one caller thread. `EntityCreature`
+scheduler tasks and direct `.damage()` calls do **NOT** serialize the same way;
+the totem "serialized" only because it never left the damage() call.
+
+Vanilla is immune because `SulfurCube.tickFuse()` (called from `aiStep`) and
+`primeTime()` (called from `hurtServer`) both run on the single server thread —
+the vanilla `fuse` is a plain `int` precisely because it is never touched
+cross-thread (`vanilla-src/.../cubemob/SulfurCube.java:100,282,326`). Minestom's
+thread-per-region model breaks that invariant.
+
+**Evidence** (30 internal iters, `test-logs/sulfur-fuse-diag-*.log`, machine
+under load ~9.4 — deliberately, load amplifies the window):
+- Thread sets: `watchThreads=[Ms-Tick-0]`, but
+  `primeThreads=[Ms-Tick-0, Main.main()]`. The countdown path and the arm path
+  do not share one serializing thread. The `Ms-Tick-0` prime entries are the
+  detonation's own explosion re-firing `EntityDamageEvent` on the tick thread
+  (`register LISTENER fired … primeFuse SKIP (already primed)`) — direct proof
+  the listener/`primeFuse` is reachable from the entity tick thread concurrently
+  with a main-thread arm.
+- Direct interleave, iter 0 (nanosecond stamps):
+  `primeFuse SET fuse=120` on `Main.main()` → **13.5 µs later**
+  `watchFuse DEC fuse=119` on `Ms-Tick-0` → the same-thread read returned **119**.
+  This is the HANDOFF's "fuse should read 120 with no intervening tick()" symptom
+  reproduced and root-caused: a background-scheduler decrement provably lands
+  between the main-thread arm and the main-thread read.
+- Rate: `decBeforeRead=1/30` idle-ish. The prior "13/15" was the **same
+  mechanism** amplified — under CPU contention the main thread is preempted for
+  whole ticks between arm and read, so many more `watchFuse DEC`s slip in. The
+  first iter's 37 ms read-gap (JIT/classload) is the idle analogue of that stall,
+  and it's the one that flipped.
+
+**Correct fix shape (thread-confine all fuse state to the entity tick thread):**
+`primeFuse` (any thread) must NOT write the fuse field. It records only a *prime
+request* — an `AtomicBoolean armRequested` / `volatile` flag, or better
+`mob.scheduler().scheduleNextTick(() -> arm())`. The per-mob `watchFuse` task
+(always on `Ms-Tick-N`) is the *sole* mutator: it consumes the request, sets the
+fuse, counts down, detonates. That restores vanilla's single-thread invariant.
+Corollary for the TEST: a scheduler-driven field can never be asserted as an
+exact instantaneous value read off another thread — gate on invariants that hold
+under a free-running scheduler ("armed ⇒ detonates within N ticks", "fuse is
+monotonically non-increasing once armed", detonation-happened), never
+"fuse == 120 right now". With that shape, slice (b) re-lands cleanly.
+
+Reproduce: worktree `main-sulfur`, `MINECOM_TEST_PORT=25568`,
+`mvn exec:java -Dexec.args="--playtest 'sulfur fuse diag'"`
+(`SulfurCubes.{primeFuse,watchFuse,register,FUSE_LOG}` + `scenarioSulfurFuseDiag`).
+
+---
+
 ## Overworld 99.9% parity is gated on an order-faithful cross-chunk decoration pass (2026-07-19, Opus 4.8)
 
 Task received: ratchet overworld region-diff 99.361284% -> 99.9%, up-only, land
