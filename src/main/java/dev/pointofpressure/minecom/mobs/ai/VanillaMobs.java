@@ -1594,6 +1594,14 @@ public final class VanillaMobs {
         mob.scheduler().buildTask(() -> {
             if (mob.isDead() || mob.getInstance() == null) return;
             age[0]++;
+            if (sulfur) {
+                // SulfurCube.tick's tickFuse: the sole owner/mutator of this mob's fuse state,
+                // always run on this mob's own per-mob TickThread (see SulfurCubes' class doc
+                // and docs/HANDOFF.md's "cross-thread race CONFIRMED" diagnosis). A detonation
+                // this tick removes the mob — bail before touching it further below.
+                dev.pointofpressure.minecom.mobs.SulfurCubes.tickFuse(mob);
+                if (mob.isRemoved() || mob.getInstance() == null) return;
+            }
             LivingEntity target = brain.target;
             boolean chasing = target != null && !target.isDead();
             // touch damage whenever the (size-scaled) contact range holds, rate-limited
