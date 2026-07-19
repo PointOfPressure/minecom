@@ -215,6 +215,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.Beehives.register(events, overworld);
         dev.pointofpressure.minecom.mobs.Bees.register(events);
         dev.pointofpressure.minecom.mobs.Allays.register(events);
+        dev.pointofpressure.minecom.mobs.SulfurCubes.register(events);
         dev.pointofpressure.minecom.blocks.Cauldrons.register(events);
         dev.pointofpressure.minecom.blocks.Bells.register(events);
         dev.pointofpressure.minecom.blocks.ShulkerBoxes.register(events);

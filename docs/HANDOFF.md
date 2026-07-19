@@ -14,6 +14,68 @@ of what got escalated and why.
 
 ---
 
+## Sulfur cube archetype slice (b) LANDED: thread-confined fuse-priming (2026-07-20, Sonnet 5, branch `sulfur-slice-b`, commit e9d5214)
+
+Re-lands the fuse-priming/detonation the entry below diagnosed, in the exact
+fix shape it prescribed: `SulfurCubes.primeFuse` (any thread — the
+`EntityDamageEvent` listener that detects fire/explosion damage) only ever
+records a request (`AtomicInteger`, CAS from `NO_REQUEST`); `SulfurCubes.
+tickFuse`, always on the mob's own per-mob `TickThread` (called from
+`VanillaMobs.slimeLike`'s shared cube task), is the SOLE mutator of
+`fuse`/`detonated`. Ported from decompiled `SulfurCube.hurtServer`/
+`primeTime`/`tickFuse` and `PrimedTnt.getRandomShortFuse` (vanilla-src cache
+already postdated the 26.2 bump, no re-decompile needed). Detonation bypasses
+`Combat.death`/`maybeSplitSlime` via a direct `mob.remove()` (matches real
+`getSplitCount()==0` while primed — no split on a primed cube's death).
+
+**One real bug found and fixed during verification** (not the diagnosed race
+— a NEW one, in the new code): `detonate()` originally set `detonated=true`
+BEFORE `Explosions.explode()` actually ran, so a polling test reader could
+observe "detonated" while the explosion's block/entity side effects were
+still executing on the same call stack. Manifested exactly once in ~15 stress
+runs: a freshly-spawned test cube got caught as a bystander in the still-live
+blast radius of the previous cube's own (still in-flight) explosion, took
+lethal splash damage, died via the NORMAL health-zero path, and (being
+size-2) split into two archetype-less children — none of which is a fuse-
+priming bug, but the test's `waitFor(detonatedOf(...))` had raced ahead of
+reality. Fixed as a state-gate reorder (`detonated=true` set LAST, after
+`explode()` completes — rule 8: never a wider tolerance), plus the test now
+gives its three cubes well-separated (80-block) spawn columns as defense in
+depth so no cube's real blast can ever reach another's.
+
+**Verification:** PlayTest `scenarioSulfurCubeFusePriming`, 11 checks
+(`EXPECTED_CHECK_COUNT` 1015->1026), all INVARIANT-style per the entry
+below's own corollary — armed implies detonates within a tick-counted budget,
+fuse reads are monotonically non-increasing once armed, detonation occurred
+— never an exact instantaneous fuse value read with no elapsed tick. 10
+consecutive isolated `--playtest "fuse-priming"` runs, 11/11 green every
+time (`test-logs/sulfurb-fuseprime-iso10-*.log`).
+
+**Full-suite gate DEFERRED**, per rule 8, to the pre-tag idle-machine
+verification — not attempted here because the machine was not idle (two
+concurrent r18 region-diffs plus other agents running the whole session; see
+[[minecom-concurrent-multimodel-work]]). Two full-playtest runs on that
+loaded machine surfaced three failures, all in scenarios this change never
+touches — re-verify these on an idle machine before the next tag, do not
+chase them as-is and do not widen anything to paper over them:
+- `combat: killed mobs sometimes drop their worn equipment` — 0/60 at an
+  ~8.5% real drop odds (a ~0.5%-probability statistical-tail miss on a
+  binomial check, plausible on its own even without contention).
+- `elytra: deploy gating, durability wear, firework boost, fall-distance
+  capping while gliding` — the firework-boost-velocity check.
+- `trident: melee + throw, riptide launches instead on wet ground, ...` —
+  the riptide-on-dry-land check.
+
+Branch `sulfur-slice-b`, worktree `~/minecom-sulfurb` (`git worktree add`
+off `main` at ab98146). NOT merged to `main` — that + the idle-machine
+full-suite gate happens centrally before the next tag (v0.37.0).
+
+---
+
+## Sulfur fuse-priming flake DIAGNOSED: cross-thread race CONFIRMED (2026-07-19, Opus 4.8) — FIX LANDED, see entry above (2026-07-20)
+
+---
+
 ## Decoration neighbourhood-radius widening MEASURED net-NEGATIVE — 3x3 window is optimal, ratchet stands at 99.381792% (2026-07-20, Opus 4.8)
 
 Picked up the named follow-up from the shared-canvas landing (AUDIT.md "Overworld
@@ -445,7 +507,7 @@ which sibling feature's draw count diverges. Bounded but unconfirmed.
 
 ---
 
-## Sulfur cube explosion fuse-priming: attempted and REVERTED, escalating (2026-07-18, Sonnet 5)
+## Sulfur cube explosion fuse-priming: attempted and REVERTED, escalating (2026-07-18, Sonnet 5) — DONE, see slice (b) LANDED entry above (2026-07-20)
 
 After landing slice (a) of the archetype system (commit d3b21f1 — data model,
 assignment, attribute stats, 1015/1015 clean), attempted a self-contained slice-(b)

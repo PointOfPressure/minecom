@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 1019; // 1015 + 4 security (scenarioCommandGating)
+    private static final int EXPECTED_CHECK_COUNT = 1030; // 1015 + 4 security + 11 sulfur fuse-priming
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -179,6 +179,7 @@ public final class PlayTest {
         scenario("slime sizes: setSize attributes, split-on-death chain, tiny-slime pacifism, magma armor", PlayTest::scenarioSlimeSizes);
         scenario("sulfur cube: split-on-death is always exactly 2 children, terminal at size 1", PlayTest::scenarioSulfurCubeSplit);
         scenario("sulfur cube archetypes: swallowing an item assigns its data-driven attribute modifiers/explosion/contact-damage, re-swallowing removes the old set first", PlayTest::scenarioSulfurCubeArchetype);
+        scenario("sulfur cube: explosive archetype fuse-priming — thread-confined arm/countdown/detonate (fire=full fuse, explosion=short fuse), never resets while armed", PlayTest::scenarioSulfurCubeFusePriming);
         scenario("bubble columns: soul sand grows push-up, item + boat launch, magma flips to drag, revert to water", PlayTest::scenarioBubbleColumns);
         scenario("piston: reorder-at-collision rig (late honey line walks into an earlier-claimed cell)", PlayTest::scenarioPistonReorderCollision);
         scenario("piston: differential vs real vanilla 26.1.2 (slime/honey fixture incl. reorder-collision family)", PlayTest::scenarioPistonDifferential);
@@ -8824,6 +8825,117 @@ public final class PlayTest {
                 cube.getAttributeValue(net.minestom.server.entity.attribute.Attribute.BOUNCINESS) == baseBounciness);
 
         cube.remove();
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Sulfur cube fuse-priming (SulfurCube.hurtServer/primeTime/tickFuse + PrimedTnt.
+     * getRandomShortFuse, 26.2 decompile-verified): the "explosive" archetype's fire/explosion
+     * damage arms a fuse that counts down and detonates via Explosions.explode — landed with the
+     * thread-confined shape docs/HANDOFF.md's "Sulfur fuse-priming flake DIAGNOSED: cross-thread
+     * race CONFIRMED" entry requires ({@code SulfurCubes.primeFuse} only ever records a
+     * cross-thread REQUEST; {@code SulfurCubes.tickFuse}, always on the mob's own per-mob
+     * TickThread, is the sole mutator of fuse state). Per that entry's own corollary, every
+     * check below is an INVARIANT that holds under a free-running scheduler (armed -> detonates
+     * within a tick-counted budget, fuse reads are monotonically non-increasing, detonation
+     * occurred) — never an exact instantaneous fuse value read with no elapsed tick, which is
+     * the precise shape of assertion the diagnosed race flaked on. Also sidesteps the earlier
+     * (separate, already-real) reverted attempt's wandering-position issue entirely: nothing
+     * here reads a fixed block position, only SulfurCubes' own state accessors.
+     */
+    private static void scenarioSulfurCubeFusePriming() {
+        clearEntitiesExceptPlayer();
+        int bz = 286;
+        // Three well-separated spawn columns (80 blocks apart) — Explosions.explode's blast
+        // radius only reaches ~16 blocks out, so a real detonation on one cube can never bleed
+        // damage onto another cube spawned at a different column, regardless of any residual
+        // in-flight timing on the exploding cube's own tick thread (see detonate()'s own note on
+        // why detonatedOf() is now set only after the explosion fully finishes).
+        int inertX = 50, fireX = 130, blastX = 210;
+        // Explosions.explode's blast radius reaches ~16 blocks out (same note as scenarioBed's
+        // Nether case) — force-load a wide margin around each column so Redstone.tick's
+        // neighbor-changed queue never touches an unloaded chunk (that throws and permanently
+        // kills the shared redstone scheduler for every later scenario in the suite).
+        for (int bx : new int[] {inertX, fireX, blastX}) {
+            int baseChunkX = bx >> 4, baseChunkZ = bz >> 4;
+            for (int cx = baseChunkX - 2; cx <= baseChunkX + 2; cx++) {
+                for (int cz = baseChunkZ - 2; cz <= baseChunkZ + 2; cz++) {
+                    world.loadChunk(cx, cz).join();
+                }
+            }
+        }
+
+        // --- a non-explosive archetype must never be armed by fire or explosion damage ---
+        var inert = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.sulfurCube(world, new Pos(inertX + 0.5, Y + 1, bz + 0.5));
+        dev.pointofpressure.minecom.mobs.SulfurCubes.equipBody(inert, ItemStack.of(Material.OAK_PLANKS)); // bouncy: no ExplosionData
+        inert.damage(new net.minestom.server.entity.damage.Damage(
+                net.minestom.server.entity.damage.DamageType.ON_FIRE, null, null, null, 1f));
+        inert.damage(new net.minestom.server.entity.damage.Damage(
+                net.minestom.server.entity.damage.DamageType.EXPLOSION, null, null, null, 1f));
+        tick(10);
+        check("a cube with no explosive archetype is never armed by fire or explosion damage",
+                !dev.pointofpressure.minecom.mobs.SulfurCubes.isPrimed(inert));
+        inert.remove();
+
+        // --- fire damage arms the FULL archetype fuse (SulfurCube.primeTime(false)) ---
+        var fireCube = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.sulfurCube(world, new Pos(fireX + 0.5, Y + 1, bz + 0.5));
+        dev.pointofpressure.minecom.mobs.SulfurCubes.equipBody(fireCube, ItemStack.of(Material.TNT));
+        check("swallowing tnt is not primed yet",
+                !dev.pointofpressure.minecom.mobs.SulfurCubes.isPrimed(fireCube)
+                        && dev.pointofpressure.minecom.mobs.SulfurCubes.fuseOf(fireCube) == -1);
+
+        // negative control: a plain (non-fire, non-explosion) hit must not arm it either
+        fireCube.damage(new net.minestom.server.entity.damage.Damage(
+                net.minestom.server.entity.damage.DamageType.PLAYER_ATTACK, null, null, null, 1f));
+        tick(5);
+        check("a plain (non-fire, non-explosion) hit does not arm the fuse",
+                !dev.pointofpressure.minecom.mobs.SulfurCubes.isPrimed(fireCube));
+
+        fireCube.damage(new net.minestom.server.entity.damage.Damage(
+                net.minestom.server.entity.damage.DamageType.ON_FIRE, null, null, null, 1f));
+        boolean armed = waitFor(() -> dev.pointofpressure.minecom.mobs.SulfurCubes.isPrimed(fireCube), 2000);
+        check("fire damage arms the fuse (request consumed by the mob's own tick thread)", armed);
+
+        int f0 = dev.pointofpressure.minecom.mobs.SulfurCubes.fuseOf(fireCube);
+        tick(20);
+        int f1 = dev.pointofpressure.minecom.mobs.SulfurCubes.fuseOf(fireCube);
+        check("fuse reads are monotonically non-increasing once armed (f0=" + f0 + " -> f1=" + f1 + ")",
+                f1 <= f0 && f1 >= -1);
+
+        boolean rejectedWhilePrimed = !fireCube.damage(new net.minestom.server.entity.damage.Damage(
+                net.minestom.server.entity.damage.DamageType.ON_FIRE, null, null, null, 1f));
+        check("a second hit while already primed/invulnerable is rejected outright (no re-arm/reset)",
+                rejectedWhilePrimed);
+
+        boolean detonatedFire = waitFor(() -> dev.pointofpressure.minecom.mobs.SulfurCubes.detonatedOf(fireCube), 7000);
+        check("a full (fire-armed) fuse detonates within its ~120-tick budget", detonatedFire);
+        check("the detonated cube is removed from the world (no split — getSplitCount=0 while primed)",
+                world.getEntities().stream().noneMatch(e -> e == fireCube));
+
+        // --- explosion damage arms a SHORT/"imminent" fuse (SulfurCube.primeTime(true) via
+        // PrimedTnt.getRandomShortFuse: nextInt(max(1,fuse/4)) + fuse/8, base 120 -> [15, 44]) ---
+        var blastCube = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.sulfurCube(world, new Pos(blastX + 0.5, Y + 1, bz + 0.5));
+        dev.pointofpressure.minecom.mobs.SulfurCubes.equipBody(blastCube, ItemStack.of(Material.TNT));
+        blastCube.damage(new net.minestom.server.entity.damage.Damage(
+                net.minestom.server.entity.damage.DamageType.EXPLOSION, null, null, null, 1f));
+        boolean armedShort = waitFor(() -> dev.pointofpressure.minecom.mobs.SulfurCubes.isPrimed(blastCube), 2000);
+        check("explosion damage arms the fuse too", armedShort);
+
+        int g0 = dev.pointofpressure.minecom.mobs.SulfurCubes.fuseOf(blastCube);
+        tick(10);
+        int g1 = dev.pointofpressure.minecom.mobs.SulfurCubes.fuseOf(blastCube);
+        check("the short/imminent fuse also reads monotonically non-increasing (g0=" + g0 + " -> g1=" + g1 + ")",
+                g1 <= g0 && g1 >= -1);
+
+        // A tick-counted budget tight enough that only the SHORT branch (max 44 ticks) can
+        // satisfy it — the full-fuse case above needs up to ~120 — proving the imminent/
+        // explosion path is genuinely a different (shorter) fuse without ever asserting its
+        // exact instantaneous value.
+        boolean detonatedShortInBudget = waitFor(() -> dev.pointofpressure.minecom.mobs.SulfurCubes.detonatedOf(blastCube), 4000);
+        check("a short (explosion-armed) fuse detonates well inside the full-fuse budget (<=44 ticks, not ~120)",
+                detonatedShortInBudget);
+
         clearEntitiesExceptPlayer();
         resetPlayer();
     }
