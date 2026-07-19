@@ -10,7 +10,8 @@
 3. **Escalation log: `docs/HANDOFF.md`** — if a task needs a stronger model,
    log it there (newest first) instead of attempting it half-correctly.
    Mark entries done, don't delete them. Known-gaps ledger: `docs/AUDIT.md`.
-   Business/licensing/roadmap decisions: `docs/STRATEGY.md`.
+   Business/licensing/roadmap decisions: `~/minecom-private/STRATEGY.md`
+   (kept outside the public repo).
 4. **Verification is the product.** Every behavior change ships with
    `check(desc, cond)` coverage in `SelfTest` (`--selftest`) and/or
    `PlayTest` (`--playtest`, port via `MINECOM_TEST_PORT`). No JUnit.
