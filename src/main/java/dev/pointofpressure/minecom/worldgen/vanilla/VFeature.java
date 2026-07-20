@@ -1384,6 +1384,11 @@ public final class VFeature {
             return modulo;
         }
 
+        /** BitRandomSource.nextBoolean: one next(1) draw. */
+        public boolean nextBoolean() {
+            return next(1) != 0;
+        }
+
         int nextIntBetweenInclusive(int min, int max) {
             return nextInt(max - min + 1) + min;
         }

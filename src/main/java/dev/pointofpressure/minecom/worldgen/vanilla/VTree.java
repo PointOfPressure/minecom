@@ -13,16 +13,31 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Vanilla TreeFeature: trunk placers (straight, fancy), foliage placers (blob,
- * fancy, spruce, pine), two/three-layer feature sizes, and the beehive +
- * alter_ground decorators — with vanilla's exact random-draw order, including
- * the HashSet-iteration-then-sort ordering of decorator position lists (our
- * Pos record reproduces BlockPos.hashCode so java.util.HashSet iterates
- * identically).
+ * Vanilla TreeFeature: trunk placers (straight, fancy, giant, dark_oak, cherry,
+ * forking, mega_jungle, bending), foliage placers (blob, fancy, spruce, pine,
+ * mega_pine, dark_oak, cherry, acacia, random_spread, bush, jungle), two/three-
+ * layer feature sizes, and the beehive + alter_ground decorators — with
+ * vanilla's exact random-draw order, including the HashSet-iteration-then-sort
+ * ordering of decorator position lists (our Pos record reproduces
+ * BlockPos.hashCode so java.util.HashSet iterates identically).
+ *
+ * <p>Root placers (mangrove) are not modeled — TreeFeature.doPlace's
+ * config.rootPlacer branch (getTrunkOrigin draw + placeRoots) is absent, so any
+ * config with a {@code root_placer} is skipped (see docs/HANDOFF.md).
  */
 final class VTree {
     private static final int MIN_Y = -64;
     private static final int HEIGHT = 384;
+
+    private static final Set<String> TRUNK_OK = Set.of(
+            "straight_trunk_placer", "fancy_trunk_placer", "giant_trunk_placer",
+            "dark_oak_trunk_placer", "cherry_trunk_placer", "forking_trunk_placer",
+            "mega_jungle_trunk_placer", "bending_trunk_placer");
+    private static final Set<String> FOLIAGE_OK = Set.of(
+            "blob_foliage_placer", "fancy_foliage_placer", "spruce_foliage_placer",
+            "pine_foliage_placer", "mega_pine_foliage_placer", "dark_oak_foliage_placer",
+            "cherry_foliage_placer", "acacia_foliage_placer", "random_spread_foliage_placer",
+            "bush_foliage_placer", "jungle_foliage_placer");
 
     private final VFeature host;
 
@@ -68,10 +83,12 @@ final class VTree {
         JsonObject foliagePlacer = config.getAsJsonObject("foliage_placer");
         String trunkType = path(trunkPlacer.get("type").getAsString());
         String foliageType = path(foliagePlacer.get("type").getAsString());
-        if (!trunkType.equals("straight_trunk_placer") && !trunkType.equals("fancy_trunk_placer")
-                && !trunkType.equals("giant_trunk_placer")) return false;
-        if (!Set.of("blob_foliage_placer", "fancy_foliage_placer", "spruce_foliage_placer",
-                "pine_foliage_placer", "mega_pine_foliage_placer").contains(foliageType)) return false;
+        // Root placers (mangrove) are unmodeled — the getTrunkOrigin draw and
+        // placeRoots branch of TreeFeature.doPlace are absent, so skipping keeps
+        // RNG aligned for any later tree in the count-loop.
+        if (config.has("root_placer")) return false;
+        if (!TRUNK_OK.contains(trunkType)) return false;
+        if (!FOLIAGE_OK.contains(foliageType)) return false;
 
         Block trunkState = VSurface.parseBlockState(
                 config.getAsJsonObject("trunk_provider").getAsJsonObject("state"));
@@ -89,7 +106,12 @@ final class VTree {
                     Math.max(4, treeHeight - VFeature.sampleInt(foliagePlacer.get("trunk_height"), random));
             case "pine_foliage_placer" -> VFeature.sampleInt(foliagePlacer.get("height"), random);
             case "mega_pine_foliage_placer" -> VFeature.sampleInt(foliagePlacer.get("crown_height"), random);
-            default -> foliagePlacer.get("height").getAsInt(); // blob/fancy: constant, no draw
+            case "dark_oak_foliage_placer" -> 4; // DarkOakFoliagePlacer.foliageHeight: constant 4
+            case "acacia_foliage_placer" -> 0;   // AcaciaFoliagePlacer.foliageHeight: constant 0
+            case "cherry_foliage_placer" -> VFeature.sampleInt(foliagePlacer.get("height"), random);
+            case "random_spread_foliage_placer" ->
+                    VFeature.sampleInt(foliagePlacer.get("foliage_height"), random);
+            default -> foliagePlacer.get("height").getAsInt(); // blob/fancy/bush/jungle: constant, no draw
         };
         int trunkHeight = treeHeight - foliageHeight;
         int leafRadius = VFeature.sampleInt(foliagePlacer.get("radius"), random);
@@ -111,13 +133,25 @@ final class VTree {
         Set<Pos> foliage = new LinkedHashSet<>();
         List<int[]> attachments; // {x, y, z, radiusOffset}
 
-        if (trunkType.equals("straight_trunk_placer")) {
-            attachments = straightTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
-        } else if (trunkType.equals("giant_trunk_placer")) {
-            attachments = giantTrunk(canvas, config, clippedHeight, ox, oy, oz, trunkState, trunks);
-        } else {
-            attachments = fancyTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
-        }
+        attachments = switch (trunkType) {
+            case "straight_trunk_placer" ->
+                    straightTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
+            case "giant_trunk_placer" ->
+                    giantTrunk(canvas, config, clippedHeight, ox, oy, oz, trunkState, trunks);
+            case "fancy_trunk_placer" ->
+                    fancyTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
+            case "dark_oak_trunk_placer" ->
+                    darkOakTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
+            case "cherry_trunk_placer" ->
+                    cherryTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
+            case "forking_trunk_placer" ->
+                    forkingTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
+            case "mega_jungle_trunk_placer" ->
+                    megaJungleTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
+            case "bending_trunk_placer" ->
+                    bendingTrunk(canvas, config, random, clippedHeight, ox, oy, oz, trunkState, trunks);
+            default -> throw new IllegalStateException("unreachable trunk type " + trunkType);
+        };
 
         for (int[] att : attachments) {
             createFoliage(canvas, foliagePlacer, foliageType, random, treeHeight,
@@ -394,6 +428,246 @@ final class VTree {
         return List.of(new int[]{ox, oy + treeHeight, oz, 0, 1}); // 5th elem = doubleTrunk
     }
 
+    /** Plane.HORIZONTAL faces {NORTH, EAST, SOUTH, WEST} as (stepX, stepZ). */
+    private static final int[][] HDIR = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
+
+    /** getRandomDirection axis for HDIR index: N/S -> z, E/W -> x. */
+    private static String hAxis(int dirIdx) {
+        return dirIdx % 2 == 0 ? "z" : "x";
+    }
+
+    /** Direction.getAxisDirection() == POSITIVE for EAST(1) and SOUTH(2). */
+    private static boolean hAxisPositive(int dirIdx) {
+        return dirIdx == 1 || dirIdx == 2;
+    }
+
+    private Block logWithAxis(Block trunkState, String axis) {
+        return trunkState.properties().containsKey("axis") ? trunkState.withProperty("axis", axis) : trunkState;
+    }
+
+    /** TreeFeature.isAirOrLeaves: air or a #minecraft:leaves block. */
+    private boolean isAirOrLeaves(VFeature.Canvas canvas, int x, int y, int z) {
+        Block b = canvas.get(x, y, z);
+        return b == null || host.tag("minecraft:leaves").contains(b.name());
+    }
+
+    /** DarkOakTrunkPlacer (26.2): 2x2 leaning column + four random branches. */
+    private List<int[]> darkOakTrunk(VFeature.Canvas canvas, JsonObject config, VFeature.XWorldgenRandom random,
+                                     int treeHeight, int ox, int oy, int oz, Block trunkState, Set<Pos> trunks) {
+        List<int[]> attachments = new ArrayList<>();
+        placeBelowTrunkBlock(canvas, config, ox, oy - 1, oz);
+        placeBelowTrunkBlock(canvas, config, ox + 1, oy - 1, oz);      // east
+        placeBelowTrunkBlock(canvas, config, ox, oy - 1, oz + 1);      // south
+        placeBelowTrunkBlock(canvas, config, ox + 1, oy - 1, oz + 1);  // south.east
+        int leanIdx = random.nextInt(4);
+        int leanDx = HDIR[leanIdx][0], leanDz = HDIR[leanIdx][1];
+        int leanHeight = treeHeight - random.nextInt(4);
+        int leanSteps = 2 - random.nextInt(3);
+        int tx = ox, tz = oz;
+        int ey = oy + treeHeight - 1;
+        for (int dy = 0; dy < treeHeight; dy++) {
+            if (dy >= leanHeight && leanSteps > 0) {
+                tx += leanDx;
+                tz += leanDz;
+                leanSteps--;
+            }
+            int yy = oy + dy;
+            if (isAirOrLeaves(canvas, tx, yy, tz)) {
+                placeLog(canvas, tx, yy, tz, trunkState, trunks);
+                placeLog(canvas, tx + 1, yy, tz, trunkState, trunks);
+                placeLog(canvas, tx, yy, tz + 1, trunkState, trunks);
+                placeLog(canvas, tx + 1, yy, tz + 1, trunkState, trunks);
+            }
+        }
+        attachments.add(new int[]{tx, ey, tz, 0, 1}); // doubleTrunk
+        for (int oxx = -1; oxx <= 2; oxx++) {
+            for (int ozz = -1; ozz <= 2; ozz++) {
+                if ((oxx < 0 || oxx > 1 || ozz < 0 || ozz > 1) && random.nextInt(3) <= 0) {
+                    int length = random.nextInt(3) + 2;
+                    for (int by = 0; by < length; by++) {
+                        placeLog(canvas, ox + oxx, ey - by - 1, oz + ozz, trunkState, trunks);
+                    }
+                    attachments.add(new int[]{ox + oxx, ey, oz + ozz, 0, 0});
+                }
+            }
+        }
+        return attachments;
+    }
+
+    /** ForkingTrunkPlacer (26.2): leaning main stem + one optional side fork. */
+    private List<int[]> forkingTrunk(VFeature.Canvas canvas, JsonObject config, VFeature.XWorldgenRandom random,
+                                     int treeHeight, int ox, int oy, int oz, Block trunkState, Set<Pos> trunks) {
+        placeBelowTrunkBlock(canvas, config, ox, oy - 1, oz);
+        List<int[]> attachments = new ArrayList<>();
+        int leanIdx = random.nextInt(4);
+        int leanDx = HDIR[leanIdx][0], leanDz = HDIR[leanIdx][1];
+        int leanHeight = treeHeight - random.nextInt(4) - 1;
+        int leanSteps = 3 - random.nextInt(3);
+        int tx = ox, tz = oz;
+        int ey = 0;
+        boolean hasEy = false;
+        for (int yo = 0; yo < treeHeight; yo++) {
+            int yy = oy + yo;
+            if (yo >= leanHeight && leanSteps > 0) {
+                tx += leanDx;
+                tz += leanDz;
+                leanSteps--;
+            }
+            if (placeLog(canvas, tx, yy, tz, trunkState, trunks)) {
+                ey = yy + 1;
+                hasEy = true;
+            }
+        }
+        if (hasEy) attachments.add(new int[]{tx, ey, tz, 1, 0});
+        tx = ox;
+        tz = oz;
+        int branchIdx = random.nextInt(4);
+        if (branchIdx != leanIdx) {
+            int branchDx = HDIR[branchIdx][0], branchDz = HDIR[branchIdx][1];
+            int branchPos = leanHeight - random.nextInt(2) - 1;
+            int branchSteps = 1 + random.nextInt(3);
+            hasEy = false;
+            for (int yo = branchPos; yo < treeHeight && branchSteps > 0; branchSteps--) {
+                if (yo >= 1) {
+                    int yy = oy + yo;
+                    tx += branchDx;
+                    tz += branchDz;
+                    if (placeLog(canvas, tx, yy, tz, trunkState, trunks)) {
+                        ey = yy + 1;
+                        hasEy = true;
+                    }
+                }
+                yo++;
+            }
+            if (hasEy) attachments.add(new int[]{tx, ey, tz, 0, 0});
+        }
+        return attachments;
+    }
+
+    /** CherryTrunkPlacer (26.2): straight stem plus 1-3 curving branches. */
+    private List<int[]> cherryTrunk(VFeature.Canvas canvas, JsonObject config, VFeature.XWorldgenRandom random,
+                                    int treeHeight, int ox, int oy, int oz, Block trunkState, Set<Pos> trunks) {
+        JsonObject tp = config.getAsJsonObject("trunk_placer");
+        placeBelowTrunkBlock(canvas, config, ox, oy - 1, oz);
+        // branch_start_offset_from_top is a bare UniformInt (no dispatch "type" field)
+        JsonObject bStart = tp.getAsJsonObject("branch_start_offset_from_top");
+        int bsMin = bStart.get("min_inclusive").getAsInt();
+        int bsMax = bStart.get("max_inclusive").getAsInt();
+        int firstBranchOffset = Math.max(0, treeHeight - 1 + (random.nextInt(bsMax - bsMin + 1) + bsMin));
+        // secondBranchStartOffsetFromTop = UniformInt.of(min, max - 1)
+        int secondBranchOffset = Math.max(0, treeHeight - 1 + (random.nextInt((bsMax - 1) - bsMin + 1) + bsMin));
+        if (secondBranchOffset >= firstBranchOffset) secondBranchOffset++;
+        int branchCount = VFeature.sampleInt(tp.get("branch_count"), random);
+        boolean hasMiddleBranch = branchCount == 3;
+        boolean hasBothSideBranches = branchCount >= 2;
+        int trunkHeight;
+        if (hasMiddleBranch) {
+            trunkHeight = treeHeight;
+        } else if (hasBothSideBranches) {
+            trunkHeight = Math.max(firstBranchOffset, secondBranchOffset) + 1;
+        } else {
+            trunkHeight = firstBranchOffset + 1;
+        }
+        for (int y = 0; y < trunkHeight; y++) {
+            placeLog(canvas, ox, oy + y, oz, trunkState, trunks);
+        }
+        List<int[]> attachments = new ArrayList<>();
+        if (hasMiddleBranch) attachments.add(new int[]{ox, oy + trunkHeight, oz, 0, 0});
+        int treeDirIdx = random.nextInt(4);
+        attachments.add(cherryBranch(canvas, tp, random, treeHeight, ox, oy, oz, trunkState, trunks,
+                treeDirIdx, firstBranchOffset, firstBranchOffset < trunkHeight - 1));
+        if (hasBothSideBranches) {
+            attachments.add(cherryBranch(canvas, tp, random, treeHeight, ox, oy, oz, trunkState, trunks,
+                    (treeDirIdx + 2) % 4, secondBranchOffset, secondBranchOffset < trunkHeight - 1));
+        }
+        return attachments;
+    }
+
+    /** CherryTrunkPlacer.generateBranch: horizontal run then a Manhattan-walk toward the branch end. */
+    private int[] cherryBranch(VFeature.Canvas canvas, JsonObject tp, VFeature.XWorldgenRandom random,
+                               int treeHeight, int ox, int oy, int oz, Block trunkState, Set<Pos> trunks,
+                               int branchDirIdx, int offsetFromOrigin, boolean middleContinuesUpwards) {
+        int bdx = HDIR[branchDirIdx][0], bdz = HDIR[branchDirIdx][1];
+        String sidewaysAxis = hAxis(branchDirIdx);
+        Block sideways = logWithAxis(trunkState, sidewaysAxis);
+        int lx = ox, ly = oy + offsetFromOrigin, lz = oz;
+        int branchEndOffset = treeHeight - 1 + VFeature.sampleInt(tp.get("branch_end_offset_from_top"), random);
+        boolean extend = middleContinuesUpwards || branchEndOffset < offsetFromOrigin;
+        int distanceToTrunk = VFeature.sampleInt(tp.get("branch_horizontal_length"), random) + (extend ? 1 : 0);
+        int ex = ox + bdx * distanceToTrunk, eyEnd = oy + branchEndOffset, ez = oz + bdz * distanceToTrunk;
+        int stepsHorizontally = extend ? 2 : 1;
+        for (int i = 0; i < stepsHorizontally; i++) {
+            lx += bdx;
+            lz += bdz;
+            placeLog(canvas, lx, ly, lz, sideways, trunks);
+        }
+        int vDir = eyEnd > ly ? 1 : -1;
+        while (true) {
+            int distance = Math.abs(lx - ex) + Math.abs(ly - eyEnd) + Math.abs(lz - ez);
+            if (distance == 0) return new int[]{ex, eyEnd + 1, ez, 0, 0}; // branchEndPos.above()
+            float chanceToGrowVertically = (float) Math.abs(eyEnd - ly) / distance;
+            boolean growVertically = random.nextFloat() < chanceToGrowVertically;
+            if (growVertically) {
+                ly += vDir;
+                placeLog(canvas, lx, ly, lz, trunkState, trunks);
+            } else {
+                lx += bdx;
+                lz += bdz;
+                placeLog(canvas, lx, ly, lz, sideways, trunks);
+            }
+        }
+    }
+
+    /** MegaJungleTrunkPlacer (26.2): GiantTrunkPlacer base plus radial log branches. */
+    private List<int[]> megaJungleTrunk(VFeature.Canvas canvas, JsonObject config, VFeature.XWorldgenRandom random,
+                                        int treeHeight, int ox, int oy, int oz, Block trunkState, Set<Pos> trunks) {
+        List<int[]> attachments = new ArrayList<>(
+                giantTrunk(canvas, config, treeHeight, ox, oy, oz, trunkState, trunks));
+        for (int branchHeight = treeHeight - 2 - random.nextInt(4);
+             branchHeight > treeHeight / 2;
+             branchHeight -= 2 + random.nextInt(4)) {
+            float angle = random.nextFloat() * (float) (Math.PI * 2);
+            int bx = 0, bz = 0;
+            for (int b = 0; b < 5; b++) {
+                bx = (int) (1.5F + VCarver.cos(angle) * b);
+                bz = (int) (1.5F + VCarver.sin(angle) * b);
+                placeLog(canvas, ox + bx, oy + branchHeight - 3 + b / 2, oz + bz, trunkState, trunks);
+            }
+            attachments.add(new int[]{ox + bx, oy + branchHeight, oz + bz, -2, 0});
+        }
+        return attachments;
+    }
+
+    /** BendingTrunkPlacer (26.2): vertical stem that bends horizontally near the top. */
+    private List<int[]> bendingTrunk(VFeature.Canvas canvas, JsonObject config, VFeature.XWorldgenRandom random,
+                                     int treeHeight, int ox, int oy, int oz, Block trunkState, Set<Pos> trunks) {
+        JsonObject tp = config.getAsJsonObject("trunk_placer");
+        int minHeightForLeaves = tp.has("min_height_for_leaves") ? tp.get("min_height_for_leaves").getAsInt() : 1;
+        int dirIdx = random.nextInt(4);
+        int ddx = HDIR[dirIdx][0], ddz = HDIR[dirIdx][1];
+        int logHeight = treeHeight - 1;
+        int cx = ox, cy = oy, cz = oz;
+        placeBelowTrunkBlock(canvas, config, ox, oy - 1, oz);
+        List<int[]> foliagePoints = new ArrayList<>();
+        for (int i = 0; i <= logHeight; i++) {
+            if (i + 1 >= logHeight + random.nextInt(2)) {
+                cx += ddx;
+                cz += ddz;
+            }
+            if (validTreePos(canvas, cx, cy, cz)) placeLog(canvas, cx, cy, cz, trunkState, trunks);
+            if (i >= minHeightForLeaves) foliagePoints.add(new int[]{cx, cy, cz, 0, 0});
+            cy++;
+        }
+        int dirLength = VFeature.sampleInt(tp.get("bend_length"), random);
+        for (int i = 0; i <= dirLength; i++) {
+            if (validTreePos(canvas, cx, cy, cz)) placeLog(canvas, cx, cy, cz, trunkState, trunks);
+            foliagePoints.add(new int[]{cx, cy, cz, 0, 0});
+            cx += ddx;
+            cz += ddz;
+        }
+        return foliagePoints;
+    }
+
     private boolean makeLimb(VFeature.Canvas canvas, VFeature.XWorldgenRandom random,
                              int sx, int sy, int sz, int ex, int ey, int ez,
                              boolean doPlace, Block trunkState, Set<Pos> trunks) {
@@ -444,13 +718,13 @@ final class VTree {
             case "blob_foliage_placer" -> {
                 for (int yo = offset; yo >= offset - foliageHeight; yo--) {
                     int r = Math.max(leafRadius + radiusOffset - 1 - yo / 2, 0);
-                    placeLeavesRow(canvas, random, ax, ay, az, r, yo, foliageState, foliage, type, doubleTrunk);
+                    placeLeavesRow(canvas, random, placer, ax, ay, az, r, yo, foliageState, foliage, type, doubleTrunk);
                 }
             }
             case "fancy_foliage_placer" -> {
                 for (int yo = offset; yo >= offset - foliageHeight; yo--) {
                     int r = leafRadius + (yo != offset && yo != offset - foliageHeight ? 1 : 0);
-                    placeLeavesRow(canvas, random, ax, ay, az, r, yo, foliageState, foliage, type, doubleTrunk);
+                    placeLeavesRow(canvas, random, placer, ax, ay, az, r, yo, foliageState, foliage, type, doubleTrunk);
                 }
             }
             case "spruce_foliage_placer" -> {
@@ -458,7 +732,7 @@ final class VTree {
                 int maxRadius = 1;
                 int minRadius = 0;
                 for (int yo = offset; yo >= -foliageHeight; yo--) {
-                    placeLeavesRow(canvas, random, ax, ay, az, currentRadius, yo, foliageState, foliage, type, doubleTrunk);
+                    placeLeavesRow(canvas, random, placer, ax, ay, az, currentRadius, yo, foliageState, foliage, type, doubleTrunk);
                     if (currentRadius >= maxRadius) {
                         currentRadius = minRadius;
                         minRadius = 1;
@@ -471,7 +745,7 @@ final class VTree {
             case "pine_foliage_placer" -> {
                 int currentRadius = 0;
                 for (int yo = offset; yo >= offset - foliageHeight; yo--) {
-                    placeLeavesRow(canvas, random, ax, ay, az, currentRadius, yo, foliageState, foliage, type, doubleTrunk);
+                    placeLeavesRow(canvas, random, placer, ax, ay, az, currentRadius, yo, foliageState, foliage, type, doubleTrunk);
                     if (currentRadius >= 1 && yo == offset - foliageHeight + 1) {
                         currentRadius--;
                     } else if (currentRadius < leafRadius + radiusOffset) {
@@ -487,31 +761,148 @@ final class VTree {
                             + VNoise.floor((float) yoLocal / foliageHeight * 3.5F);
                     int jaggedRadius = (yoLocal > 0 && smoothRadius == prevRadius && (yy & 1) == 0)
                             ? smoothRadius + 1 : smoothRadius;
-                    placeLeavesRow(canvas, random, ax, yy, az, jaggedRadius, 0, foliageState, foliage, type, doubleTrunk);
+                    placeLeavesRow(canvas, random, placer, ax, yy, az, jaggedRadius, 0, foliageState, foliage, type, doubleTrunk);
                     prevRadius = smoothRadius;
+                }
+            }
+            case "dark_oak_foliage_placer" -> {
+                // DarkOakFoliagePlacer.createFoliage: pos = attachment.above(offset)
+                int py0 = ay + offset;
+                if (doubleTrunk) {
+                    placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius + 2, -1, foliageState, foliage, type, true);
+                    placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius + 3, 0, foliageState, foliage, type, true);
+                    placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius + 2, 1, foliageState, foliage, type, true);
+                    if (random.nextBoolean()) {
+                        placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius, 2, foliageState, foliage, type, true);
+                    }
+                } else {
+                    placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius + 2, -1, foliageState, foliage, type, false);
+                    placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius + 1, 0, foliageState, foliage, type, false);
+                }
+            }
+            case "acacia_foliage_placer" -> {
+                // AcaciaFoliagePlacer.createFoliage: pos = attachment.above(offset)
+                int py0 = ay + offset;
+                placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius + radiusOffset, -1 - foliageHeight, foliageState, foliage, type, doubleTrunk);
+                placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius - 1, -foliageHeight, foliageState, foliage, type, doubleTrunk);
+                placeLeavesRow(canvas, random, placer, ax, py0, az, leafRadius + radiusOffset - 1, 0, foliageState, foliage, type, doubleTrunk);
+            }
+            case "cherry_foliage_placer" -> {
+                // CherryFoliagePlacer.createFoliage: pos = attachment.above(offset)
+                int py0 = ay + offset;
+                int currentRadius = leafRadius + radiusOffset - 1;
+                placeLeavesRow(canvas, random, placer, ax, py0, az, currentRadius - 2, foliageHeight - 3, foliageState, foliage, type, doubleTrunk);
+                placeLeavesRow(canvas, random, placer, ax, py0, az, currentRadius - 1, foliageHeight - 4, foliageState, foliage, type, doubleTrunk);
+                for (int y = foliageHeight - 5; y >= 0; y--) {
+                    placeLeavesRow(canvas, random, placer, ax, py0, az, currentRadius, y, foliageState, foliage, type, doubleTrunk);
+                }
+                placeLeavesRowHanging(canvas, random, placer, ax, py0, az, currentRadius, -1, foliageState, foliage, type, doubleTrunk);
+                placeLeavesRowHanging(canvas, random, placer, ax, py0, az, currentRadius - 1, -2, foliageState, foliage, type, doubleTrunk);
+            }
+            case "bush_foliage_placer" -> {
+                // BushFoliagePlacer.createFoliage: origin = attachment.pos() (no offset applied)
+                for (int yo = offset; yo >= offset - foliageHeight; yo--) {
+                    int r = leafRadius + radiusOffset - 1 - yo;
+                    placeLeavesRow(canvas, random, placer, ax, ay, az, r, yo, foliageState, foliage, type, doubleTrunk);
+                }
+            }
+            case "jungle_foliage_placer" -> {
+                // MegaJungleFoliagePlacer.createFoliage
+                int leafHeight = doubleTrunk ? foliageHeight : 1 + random.nextInt(2);
+                for (int yo = offset; yo >= offset - leafHeight; yo--) {
+                    int r = leafRadius + radiusOffset + 1 - yo;
+                    placeLeavesRow(canvas, random, placer, ax, ay, az, r, yo, foliageState, foliage, type, doubleTrunk);
+                }
+            }
+            case "random_spread_foliage_placer" -> {
+                // RandomSpreadFoliagePlacer.createFoliage: origin = attachment.pos()
+                int attempts = placer.get("leaf_placement_attempts").getAsInt();
+                for (int i = 0; i < attempts; i++) {
+                    int dx = random.nextInt(leafRadius) - random.nextInt(leafRadius);
+                    int dy = random.nextInt(foliageHeight) - random.nextInt(foliageHeight);
+                    int dz = random.nextInt(leafRadius) - random.nextInt(leafRadius);
+                    tryPlaceLeaf(canvas, ax + dx, ay + dy, az + dz, foliageState, foliage);
                 }
             }
             default -> { }
         }
     }
 
-    private void placeLeavesRow(VFeature.Canvas canvas, VFeature.XWorldgenRandom random,
+    private void placeLeavesRow(VFeature.Canvas canvas, VFeature.XWorldgenRandom random, JsonObject placer,
                                 int ax, int ay, int az, int currentRadius, int yo,
                                 Block foliageState, Set<Pos> foliage, String placerType, boolean doubleTrunk) {
         int off = doubleTrunk ? 1 : 0;
         for (int dx = -currentRadius; dx <= currentRadius + off; dx++) {
             for (int dz = -currentRadius; dz <= currentRadius + off; dz++) {
-                int minDx = doubleTrunk ? Math.min(Math.abs(dx), Math.abs(dx - 1)) : Math.abs(dx);
-                int minDz = doubleTrunk ? Math.min(Math.abs(dz), Math.abs(dz - 1)) : Math.abs(dz);
-                if (shouldSkipLocation(random, minDx, yo, minDz, currentRadius, placerType)) continue;
+                if (shouldSkipLocationSigned(random, placer, dx, yo, dz, currentRadius, placerType, doubleTrunk)) continue;
                 int px = ax + dx, py = ay + yo, pz = az + dz;
                 tryPlaceLeaf(canvas, px, py, pz, foliageState, foliage);
             }
         }
     }
 
-    private boolean shouldSkipLocation(VFeature.XWorldgenRandom random, int dx, int y, int dz,
-                                       int currentRadius, String placerType) {
+    /**
+     * CherryFoliagePlacer.placeLeavesRowWithHangingLeavesBelow: places the row, then walks the
+     * ring one block below it hanging leaves down where a leaf sits above (each hang is a
+     * distManhattan(<7) gate + nextFloat probability draw — draw order matters for parity).
+     */
+    private void placeLeavesRowHanging(VFeature.Canvas canvas, VFeature.XWorldgenRandom random, JsonObject placer,
+                                       int ax, int ay, int az, int currentRadius, int yRow,
+                                       Block foliageState, Set<Pos> foliage, String placerType, boolean doubleTrunk) {
+        placeLeavesRow(canvas, random, placer, ax, ay, az, currentRadius, yRow, foliageState, foliage, placerType, doubleTrunk);
+        int off = doubleTrunk ? 1 : 0;
+        float hangingChance = placer.get("hanging_leaves_chance").getAsFloat();
+        float extChance = placer.get("hanging_leaves_extension_chance").getAsFloat();
+        int logX = ax, logY = ay - 1, logZ = az; // origin.below()
+        for (int alongIdx = 0; alongIdx < 4; alongIdx++) {
+            int toIdx = (alongIdx + 1) % 4; // clockwise
+            int offsetToEdge = hAxisPositive(toIdx) ? currentRadius + off : currentRadius;
+            int px = ax + HDIR[toIdx][0] * offsetToEdge + HDIR[alongIdx][0] * (-currentRadius);
+            int py = ay + (yRow - 1);
+            int pz = az + HDIR[toIdx][1] * offsetToEdge + HDIR[alongIdx][1] * (-currentRadius);
+            int offsetAlongEdge = -currentRadius;
+            while (offsetAlongEdge < currentRadius + off) {
+                boolean leavesAbove = foliage.contains(new Pos(px, py + 1, pz));
+                if (leavesAbove && tryPlaceExtension(canvas, random, hangingChance, logX, logY, logZ, px, py, pz, foliageState, foliage)) {
+                    tryPlaceExtension(canvas, random, extChance, logX, logY, logZ, px, py - 1, pz, foliageState, foliage);
+                }
+                offsetAlongEdge++;
+                px += HDIR[alongIdx][0];
+                pz += HDIR[alongIdx][1];
+            }
+        }
+    }
+
+    /** FoliagePlacer.tryPlaceExtension: Manhattan<7 gate, then a nextFloat probability draw. */
+    private boolean tryPlaceExtension(VFeature.Canvas canvas, VFeature.XWorldgenRandom random, float chance,
+                                      int logX, int logY, int logZ, int px, int py, int pz,
+                                      Block foliageState, Set<Pos> foliage) {
+        if (Math.abs(px - logX) + Math.abs(py - logY) + Math.abs(pz - logZ) >= 7) return false;
+        if (random.nextFloat() > chance) return false;
+        return tryPlaceLeaf(canvas, px, py, pz, foliageState, foliage);
+    }
+
+    /** FoliagePlacer.shouldSkipLocationSigned: base computes min|d|; DarkOak overrides with a signed test. */
+    private boolean shouldSkipLocationSigned(VFeature.XWorldgenRandom random, JsonObject placer,
+                                             int dx, int y, int dz, int currentRadius, String placerType, boolean doubleTrunk) {
+        if (placerType.equals("dark_oak_foliage_placer")) {
+            boolean base = y != 0 || !doubleTrunk
+                    || (dx != -currentRadius && dx < currentRadius)
+                    || (dz != -currentRadius && dz < currentRadius);
+            return base ? shouldSkipLocationBase(random, placer, dx, y, dz, currentRadius, placerType, doubleTrunk) : true;
+        }
+        return shouldSkipLocationBase(random, placer, dx, y, dz, currentRadius, placerType, doubleTrunk);
+    }
+
+    private boolean shouldSkipLocationBase(VFeature.XWorldgenRandom random, JsonObject placer,
+                                           int dx, int y, int dz, int currentRadius, String placerType, boolean doubleTrunk) {
+        int minDx = doubleTrunk ? Math.min(Math.abs(dx), Math.abs(dx - 1)) : Math.abs(dx);
+        int minDz = doubleTrunk ? Math.min(Math.abs(dz), Math.abs(dz - 1)) : Math.abs(dz);
+        return shouldSkipLocation(random, placer, minDx, y, minDz, currentRadius, placerType, doubleTrunk);
+    }
+
+    private boolean shouldSkipLocation(VFeature.XWorldgenRandom random, JsonObject placer, int dx, int y, int dz,
+                                       int currentRadius, String placerType, boolean doubleTrunk) {
         return switch (placerType) {
             case "blob_foliage_placer" ->
                     dx == currentRadius && dz == currentRadius && (random.nextInt(2) == 0 || y == 0);
@@ -523,16 +914,39 @@ final class VTree {
                     dx == currentRadius && dz == currentRadius && currentRadius > 0;
             case "mega_pine_foliage_placer" ->
                     dx + dz >= 7 || dx * dx + dz * dz > currentRadius * currentRadius;
+            case "bush_foliage_placer" ->
+                    dx == currentRadius && dz == currentRadius && random.nextInt(2) == 0;
+            case "jungle_foliage_placer" ->
+                    dx + dz >= 7 || dx * dx + dz * dz > currentRadius * currentRadius;
+            case "acacia_foliage_placer" ->
+                    y == 0 ? (dx > 1 || dz > 1) && dx != 0 && dz != 0
+                           : dx == currentRadius && dz == currentRadius && currentRadius > 0;
+            case "dark_oak_foliage_placer" -> {
+                if (y == -1 && !doubleTrunk) yield dx == currentRadius && dz == currentRadius;
+                yield y == 1 ? dx + dz > currentRadius * 2 - 2 : false;
+            }
+            case "cherry_foliage_placer" -> {
+                float wideBottom = placer.get("wide_bottom_layer_hole_chance").getAsFloat();
+                float cornerHole = placer.get("corner_hole_chance").getAsFloat();
+                if (y == -1 && (dx == currentRadius || dz == currentRadius) && random.nextFloat() < wideBottom) {
+                    yield true;
+                }
+                boolean corner = dx == currentRadius && dz == currentRadius;
+                boolean wide = currentRadius > 2;
+                yield wide
+                        ? corner || dx + dz > currentRadius * 2 - 2 && random.nextFloat() < cornerHole
+                        : corner && random.nextFloat() < cornerHole;
+            }
             default -> false;
         };
     }
 
     /** FoliagePlacer.tryPlaceLeaf: persistent leaves are never overwritten, and a leaf placed
      * into a water source gets waterlogged=true (vanilla's isFluidAtPosition source check). */
-    private void tryPlaceLeaf(VFeature.Canvas canvas, int x, int y, int z, Block foliageState, Set<Pos> foliage) {
+    private boolean tryPlaceLeaf(VFeature.Canvas canvas, int x, int y, int z, Block foliageState, Set<Pos> foliage) {
         Block existing = canvas.get(x, y, z);
-        if (existing != null && "true".equals(existing.getProperty("persistent"))) return;
-        if (!validTreePos(canvas, x, y, z)) return;
+        if (existing != null && "true".equals(existing.getProperty("persistent"))) return false;
+        if (!validTreePos(canvas, x, y, z)) return false;
         Block state = foliageState;
         if (state.getProperty("waterlogged") != null
                 && existing != null && existing.name().equals("minecraft:water")
@@ -541,6 +955,7 @@ final class VTree {
         }
         canvas.set(x, y, z, state);
         foliage.add(new Pos(x, y, z));
+        return true;
     }
 
     // ================================================================== fallen tree
