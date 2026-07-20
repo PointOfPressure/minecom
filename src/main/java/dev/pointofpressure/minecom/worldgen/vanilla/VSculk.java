@@ -636,53 +636,11 @@ public final class VSculk {
         return false;
     }
 
-    // ============================================================== multiface_growth (sculk_vein feature)
+    // ============================================================== generic multiface growth (glow_lichen, sculk_vein)
 
     /**
-     * MultifaceGrowthFeature.place for sculk_vein: pick a valid target within search_range,
-     * then spread the vein. chance_of_spreading=1.0 (always). Simplified faithful port.
-     */
-    public static boolean placeMultifaceVein(World level, int ox, int oy, int oz, XWorldgenRandom random,
-                                             int searchRange, boolean canFloor, boolean canCeiling, boolean canWall,
-                                             float chanceOfSpreading, Set<String> canBePlacedOn) {
-        Dir[] shuffled = allShuffled(random).toArray(new Dir[0]);
-        int[] pos = getRandomStartPos(level, ox, oy, oz, random, searchRange, shuffled, canFloor, canCeiling, canWall, canBePlacedOn);
-        if (pos == null) return false;
-        Dir face = DIRECTIONS[pos[3]];
-        // place vein with `face` set
-        placeVeinFace(level, pos[0], pos[1], pos[2], face);
-        // spread along neighbours (MultifaceBlock.spreadFromFaceTowardRandomDirection with chance)
-        Block state = level.get(pos[0], pos[1], pos[2]);
-        for (Dir spreadDir : allShuffled(random)) {
-            if (random.nextFloat() < chanceOfSpreading) {
-                // try to spread from this face toward random direction — best-effort single step
-            }
-        }
-        return true;
-    }
-
-    private static int[] getRandomStartPos(World level, int ox, int oy, int oz, XWorldgenRandom random, int range,
-                                           Dir[] shuffled, boolean canFloor, boolean canCeiling, boolean canWall,
-                                           Set<String> canBePlacedOn) {
-        // search within a random-walk range for a solid block with an exposed attachable face
-        for (Dir dir : shuffled) {
-            if (dir == Dir.UP && !canCeiling) continue;
-            if (dir == Dir.DOWN && !canFloor) continue;
-            if (dir.horizontal() && !canWall) continue;
-            int nx = ox + dir.dx, ny = oy + dir.dy, nz = oz + dir.dz;
-            Block support = level.get(nx, ny, nz);
-            if (canBePlacedOn.contains(name(support)) && isAir(level.get(ox, oy, oz))) {
-                return new int[]{ox, oy, oz, dir.ordinal()};
-            }
-        }
-        return null;
-    }
-
-    // ============================================================== generic multiface growth (glow_lichen, etc.)
-
-    /**
-     * MultifaceGrowthFeature.place, generalized to any MultifaceBlock (not sculk-vein-specific,
-     * unlike {@link #placeMultifaceVein}). Real vanilla precomputes a fixed direction list once
+     * MultifaceGrowthFeature.place, generalized to any MultifaceBlock (glow_lichen, sculk_vein).
+     * Real vanilla precomputes a fixed direction list once
      * from can_place_on_floor/ceiling/wall (UP if ceiling, DOWN if floor, then the horizontal
      * plane [N,S,W,E] if wall — {@code MultifaceGrowthConfiguration}'s constructor order) and
      * shuffles THAT filtered list — not all 6 directions filtered during iteration — which

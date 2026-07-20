@@ -317,10 +317,11 @@ public final class VFeature {
             case "vegetation_patch" -> placeVegetationPatch(canvas, config, random, x, y, z);
             case "sculk_patch" -> { if (SCULK_ENABLED) placeSculkPatch(canvas, config, random, x, y, z); }
             case "multiface_growth" -> {
+                // sculk_vein and glow_lichen are the SAME vanilla MultifaceGrowthFeature; route
+                // both through the faithful outward-walk port. sculk_vein stays gated.
                 String blockName = config.has("block") ? config.get("block").getAsString() : "";
-                if (blockName.equals("minecraft:sculk_vein")) {
-                    if (SCULK_ENABLED && VEIN_ENABLED) placeMultifaceGrowthSculkVein(canvas, config, random, x, y, z);
-                } else {
+                boolean isSculkVein = blockName.equals("minecraft:sculk_vein");
+                if (!isSculkVein || (SCULK_ENABLED && VEIN_ENABLED)) {
                     placeMultifaceGrowthGeneric(canvas, config, random, x, y, z);
                 }
             }
@@ -396,14 +397,7 @@ public final class VFeature {
                 spreadRounds, growthRounds, spreadAttempts, egMin, egMax);
     }
 
-    /** MultifaceGrowthFeature (type minecraft:multiface_growth) — sculk_vein: gated, see SCULK_ENABLED. */
-    private void placeMultifaceGrowthSculkVein(Canvas canvas, JsonObject config, XWorldgenRandom random, int x, int y, int z) {
-        MultifaceParams p = parseMultifaceParams(config);
-        VSculk.placeMultifaceVein(sculkWorld(canvas), x, y, z, random,
-                p.searchRange, p.canFloor, p.canCeiling, p.canWall, p.chance, p.canOn);
-    }
-
-    /** MultifaceGrowthFeature, generic block target (glow_lichen, etc.) — not sculk-specific, not gated. */
+    /** MultifaceGrowthFeature, generic block target (glow_lichen and sculk_vein alike). */
     private void placeMultifaceGrowthGeneric(Canvas canvas, JsonObject config, XWorldgenRandom random, int x, int y, int z) {
         Block target = blockByName(config.get("block").getAsString());
         if (target == null) return;

@@ -14,7 +14,87 @@ of what got escalated and why.
 
 ---
 
-<<<<<<< HEAD
+## Fragile-check flake: repro loop verdict — SUITE-WIDE timing fragility, ~45%/run, NOT the crossbow+golem pair (2026-07-20, Fable) — HIGH PRIORITY
+
+Ran the fragile-pair repro loop the v0.38.0 gate entry asked for: 40 sequential
+`--playtest` runs on an idle machine (`test-logs/fragile_pair_reprloop.sh`, logs in
+`test-logs/fragile_reprloop_20260720-083652/`). The result is bigger than the pair
+we were chasing:
+
+- **18 of 40 runs were non-green (~45% per-run failure rate).** Failures are
+  SCATTERED across the whole loop (runs 2-6,8,11,15-16,20,25-27,29,33,37-39), not
+  clustered — not load/thermal/tail-correlated (an earlier partial-snapshot claim of
+  "tail cluster" was WRONG; corrected here).
+- **27 total FAIL lines spanning ~15 DIFFERENT checks**, none dominating: crossbow
+  piercing ×6, conduit power ×6, trident riptide ×2, slime sizes ×2, then 11 checks
+  ×1 (snow golem, riding ×2 distinct, phantom spawner ×2 distinct, pig saddle boost,
+  fire spread, fire aspect, combat equipment-drop, combat fire-credit, cave spider).
+- **The specific v0.38.0 gate pair (crossbow + iron-golem-vy *together*) never
+  reproduced** — iron-golem-vy did not fail once in 40 runs.
+
+Verdict: this is not per-check logic bugs and not the pair — it is **systemic
+harness timing fragility**. ROOT CAUSE (evidence-grounded, not the first guess):
+the `tick(n)` helper (`PlayTest.java:389`) is already correctly tick-counted (waits
+until `TICKS` advances n, wall-clock only as a stall-guard) — so this is NOT naive
+`Thread.sleep` races and NOT "wall-clock waits" (that earlier hypothesis is
+disproven). The actual shape, confirmed on the 6×-failing conduit check
+(`PlayTest.java:1474-1479`): it calls `player.clearEffects()` + `Conduits.applyEffects()`
+then IMMEDIATELY asserts `CONDUIT_POWER == 0` with **no `tick()`/await barrier in
+between**, while effect state is mutated by a periodically-scheduled potion task
+(`repeat(tick(25))`, see `PlayTest.java:6141` / `Potions.java`). So the test thread
+synchronously reads state that an async/scheduled task mutates, and under scheduling
+jitter it sometimes observes the stale prior grant. The other 14 offenders share this
+family: an action that mutates state asynchronously (scheduled task or tick-thread),
+then an immediate same-thread assertion with no barrier. A ~45%/run green rate means
+v0.38.0's single-green gate passed partly on luck; rule 8's "idle-machine green" is
+necessary but a single green is not sufficient evidence at this flake rate.
+
+Fix direction (rule 8: structural, NOT wider tolerances): add a shared
+`awaitUntil(cond, maxTicks)` helper (poll the real state each tick until true or a
+tick-count cap) and insert it between each async-mutating action and its assertion —
+NOT a fixed extra `tick(k)` (that just moves the race). Migrate the 15 offenders
+highest-frequency first (crossbow piercing ×6, conduit power ×6, trident riptide ×2,
+slime sizes ×2, then the singletons). This is a real hardening pass, not a one-liner —
+good delegation candidate. NOTE: the loop script's per-run cb/gl tally column is
+unreliable (its grep matched PASS lines — the golem check description contains
+"vy=0.0"); trust the per-run `.fails.txt` files, not the SUMMARY tally.
+
+## sculk_vein worldgen: routed off the stub onto the faithful multiface port (2026-07-20, Fable) — DONE, gated (sculk_patch still dominates)
+
+VERIFIED r3 (seed 20260708, ancient-city-centered worst case): sculk-OFF 99.151922%
+vs sculk-ON-with-fix 99.084105%. The fix WORKED for its target — `sculk_vein`
+dropped out of the sculk-ON top-30 mismatch classes entirely (it's prominent in
+sculk-OFF as `glow_lichen<-sculk_vein` / missing veins). But sculk-ON is still net
+worse than sculk-OFF because `sculk_patch`'s charge-spread cursor dominates the
+residual (`sculk<-tuff` 373, `tuff<-sculk` 336, sculk_sensor/shrieker/catalyst
+churn) — i.e. this entry's Step 3 (SculkSpreader/SculkBlock decompile + RNG replay
+of `VSculk.Cursor.update`/`attemptUseCharge`) is the remaining blocker to flipping
+the default. DECISION: keep `SCULK_ENABLED` default OFF; shipped sculk-off ratchet
+(99.393668%) is unaffected. Build clean, selftest 282/0. NEXT (whoever picks up
+sculk): decompile SculkSpreader family per CLAUDE.md rule 7, RNG-replay the cursor
+mechanism, then re-measure sculk-ON r18 against 99.393668% before flipping.
+
+Original finding + fix (kept for the trail):
+
+Investigation (delegated) found `sculk_vein` (`multiface_growth`) was routed to a
+`Simplified` stub `VSculk.placeMultifaceVein`, whose `getRandomStartPos` ignored
+`search_range` (only ever checked the origin cell, never walked outward up to 20)
+and whose "spread" loop drew RNG but had an empty body — wrong draw shape from the
+first attempt, and because `count` threads one shared RNG across ~204–250 attempts,
+the first desync poisons the rest of the feature in that chunk. Meanwhile a
+*faithful* port of the same vanilla `MultifaceGrowthFeature` already existed
+(`VSculk.placeMultifaceGrowth`, used for glow_lichen) with the real outward-walk +
+`spreadFromFaceTowardRandomDirection`. Fix: route sculk_vein through the faithful
+generic path (`VFeature.java` `multiface_growth` case) and delete the dead stub
+(`placeMultifaceVein`, `getRandomStartPos`, `placeMultifaceGrowthSculkVein`);
+`placeVeinFace` kept (still used by the sculk_patch charge-spread). Contained to the
+sculk_vein RNG stream only (per-feature `setFeatureSeed` reseed) and gated behind
+`SCULK_ENABLED` (default off) so it cannot regress the shipped sculk-off ratchet.
+VERIFY PENDING: build + `JDK_JAVA_OPTIONS="-Dminecom.sculk=true" python3
+scripts/worldgen_region_diff.py --seed 20260708 --radius 3` then `--radius 18`,
+compare to sculk-ON r18 baseline 99.380747% and sculk-off ratchet 99.393668%. Only
+flip `SCULK_ENABLED` default if sculk-ON r18 clears the sculk-off ratchet.
+
 ## P1 MASTERPLAN §4 items 1+2: tick pipeline + spatial entity index (2026-07-20, branch `p1-tick-index`, worktree `~/minecom-p1`)
 
 Two separately-committed increments implementing the tick-consolidation and
@@ -131,8 +211,6 @@ report / `test-logs/`.
 
 ---
 
-=======
->>>>>>> parent of ab56fe4 (P1 increment 2: per-chunk spatial entity index (EntityIndex))
 ## Fragile-check backlog: crossbow piercing — NO REPRO under CONVENTIONS §10 contention, closed as such (2026-07-20, Sonnet 5, branch `crossbow-hardening`, worktree `~/minecom-crossbow`)
 
 Picked up the top of the fragile-check backlog (`docs/HANDOFF.md`'s "Fragile-check
