@@ -712,6 +712,22 @@ single-feature target on the overworld: a modest alignment flips ~0.2pp positive
 
 ---
 
+## Fragile backlog: crossbow-piercing + golem-vy fired ONCE in full-suite IDLE context (2026-07-20, Fable)
+
+v0.38.0 gate run 1 (idle, load ~1): 1028/1030 with [crossbow] piercing-both-
+targets and [iron golem] vertical-knockback (vy=0.0) failing TOGETHER; both
+then passed 3/3 in isolation and the full gate rerun was 1030/0 (the tag's
+rule-8 green). New data vs the earlier no-repro closure: that closure tested
+CONTENTION; this firing was IDLE + full-suite-context, so the flake lives in
+cross-scenario state/timing, not CPU starvation. Both are combat-timing
+checks and this was the first full suite on merged main with TickPipeline +
+the region=world barrier both active — the interaction is the top hypothesis
+(pipeline changes cross-scenario subsystem timing). Next repro attempt:
+full-suite loop overnight on idle with failure-only DIAG (entity velocities,
+pipeline phase timings via TickPipeline.lastNanos) armed on both checks.
+
+---
+
 ## P1 bench verdict: pipeline KEPT, spatial index REVERTED pending real hardware (2026-07-20, Fable)
 
 A/B on the dev laptop (2 cores, solo, 10 runs total): spawn is flat within

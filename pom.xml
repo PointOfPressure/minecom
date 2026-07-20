@@ -6,7 +6,7 @@
 
   <groupId>dev.pointofpressure</groupId>
   <artifactId>minecom</artifactId>
-  <version>0.18.0</version>
+  <version>0.38.0</version>
   <packaging>jar</packaging>
 
   <name>Minecom</name>
