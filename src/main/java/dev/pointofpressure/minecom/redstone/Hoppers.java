@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.redstone;
 
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.EntityIndex;
 import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.blocks.Containers;
@@ -211,7 +212,7 @@ public final class Hoppers {
     }
 
     private static boolean vacuum(Point pos, Inventory inv) {
-        for (var entity : instance.getEntities()) {
+        for (var entity : EntityIndex.inChunk(instance, pos)) {
             if (!(entity instanceof ItemEntity item) || item.isRemoved()) continue;
             Point ep = entity.getPosition();
             if (ep.blockX() == pos.blockX() && ep.blockZ() == pos.blockZ()

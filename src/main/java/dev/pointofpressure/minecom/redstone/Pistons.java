@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.redstone;
 
+import dev.pointofpressure.minecom.EntityIndex;
 import dev.pointofpressure.minecom.blocks.BlockRules;
 import dev.pointofpressure.minecom.blocks.Fluids;
 import dev.pointofpressure.minecom.data.LootTables;
@@ -215,7 +216,7 @@ final class Pistons {
     }
 
     private static void pushEntities(Instance instance, Set<Point> cells, Vec dir) {
-        for (var entity : instance.getEntities()) {
+        for (var entity : EntityIndex.inChunksOf(instance, cells)) {
             var ep = entity.getPosition();
             for (Point cell : cells) {
                 if (ep.blockX() == cell.blockX() && ep.blockZ() == cell.blockZ()

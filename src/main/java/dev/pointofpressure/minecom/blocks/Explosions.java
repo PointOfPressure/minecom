@@ -1,6 +1,7 @@
 package dev.pointofpressure.minecom.blocks;
 
 import dev.pointofpressure.minecom.data.LootTables;
+import dev.pointofpressure.minecom.EntityIndex;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Vec;
@@ -109,7 +110,7 @@ public final class Explosions {
         }
 
         double range = power * 2;
-        for (Entity entity : instance.getEntities()) {
+        for (Entity entity : EntityIndex.near(instance, center, range)) {
             if (entity == exclude) continue;
             if (!(entity instanceof LivingEntity living) || living.isDead()) continue;
             double dist = living.getPosition().distance(center);

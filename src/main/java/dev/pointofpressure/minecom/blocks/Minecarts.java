@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.blocks;
 
 import net.kyori.adventure.text.Component;
 import dev.pointofpressure.minecom.TickPipeline;
+import dev.pointofpressure.minecom.EntityIndex;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
@@ -109,7 +110,7 @@ public final class Minecarts {
 
     /** A chest/hopper minecart entity currently occupying the given block, if any. */
     public static Entity containerCartAt(Instance instance, Point pos) {
-        for (Entity e : instance.getEntities()) {
+        for (Entity e : EntityIndex.inChunk(instance, pos)) {
             EntityType t = e.getEntityType();
             if (t != EntityType.CHEST_MINECART && t != EntityType.HOPPER_MINECART) continue;
             Point p = e.getPosition();

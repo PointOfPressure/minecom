@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.survival;
 
+import dev.pointofpressure.minecom.EntityIndex;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.component.DataComponents;
 import net.minestom.server.coordinate.Point;
@@ -124,7 +125,7 @@ public final class ThrownPotions {
         // splash: 4-block reach, strength scaled by distance from the impact
         PotionType potionType = resolve(potion);
         if (potionType == null) return;
-        for (Entity entity : in.getEntities()) {
+        for (Entity entity : EntityIndex.near(in, at, 4.0)) {
             if (!(entity instanceof LivingEntity le) || le.isRemoved()) continue;
             double dist = le.getPosition().distance(at);
             if (dist >= 4.0) continue;
@@ -144,7 +145,7 @@ public final class ThrownPotions {
             cloud.radius -= 3.0 / 600 * 5; // radiusPerTick = -radius/duration
             PotionType potionType = resolve(cloud.potion);
             if (potionType == null) continue;
-            for (Entity entity : instance.getEntities()) {
+            for (Entity entity : EntityIndex.near(instance, cloud.pos, cloud.radius)) {
                 if (!(entity instanceof LivingEntity le) || le.isRemoved()) continue;
                 Point p = le.getPosition();
                 double dx = p.x() - cloud.pos.x(), dz = p.z() - cloud.pos.z();

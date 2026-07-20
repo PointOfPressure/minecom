@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.redstone;
 
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.EntityIndex;
 import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.blocks.Containers;
@@ -823,7 +824,7 @@ public final class Redstone {
      * occupies that exact cell, so the caller can fall through to normal block-based reading.
      */
     private static Integer itemFrameSignal(Point pos) {
-        for (Entity e : instance.getEntities()) {
+        for (Entity e : EntityIndex.inChunk(instance, pos)) {
             EntityType t = e.getEntityType();
             if (t != EntityType.ITEM_FRAME && t != EntityType.GLOW_ITEM_FRAME) continue;
             Point p = e.getPosition();
@@ -1278,7 +1279,7 @@ public final class Redstone {
                 // plate, signal = ceil(min(count,maxWeight)/maxWeight * 15). Gold ("light")
                 // maxWeight 15, iron ("heavy") 150 — from the block registry definitions.
                 int maxWeight = bk.startsWith("light") ? 15 : 150;
-                long count = instance.getEntities().stream().filter(entity -> {
+                long count = EntityIndex.inChunk(instance, pos).stream().filter(entity -> {
                     if (entity.isRemoved()) return false;
                     Point ep = entity.getPosition();
                     return ep.blockX() == pos.blockX() && ep.blockZ() == pos.blockZ()
@@ -1294,7 +1295,7 @@ public final class Redstone {
                 continue;
             }
             boolean wooden = !bk.startsWith("stone") && !bk.startsWith("polished");
-            boolean pressed = instance.getEntities().stream().anyMatch(entity -> {
+            boolean pressed = EntityIndex.inChunk(instance, pos).stream().anyMatch(entity -> {
                 if (!(entity instanceof LivingEntity) && !wooden) return false;
                 if (entity instanceof Entity en && en.isRemoved()) return false;
                 Point ep = entity.getPosition();
@@ -1325,7 +1326,7 @@ public final class Redstone {
                 detectorPositions.remove(key);
                 continue;
             }
-            boolean cartPresent = instance.getEntities().stream().anyMatch(entity ->
+            boolean cartPresent = EntityIndex.inChunk(instance, pos).stream().anyMatch(entity ->
                     entity.getEntityType().key().value().contains("minecart")
                             && entity.getPosition().blockX() == pos.blockX()
                             && entity.getPosition().blockZ() == pos.blockZ()
@@ -1475,7 +1476,7 @@ public final class Redstone {
 
     /** TripWireBlock.checkPressed: any non-item entity whose feet overlap the wire tile. */
     private static boolean entityOnTripwire(Point wp) {
-        return instance.getEntities().stream().anyMatch(entity -> {
+        return EntityIndex.inChunk(instance, wp).stream().anyMatch(entity -> {
             if (entity.isRemoved() || entity instanceof net.minestom.server.entity.ItemEntity) return false;
             Point ep = entity.getPosition();
             return ep.blockX() == wp.blockX() && ep.blockZ() == wp.blockZ() && Math.abs(ep.y() - wp.blockY()) < 1.0;

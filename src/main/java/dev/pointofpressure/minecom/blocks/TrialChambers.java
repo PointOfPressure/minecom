@@ -560,10 +560,7 @@ public final class TrialChambers {
     }
 
     private static Entity mobById(int entityId) {
-        for (Entity e : instance.getEntities()) {
-            if (e.getEntityId() == entityId) return e;
-        }
-        return null;
+        return instance.getEntityById(entityId);
     }
 
     // ------------------------------------------------------------------ vault

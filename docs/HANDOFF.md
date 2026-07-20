@@ -14,6 +14,59 @@ of what got escalated and why.
 
 ---
 
+## P1 MASTERPLAN §4 items 1+2: tick pipeline + spatial entity index (2026-07-20, branch `p1-tick-index`, worktree `~/minecom-p1`)
+
+Two separately-committed increments implementing the tick-consolidation and
+entity-index items of the P1 single-thread engine pass. Both behavior-
+preserving by construction; the full suite is the gate.
+
+**Increment 1 — one tick pipeline (`TickPipeline.java`).** Collapsed the ~23
+independent global `MinecraftServer.getSchedulerManager().buildTask(..)
+.repeat(tick(1))` tasks into a single ordered per-tick dispatch. Each
+subsystem's registration became `TickPipeline.register(PHASE, "name",
+runnable)`; `Bootstrap.boot()` calls `TickPipeline.start()` once after all
+wiring. Phase order mirrors vanilla `ServerLevel.tick`
+(RANDOM_TICKS → REDSTONE → ENTITIES → BLOCK_ENTITIES → MOB_SPAWNING → POST),
+documented in the class javadoc with each system's vanilla anchor; within a
+phase, registration (Bootstrap) order is preserved via stable sort. Per-system
+`System.nanoTime()` timers exposed via `lastNanos`/`lastTotalNanos`/
+`timingsReport()` and the op-gated `/tickprofile` command (bench-readable —
+see BENCH.md). Runs at the same scheduler-manager tick point the individual
+tasks did, so nothing moves relative to Minestom's own instance/entity
+ticking; only the (previously scheduler-arbitrary) order among these systems
+is now fixed. Per-phase try/catch preserves the isolation the N-task
+arrangement had. Registration is lock-free-readable (volatile sorted snapshot)
+and works before OR after start() — needed because some subsystems register
+lazily at scenario time (VillagerConversion in flat-world playtests). Left
+alone: per-entity `mob.scheduler()` tasks and per-instance `instance.
+scheduler()` tasks (they tick at a different point; folding them would change
+timing) and the conditional day/night driver in Main.
+
+Gotcha found + fixed during verification: an initial strict "register after
+start() throws" guard crashed the village scenario (playtest starts
+VillagerConversion at scenario time). Fixed by supporting post-start
+registration.
+
+**Increment 2 — spatial entity index (`EntityIndex.java`).** Thin minecom-owned
+facade over Minestom's `EntityTracker` (the engine's own per-chunk buckets,
+maintained on spawn/move/remove). `near(instance, center, range)` (chunk-range
+candidates), `inChunk(instance, pos)` (single chunk), `inChunksOf(instance,
+cells)` (deduped chunk union). Converted ~15 instance-wide `getEntities()`
+near-X scans to the index (Hoppers vacuum, Redstone item-frame/pressure-plate/
+detector-rail/tripwire, Explosions, Beds monster check, Minecarts
+containerCartAt, ClassicSpawners cap count, Goals alert-others, ThrownPotions
+splash+cloud, Lightning, Pistons push) plus a `getEntityById` swap in
+TrialChambers.mobById. Each converted site keeps its EXACT original predicate,
+and the facade returns a superset, so results are identical — proven by
+`PlayTest.scenarioEntityIndexParity` (index vs full-scan set equality across
+radius and single-cell queries on a populated instance). `getNearbyEntities`
+sites were left as-is: they already hit the tracker. EXPECTED_CHECK_COUNT
+1030 → 1032.
+
+Verification: selftest 271, playtest 1032 (was 1030 + 2 new parity checks).
+NOT tagged — the central idle-machine A/B bench + green-tag run happens
+elsewhere per the P1 plan. Bench signature in `BENCH.md` (branch root).
+
 ## Fragile-check backlog: crossbow piercing — NO REPRO under CONVENTIONS §10 contention, closed as such (2026-07-20, Sonnet 5, branch `crossbow-hardening`, worktree `~/minecom-crossbow`)
 
 Picked up the top of the fragile-check backlog (`docs/HANDOFF.md`'s "Fragile-check

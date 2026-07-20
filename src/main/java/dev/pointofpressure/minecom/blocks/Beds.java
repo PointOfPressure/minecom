@@ -1,6 +1,7 @@
 package dev.pointofpressure.minecom.blocks;
 
 import dev.pointofpressure.minecom.Bootstrap;
+import dev.pointofpressure.minecom.EntityIndex;
 import dev.pointofpressure.minecom.survival.Lightning;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -121,7 +122,7 @@ public final class Beds {
      *  bed's bottom-center, real vanilla's exact bedCenter/hRange/vRange values. */
     private static boolean nearbyMonster(Instance instance, Point bedPos) {
         double cx = bedPos.blockX() + 0.5, cy = bedPos.blockY(), cz = bedPos.blockZ() + 0.5;
-        for (Entity entity : instance.getEntities()) {
+        for (Entity entity : EntityIndex.near(instance, bedPos, 8.0)) {
             if (!MONSTER_TYPES.contains(entity.getEntityType()) || entity.isRemoved()) continue;
             Pos p = entity.getPosition();
             if (Math.abs(p.x() - cx) <= 8.0 && Math.abs(p.y() - cy) <= 5.0 && Math.abs(p.z() - cz) <= 8.0) {
