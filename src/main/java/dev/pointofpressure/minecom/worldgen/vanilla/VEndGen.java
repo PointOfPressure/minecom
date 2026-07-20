@@ -62,6 +62,11 @@ public final class VEndGen implements Generator {
 
         VDensity.Builder builder = new VDensity.Builder(named, noises, seed);
         builder.setCellSize(8, 4);   // End: size_horizontal 2 -> 8, size_vertical 1 -> 4
+        // noise_settings_end.json: legacy_random_source=true — base_3d_noise is seeded from a
+        // LegacyRandomSource, not Xoroshiro (RandomState.random selection). Without this the End's
+        // blended noise is wrong, over-filling island edges with end_stone.
+        builder.setLegacyRandomSource(settings.has("legacy_random_source")
+                && settings.get("legacy_random_source").getAsBoolean());
         JsonObject router = settings.getAsJsonObject("noise_router");
         this.finalDensity = builder.build(router.get("final_density"));
     }

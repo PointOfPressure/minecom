@@ -36,11 +36,20 @@ public final class VDensity {
         // noise-cell size in blocks (size_horizontal*4 x size_vertical*4); overworld defaults.
         int cellWidth = 4;
         int cellHeight = 8;
+        // noise_settings.legacy_random_source: the End (unlike the overworld/nether) seeds
+        // its RandomState from a LegacyRandomSource, not the Xoroshiro one (RandomState:
+        // settings.getRandomSource().newInstance(seed).forkPositional()).
+        private boolean legacyRandomSource = false;
 
         /** Set the dimension's noise-cell block size before building the router (End = 8,4). */
         public void setCellSize(int cellWidth, int cellHeight) {
             this.cellWidth = cellWidth;
             this.cellHeight = cellHeight;
+        }
+
+        /** noise_settings_end.json sets legacy_random_source=true — seed density noise from Legacy, not Xoroshiro. */
+        public void setLegacyRandomSource(boolean legacy) {
+            this.legacyRandomSource = legacy;
         }
 
         public Builder(Map<String, JsonElement> namedFunctions,
@@ -68,10 +77,30 @@ public final class VDensity {
         BlendedNoisePort blendedNoise(double xzScale, double yScale, double xzFactor,
                                       double yFactor, double smear) {
             if (blended == null) {
-                blended = new BlendedNoisePort(random.fromHashOf("minecraft:terrain"),
+                blended = new BlendedNoisePort(terrainRandom(),
                         xzScale, yScale, xzFactor, yFactor, smear);
             }
             return blended;
+        }
+
+        /**
+         * RandomState wiring of {@code old_blended_noise} (RandomState.NoiseWiringHelper.wrapNew):
+         * <pre>
+         *   RandomSource terrainRandom = useLegacyInit
+         *       ? newLegacyInstance(0L)                              // new LegacyRandomSource(seed + 0)
+         *       : random.fromHashOf(withDefaultNamespace("terrain"));
+         * </pre>
+         * So for the End (legacy_random_source=true) the blended noise is seeded from a bare
+         * {@code new LegacyRandomSource(seed)} — NOT the positional {@code fromHashOf("terrain")}
+         * (no fork, no hashOf). Every other dimension keeps the Xoroshiro {@code fromHashOf} path.
+         * (The End's final_density references no {@code noise}/Normal functions, only this blended
+         * noise, so scoping the legacy source here suffices for End terrain.)
+         */
+        private VNoise.Rand terrainRandom() {
+            if (legacyRandomSource) {
+                return new VSurface.LegacyRandom(seed);   // newLegacyInstance(0L)
+            }
+            return random.fromHashOf("minecraft:terrain");
         }
 
         public DF named(String name) {
@@ -696,7 +725,7 @@ public final class VDensity {
         private final double yFactor;
         private final double smearScaleMultiplier;
 
-        BlendedNoisePort(XRandom random, double xzScale, double yScale,
+        BlendedNoisePort(VNoise.Rand random, double xzScale, double yScale,
                          double xzFactor, double yFactor, double smearScaleMultiplier) {
             this.minLimit = new LegacyPerlin(random, 16);
             this.maxLimit = new LegacyPerlin(random, 16);
@@ -756,7 +785,7 @@ public final class VDensity {
     static final class LegacyPerlin {
         private final VNoise.Improved[] levels;
 
-        LegacyPerlin(XRandom random, int octaves) {
+        LegacyPerlin(VNoise.Rand random, int octaves) {
             // octave set rangeClosed(-N+1, 0): zeroOctaveIndex = octaves-1 built first, then descending
             levels = new VNoise.Improved[octaves];
             levels[octaves - 1] = new VNoise.Improved(random);
