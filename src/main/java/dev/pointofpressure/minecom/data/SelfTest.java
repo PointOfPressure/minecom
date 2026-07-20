@@ -1041,12 +1041,14 @@ public final class SelfTest {
                     + monCounts.getOrDefault("minecraft:dark_prismarine", 0) + monCounts.getOrDefault("minecraft:sea_lantern", 0);
             check("ocean monument seed 20260710 (-80,-22) real generation: gold_block=" + monGold + " (CoreRoom's fixed 2x2x2 box)",
                     monGold == 8);
-            // Pin tracks CURRENT output under the shared-canvas decoration pass (commit
-            // 375c7e3): was 10392 pre-pass; -9 = ocean decoration (kelp/seagrass) overwriting
-            // monument blocks because the decoration canvas is structure-blind — a documented
-            // divergence from vanilla, see AUDIT "structure-blind decoration canvas".
+            // Pin under the STRUCTURE-AWARE decoration canvas (fixes AUDIT's structure-blind
+            // gap): decoration reads now see structure blocks, so ocean-floor disk features
+            // (sand/gravel) no longer overwrite the monument's ~58x58 foundation layer —
+            // that eaten foundation is why every earlier pin (10392, then 10383) was ~3.3k
+            // low. 13671 is the recovered value; vanilla-truth authority is the r18 ratchet
+            // (99.381792 -> 99.393668 with this fix).
             check("ocean monument seed 20260710 (-80,-22) real generation confirmed: " + monPrismarineFamily + " prismarine/sea_lantern blocks placed",
-                    monPrismarineFamily == 10383);
+                    monPrismarineFamily == 13671);
         }
 
         // Woodland mansion: the real room-grid algorithm (MansionGrid/SimpleGrid) — a genuinely
@@ -1224,15 +1226,14 @@ public final class SelfTest {
             }
             int mansChests = mansCounts.getOrDefault("minecraft:chest", 0);
             int mansDarkOak = mansCounts.getOrDefault("minecraft:dark_oak_planks", 0) + mansCounts.getOrDefault("minecraft:dark_oak_log", 0);
-            // Pins track CURRENT output under the shared-canvas decoration pass (375c7e3):
-            // chests 33->29 is the structure-blind decoration canvas overwriting container
-            // cells (vanilla's replaceability checks would protect them — AUDIT gap entry);
-            // dark oak 14085->14123 is the pass CORRECTLY capturing cross-chunk canopy spill
-            // (the same behavior the r18 ratchet rewarded).
+            // Pins under the structure-aware decoration canvas: chests fully recovered to
+            // the original 33 (tree/forest writes can no longer eat container cells);
+            // dark oak = original 14085 + cross-chunk canopy spill + no-longer-eaten
+            // foundation planks. r18 ratchet authority: 99.393668 with this fix.
             check("woodland mansion seed 1 (118,15) real generation: " + mansChests + " chests placed",
-                    mansChests == 29);
+                    mansChests == 33);
             check("woodland mansion seed 1 (118,15) real generation confirmed: " + mansDarkOak + " dark oak (planks+log) blocks placed",
-                    mansDarkOak == 14123);
+                    mansDarkOak == 14233);
         }
 
         // ---- difficulty (DifficultyInstance.calculateDifficulty, decompile-verified) ----

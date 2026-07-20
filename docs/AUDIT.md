@@ -1677,7 +1677,12 @@ same re-pin is CORRECT cross-chunk canopy spill capture). The r18 ratchet
 region contains no mansion, so this divergence is invisible to the headline
 number. Fix shape: feed structure placements into the decoration canvas's
 read path (chunkAt overlay), then re-measure r18 under the ratchet before
-landing. (M)
+landing. (M) **FIXED 2026-07-20 (structure-aware canvas): decoration reads
+go through structureData (cachedData + placed structure pieces); r18
+ratchet-positive 99.381792 -> 99.393668. Mansion chests recovered to 33;
+the monument pin jumped to 13671 because structure-blind ocean-floor disks
+had been overwriting the ~58x58 foundation all along — every earlier pin
+was measuring an eaten monument.**
 
 ## stale comments to clean up when touched
 

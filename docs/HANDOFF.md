@@ -593,6 +593,23 @@ single-feature target on the overworld: a modest alignment flips ~0.2pp positive
 
 ---
 
+## Structure-aware decoration canvas — DONE, ratchet-positive (2026-07-20, Sonnet 5 + Fable landing)
+
+Implemented per the entry below: new VanillaGen.structureData cache
+(cachedData + this chunk's placed structure pieces) is now the base for
+decoratedData AND the read path for OverlayCanvas, so feature replaceability
+checks see structure blocks for every chunk in the decoration window;
+structures are never exported as decoration writes. Measured: r3 99.188063
+(slightly under baseline — border-distorted, documented), full r18
+**99.393668% = NEW RATCHET** (was 99.381792, +15,130 blocks). Mansion chests
+recovered to the original 33; monument prismarine pin jumped 10383 -> 13671
+because structure-blind ocean-floor disks had been overwriting the ~58x58
+monument foundation in EVERY prior measurement — the old pins were counting
+an eaten monument. Selftest 271/0 with recovered pins. Worldgen-only change;
+full-suite exposure at the next central idle gate.
+
+---
+
 ## Structure-aware decoration canvas — next-wave worldgen task (2026-07-20, Fable)
 
 The v0.37.0 idle gate caught three structure-count pin drifts; root cause is

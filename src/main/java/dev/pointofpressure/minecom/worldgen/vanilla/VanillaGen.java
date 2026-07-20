@@ -43,6 +43,18 @@ public final class VanillaGen implements Generator {
                 }
             });
 
+    /** {@link #cachedData} plus this chunk's own intersecting structure pieces, clipped in
+     *  (monument prismarine, mansion chests, ...). Cached separately because every chunk
+     *  the shared decoration canvas touches — not just the chunk actually being generated —
+     *  needs this structure-aware view; see {@link #structureData}. */
+    private final Map<Long, VSurface.ChunkData> structureCache =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>(128, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Long, VSurface.ChunkData> eldest) {
+                    return size() > 512;
+                }
+            });
+
     public VanillaGen(long seed) {
         this.seed = seed;
         Gson gson = new Gson();
@@ -115,6 +127,29 @@ public final class VanillaGen implements Generator {
         return data;
     }
 
+    /**
+     * {@link #cachedData} with this chunk's own intersecting structure pieces placed
+     * (clipped to the chunk), matching vanilla's real chunk data: monument prismarine,
+     * mansion chests, etc. are all in place before any decoration feature reads it. Fixes
+     * the structure-blind decoration canvas (AUDIT.md 2026-07-20) — kelp/seagrass/tree
+     * writes could overwrite structure blocks because decoration's read path
+     * ({@link OverlayCanvas#chunkAt}) previously read raw {@link #cachedData} with no
+     * structures in it, even for the chunk whose own {@code out} copy had them.
+     */
+    public VSurface.ChunkData structureData(int chunkX, int chunkZ) {
+        long key = mixChunkKey(((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL));
+        VSurface.ChunkData data = structureCache.get(key);
+        if (data == null) {
+            VSurface.ChunkData base = cachedData(chunkX, chunkZ);
+            data = new VSurface.ChunkData();
+            System.arraycopy(base.blocks, 0, data.blocks, 0, base.blocks.length);
+            System.arraycopy(base.heights, 0, data.heights, 0, base.heights.length);
+            structures.placeInChunk(chunkX, chunkZ, new StructureCanvas(data, chunkX, chunkZ));
+            structureCache.put(key, data);
+        }
+        return data;
+    }
+
     /** Chunk decoration order within the shared-canvas pass: vanilla decorates
      *  chunks in world scan order, and which axis is outer is an empirical
      *  question (AUDIT.md 2026-07-19) — z-major default, -Dminecom.decoOrder=xz
@@ -141,13 +176,13 @@ public final class VanillaGen implements Generator {
      * must see, not overwrite, a neighbor's spilled canopy leaf).
      */
     public VSurface.ChunkData decoratedData(int chunkX, int chunkZ) {
-        VSurface.ChunkData base = cachedData(chunkX, chunkZ);
+        // structureData already has this chunk's structure pieces placed (and is the
+        // same structure-aware view decoration's OverlayCanvas reads for every chunk in
+        // the window, so self- and cross-chunk feature replaceability checks agree).
+        VSurface.ChunkData base = structureData(chunkX, chunkZ);
         VSurface.ChunkData out = new VSurface.ChunkData();
         System.arraycopy(base.blocks, 0, out.blocks, 0, base.blocks.length);
         System.arraycopy(base.heights, 0, out.heights, 0, base.heights.length);
-
-        // structures: place every intersecting piece's blocks clipped to this chunk
-        structures.placeInChunk(chunkX, chunkZ, new StructureCanvas(out, chunkX, chunkZ));
 
         OverlayCanvas overlay = new OverlayCanvas();
         for (int outer = -DECO_RADIUS; outer <= DECO_RADIUS; outer++) {
@@ -198,7 +233,11 @@ public final class VanillaGen implements Generator {
         }
     }
 
-    /** Read-through canvas over the chunk cache with an in-memory write overlay. */
+    /** Read-through canvas over the structure-aware chunk cache with an in-memory write
+     *  overlay. Reads go through {@link #structureData}, not raw {@link #cachedData}, so
+     *  feature replaceability checks see structure blocks (monument prismarine, mansion
+     *  chests, ...) the way vanilla's decoration sees the real chunk — fixes the
+     *  structure-blind canvas (AUDIT.md 2026-07-20). */
     private final class OverlayCanvas implements VFeature.Canvas {
         static final Block AIR_SENTINEL = Block.STRUCTURE_VOID;
         final Map<Long, Block> writes = new HashMap<>();
@@ -215,7 +254,7 @@ public final class VanillaGen implements Generator {
         private VSurface.ChunkData chunkAt(int cx, int cz) {
             long key = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
             if (key != lastChunkKey) {
-                lastChunk = cachedData(cx, cz);
+                lastChunk = structureData(cx, cz);
                 lastChunkKey = key;
             }
             return lastChunk;
