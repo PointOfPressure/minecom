@@ -14,6 +14,50 @@ of what got escalated and why.
 
 ---
 
+## END dimension worldgen parity: first measurement + spike-geometry fix — r3 97.38% (2026-07-20, Opus) — baseline recorded, terrain-noise residual open
+
+**Branch `end-parity` (worktree ~/minecom-end), NOT merged.** The End had a full
+generator already (`VEndGen` terrain + end cities, `VEndSpikes` obsidian pillars,
+`VChorus` outer-island plants, `EndGateways`) wired into the live `Bootstrap`, but had
+**never been measured** by the region-diff harness — `--dimension` only offered
+{overworld, nether, nether_vibenilla}.
+
+Wired `end` through the harness following the per-dimension pattern (TIER4-NETHER §4):
+- `GenRegions` `end` case: `DimensionType.THE_END` + `AnvilLoader("world/dimensions/
+  minecraft/the_end")`, `VEndGen` generator, the `VChorus` per-chunk listener, and
+  `VEndSpikes.placeAll` after the region loads (mirrors Bootstrap). Exit-portal/gateway
+  are dragon-fight-triggered, never part of pure worldgen, so the vanilla forceload
+  oracle omits them too.
+- `vanilla_oracle.py`: `VANILLA_END_REGION_SUBDIR` + `region_subdir("end")`.
+- `worldgen_region_diff.py`: `end` DIMENSIONS row (subtree `.../the_end/region`,
+  sections 0..7, `execute in minecraft:the_end run forceload`).
+
+**Measured baseline (seed 20260708, r3, center 0,0):**
+- First run **95.526377%**. Top mismatches were dominated by obsidian-spike geometry:
+  `end_stone<-obsidian` 12332, `air<-obsidian` 8988, plus iron_bars prop/offset noise.
+- Root cause: `VEndSpikes.place` diverged from `EndSpikeFeature.placeSpike` (26.2,
+  re-decompiled). It filled obsidian only from y=40 (vanilla: from world floor y=0),
+  used circle threshold `r²` (vanilla `r²+1`), never carved air above y65 outside the
+  pillar, put the iron cage at y `height+1..height+4` (vanilla `height..height+3`) with
+  wrong N/S/E/W connection flags, and omitted the crystal-pedestal fire.
+- **Fix:** ported `placeSpike` bit-for-bit; refactored to a `BlockSink` so the geometry
+  is unit-testable without a live Instance; added a SelfTest placement check (probes
+  obsidian-from-y0, air-carve, cage y-range, bedrock+fire pedestal). This also corrects
+  the **live server** (Bootstrap uses the same code).
+- Second run **97.379642%** — every obsidian/iron_bars/fire/bedrock mismatch gone.
+
+**Open residual (the remaining ~2.62%, honest blocker):** the two survivors are pure
+base terrain — `end_stone<-air` 25881 (minecom solid where vanilla is air) and
+`air<-end_stone` 5030 (the inverse), i.e. minecom's end-island noise produces a
+slightly larger/mis-shaped island *shell* than vanilla. Net ~+20k solid blocks. These
+counts were byte-identical before and after the spike fix, confirming they are the
+`VEndGen`/`VDensity` end-terrain noise, NOT the features. The class javadoc's
+"verified bit-exact" simplex claim holds only for the narrow SelfTest columns; full-r3
+reveals an edge disagreement. Raising it needs a density-replay investigation of the
+end noise router (parallel to the overworld P1 effort), not a mechanical fix — left for
+a stronger/dedicated pass. Selftest 283/0 (was 282; +1 for the new spike-placement
+check). Did NOT run r18 (serialized elsewhere), did NOT merge.
+
 ## Fragile-check flake: repro loop verdict — SUITE-WIDE timing fragility, ~45%/run, NOT the crossbow+golem pair (2026-07-20, Fable) — HIGH PRIORITY
 
 Ran the fragile-pair repro loop the v0.38.0 gate entry asked for: 40 sequential

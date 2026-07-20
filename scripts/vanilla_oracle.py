@@ -40,12 +40,14 @@ VANILLA_REGION_SUBDIR = "world/dimensions/minecraft/overworld/region"
 # (docs/TIER4-NETHER-DESIGN.md §4). RegionReader takes an explicit dir, so it is
 # already dimension-agnostic — callers pick the subdir via region_subdir().
 VANILLA_NETHER_REGION_SUBDIR = "world/dimensions/minecraft/the_nether/region"
+VANILLA_END_REGION_SUBDIR = "world/dimensions/minecraft/the_end/region"
 
 
 def region_subdir(dimension):
-    """Vanilla Anvil region subdir for a dimension token ('overworld'|'nether')."""
+    """Vanilla Anvil region subdir for a dimension token ('overworld'|'nether'|'end')."""
     return {"overworld": VANILLA_REGION_SUBDIR,
-            "nether": VANILLA_NETHER_REGION_SUBDIR}[dimension]
+            "nether": VANILLA_NETHER_REGION_SUBDIR,
+            "end": VANILLA_END_REGION_SUBDIR}[dimension]
 
 
 def prepare_workdir(work, properties, fresh=True):

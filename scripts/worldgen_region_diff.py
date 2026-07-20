@@ -59,7 +59,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from vanilla_oracle import (JAR, MC_VERSION, VANILLA_NETHER_REGION_SUBDIR,
+from vanilla_oracle import (JAR, MC_VERSION, VANILLA_END_REGION_SUBDIR,
+                            VANILLA_NETHER_REGION_SUBDIR,
                             VANILLA_REGION_SUBDIR, RegionReader, Server,
                             default_block_properties, prepare_workdir,
                             section_indices)
@@ -96,6 +97,15 @@ DIMENSIONS = {
                              mc_dimension="minecraft:the_nether",
                              section_min=0, section_max=7,
                              vanilla_tag="nether"),
+    # The End: same per-dimension subtree pattern as the Nether. End terrain
+    # (noise_settings_end.json height 128, main island near y40..70, obsidian
+    # spikes to ~y103) all lives in y 0..127 -> sections 0..7. The vanilla side
+    # is captured with `execute in minecraft:the_end run forceload`.
+    "end": dict(vanilla_subdir=VANILLA_END_REGION_SUBDIR,
+                minecom_subdir=VANILLA_END_REGION_SUBDIR,
+                mc_dimension="minecraft:the_end",
+                section_min=0, section_max=7,
+                vanilla_tag="end"),
 }
 
 

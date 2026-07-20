@@ -767,6 +767,34 @@ public final class SelfTest {
         check("End spikes: 10 spikes, 2 iron-caged, all on the r=42 ring (caged=" + caged + ")",
                 spikes.size() == 10 && caged == 2 && onRing);
 
+        // End spike placement geometry (ported from EndSpikeFeature.placeSpike): obsidian fills
+        // the pillar from the world floor (y0), air is carved everywhere above y65 in the box that
+        // isn't obsidian, the iron cage spans y height..height+3 (not height+1..height+4), and the
+        // pedestal is bedrock at (x,height,z) + fire at (x,height+1,z). Verified by replaying
+        // placeBlocks into a map (no live Instance needed) and probing discriminating cells.
+        var gspike = spikes.stream()
+                .filter(dev.pointofpressure.minecom.worldgen.vanilla.VEndSpikes.Spike::guarded)
+                .findFirst().orElseThrow();
+        var spm = new java.util.HashMap<String, net.minestom.server.instance.block.Block>();
+        dev.pointofpressure.minecom.worldgen.vanilla.VEndSpikes.placeBlocks(gspike,
+                (x, y, z, b) -> spm.put(x + " " + y + " " + z, b));
+        int gx = gspike.x(), gz = gspike.z(), gh = gspike.height();
+        java.util.function.Function<String, String> nm = k -> {
+            var b = spm.get(k);
+            return b == null ? "absent" : b.name();
+        };
+        boolean floorObsidian = nm.apply(gx + " " + 0 + " " + gz).equals("minecraft:obsidian");
+        boolean carvedAir = nm.apply((gx + 2) + " " + 66 + " " + (gz + 2)).equals("minecraft:air");
+        boolean pedestalBed = nm.apply(gx + " " + gh + " " + gz).equals("minecraft:bedrock");
+        boolean pedestalFire = nm.apply(gx + " " + (gh + 1) + " " + gz).equals("minecraft:fire");
+        boolean cageFloor = nm.apply((gx + 2) + " " + gh + " " + gz).equals("minecraft:iron_bars");
+        boolean cageTop = nm.apply(gx + " " + (gh + 3) + " " + gz).equals("minecraft:iron_bars");
+        boolean noCageAbove = !nm.apply(gx + " " + (gh + 4) + " " + gz).equals("minecraft:iron_bars");
+        check("End spike placement (EndSpikeFeature): obsidian from y0, air-carved above y65, "
+                        + "iron cage y" + gh + ".." + (gh + 3) + ", bedrock+fire pedestal",
+                floorObsidian && carvedAir && pedestalBed && pedestalFire
+                        && cageFloor && cageTop && noCageAbove);
+
         // End city (17th structure set wired). startHouseTower's fixed 4-piece base_floor/
         // second_floor_1/third_floor_1/third_roof chain PLUS the full recursive tower/bridge/
         // fat-tower/house-tower tree (genDepth<=8-bounded, real RNG branching + bounding-box

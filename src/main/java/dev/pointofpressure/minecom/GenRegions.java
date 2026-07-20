@@ -79,9 +79,31 @@ public final class GenRegions {
                         new AnvilLoader("world/dimensions/minecraft/the_nether"));
                 instance.setGenerator(dev.pointofpressure.minecom.worldgen.VibenillaNether.generator(seed));
             }
+            case "end" -> {
+                // The End (docs/TIER4-NETHER-DESIGN.md §4 per-dimension pattern):
+                // per-dimension Anvil subtree matching the vanilla oracle layout
+                // (world/dimensions/minecraft/the_end/region). Mirrors Bootstrap's
+                // live end setup so the measured output equals shipped behavior:
+                //   - VEndGen terrain (+ outer-island end cities),
+                //   - the per-chunk chorus-plant listener (outer islands only),
+                //   - the ten obsidian spikes ringing the central island, placed
+                //     AFTER the region is loaded (see the placeAll call below).
+                // The exit-portal/gateway are dragon-fight-triggered, never part of
+                // pure worldgen, so the vanilla forceload oracle omits them too.
+                instance = MinecraftServer.getInstanceManager().createInstanceContainer(
+                        DimensionType.THE_END,
+                        new AnvilLoader("world/dimensions/minecraft/the_end"));
+                var endGen = new dev.pointofpressure.minecom.worldgen.vanilla.VEndGen(seed);
+                instance.setGenerator(endGen);
+                final var endInstance = instance;
+                instance.eventNode().addListener(
+                        net.minestom.server.event.instance.InstanceChunkLoadEvent.class, event ->
+                                dev.pointofpressure.minecom.worldgen.vanilla.VChorus.placeChunk(
+                                        endInstance, event.getChunkX(), event.getChunkZ(), seed, endGen));
+            }
             default -> {
                 System.err.println("unknown dimension: " + dimension
-                        + " (overworld|nether|nether_vibenilla)");
+                        + " (overworld|nether|nether_vibenilla|end)");
                 return 2;
             }
         }
@@ -121,6 +143,13 @@ public final class GenRegions {
             }
         }
         done += join(batch);
+        if (dimension.equals("end")) {
+            // EndSpikeFeature: the ten obsidian spikes on the central island are a
+            // whole-feature placement (not per-chunk), applied once the region is
+            // loaded so all touched chunks exist. Matches Bootstrap's post-load
+            // VEndSpikes.placeAll. Spikes sit within ~chunks (-3..2) of 0,0.
+            dev.pointofpressure.minecom.worldgen.vanilla.VEndSpikes.placeAll(instance, seed);
+        }
         instance.saveChunksToStorage().join();
         System.out.printf("genregions done: %d chunks, %s, seed %d, center (%d,%d), radius %d, %dms%n",
                 done, dimension, seed, centerCx, centerCz, radius, System.currentTimeMillis() - start);
