@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 1030; // 1015 + 4 security + 11 sulfur fuse-priming
+    private static final int EXPECTED_CHECK_COUNT = 1046; // 1030 + 7 end-ship elytra + 9 dragon respawn
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -228,6 +228,8 @@ public final class PlayTest {
         scenario("enderman: dodges/is immune to projectile damage", PlayTest::scenarioEndermanProjectileDodge);
         scenario("enderman: picks up and later places down a holdable block", PlayTest::scenarioEndermanBlockPickup);
         scenario("end: dragon spawns, dies, forms the exit portal", PlayTest::scenarioEnderDragon);
+        scenario("end ship: framed elytra present + obtainable", PlayTest::scenarioEndShipElytra);
+        scenario("end: dragon respawn — 4 crystals on the portal restart the fight, repeat kill gives 500 XP and no second egg", PlayTest::scenarioDragonRespawn);
         scenario("end: portal travel there and back", PlayTest::scenarioEndPortal);
         scenario("village: villager entity spawns and wanders", PlayTest::scenarioVillager);
         scenario("village: food economy gates breeding — tossed bread is picked up, eaten, and digested by breeding; farmers harvest and share", PlayTest::scenarioVillagerFood);
@@ -4332,6 +4334,142 @@ public final class PlayTest {
         dragon.setHealth(0f); // finish it
         boolean portal = waitFor(() -> end.getBlock(0, 70, 0).compare(Block.DRAGON_EGG), 5000);
         check("dragon death forms the exit portal (dragon egg on top)", portal);
+    }
+
+    /**
+     * End ship elytra: the ship carries an "Elytra" EndCityPieces data marker; loading its chunk
+     * runs the real InstanceChunkLoadEvent -> EndCityDecorations pipeline, which spawns an item
+     * frame holding an elytra (the only naturally obtainable one) plus the ship's shulker guards.
+     * Then verifies obtainability: attacking the filled frame ejects the elytra as a pickupable item.
+     */
+    private static void scenarioEndShipElytra() {
+        var end = Bootstrap.endOf(world);
+        check("End instance exists", end != null);
+        if (end == null) return;
+        // The playtest End is flat (no wired generator), so build a real VEndGen locally and drive
+        // EndCityDecorations directly — the same workaround scenarioEndGateway uses. This exercises
+        // the actual decoration pipeline (marker lookup -> item frame + shulker spawns); only the
+        // one-line InstanceChunkLoadEvent wiring in Bootstrap is stubbed out here.
+        var endGen = new dev.pointofpressure.minecom.worldgen.vanilla.VEndGen(20260708L);
+        int[] marker = endGen.shipElytraMarker(-78, -55);
+        check("ship (-78,-55) carries an elytra data marker", marker != null);
+        if (marker == null) return;
+        int mx = marker[0], my = marker[1], mz = marker[2];
+
+        int cx = mx >> 4, cz = mz >> 4;
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            end.loadChunk(cx + dx, cz + dz).join();
+            dev.pointofpressure.minecom.worldgen.vanilla.EndCityDecorations.placeChunk(end, cx + dx, cz + dz, endGen);
+        }
+
+        boolean framePresent = waitFor(() -> shipFrameAt(end, mx, my, mz) != null, 4000);
+        check("end ship spawns an item frame at the elytra marker", framePresent);
+        Entity frame = shipFrameAt(end, mx, my, mz);
+        boolean hasElytra = frame != null && ((net.minestom.server.entity.metadata.other.ItemFrameMeta)
+                frame.getEntityMeta()).getItem().material() == Material.ELYTRA;
+        check("the framed item is an elytra", hasElytra);
+
+        boolean shulker = end.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.SHULKER && !e.isRemoved());
+        check("ship shulker guards spawn from the Sentry markers", shulker);
+
+        // obtainable: attacking a filled frame ejects the item without destroying the frame
+        if (frame != null) {
+            EventDispatcher.call(new EntityAttackEvent(player, frame));
+            tick(2);
+            boolean dropped = end.getEntities().stream().anyMatch(e -> e instanceof ItemEntity ie
+                    && ie.getItemStack().material() == Material.ELYTRA);
+            check("attacking the frame drops the elytra as a pickupable item", dropped);
+            boolean frameEmpty = !frame.isRemoved() && ((net.minestom.server.entity.metadata.other.ItemFrameMeta)
+                    frame.getEntityMeta()).getItem().isAir();
+            check("the frame survives the hit, now empty", frameEmpty);
+        }
+    }
+
+    /** The live item frame whose block position is exactly (x,y,z) in {@code end}, or null. */
+    private static Entity shipFrameAt(net.minestom.server.instance.Instance end, int x, int y, int z) {
+        return end.getEntities().stream()
+                .filter(e -> dev.pointofpressure.minecom.blocks.ItemFrames.isFrame(e.getEntityType()) && !e.isRemoved())
+                .filter(e -> e.getPosition().blockX() == x && e.getPosition().blockY() == y && e.getPosition().blockZ() == z)
+                .findFirst().orElse(null);
+    }
+
+    /**
+     * Dragon respawn ritual (EnderDragonFight.tryRespawn/respawnDragon): the first kill drops the
+     * egg and 12000 XP; placing four end crystals on the exit-portal edges (the real
+     * EndCrystalItem.useOn pipeline) consumes them, regenerates the pillar crystals and respawns
+     * the dragon; the repeat kill gives 500 XP and no second egg.
+     */
+    private static void scenarioDragonRespawn() {
+        var end = Bootstrap.endOf(world);
+        check("End instance exists", end != null);
+        if (end == null) return;
+        end.loadChunk(0, 0).join();
+        dev.pointofpressure.minecom.mobs.EnderDragonFight.resetForTest(end);
+        end.setBlock(0, 64, 0, Block.END_STONE); // exit-portal base lands at y=65
+
+        // keep the player in the overworld so it never collects the dropped XP orbs
+        moveTo(world, new Pos(0.5, Y + 1, 0.5));
+
+        // ---- first kill: egg + 12000 XP ----
+        var dragon1 = dev.pointofpressure.minecom.mobs.EnderDragonFight.spawnDragon(end);
+        tick(4);
+        check("respawn scenario: first dragon spawns at 200 HP", dragon1.getHealth() == 200f);
+        dragon1.setHealth(0f);
+        boolean egg1 = waitFor(() -> end.getBlock(0, 70, 0).compare(Block.DRAGON_EGG), 5000);
+        check("first kill drops the dragon egg", egg1);
+        boolean xp1seen = waitFor(() -> sumEndXp(end) > 0, 5000);
+        tick(2);
+        int xp1 = sumEndXp(end);
+        check("first kill drops 12000 XP (got " + xp1 + ")", xp1seen && xp1 == 12000);
+
+        // isolate the repeat kill: clear the egg and the first pile of XP
+        end.setBlock(0, 70, 0, Block.AIR);
+        for (Entity e : end.getEntities()) if (e.getEntityType() == EntityType.EXPERIENCE_ORB) e.remove();
+
+        // ---- respawn ritual: 4 crystals on the portal edges via the real placement event ----
+        moveTo(end, new Pos(10.5, 66, 0.5));
+        player.setItemInMainHand(ItemStack.of(Material.END_CRYSTAL, 4));
+        int[][] cells = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}};
+        for (int[] c : cells) {
+            EventDispatcher.call(new PlayerUseItemOnBlockEvent(player, PlayerHand.MAIN,
+                    player.getItemInMainHand(), new Vec(c[0], 65, c[1]), new Vec(0.5, 1, 0.5), BlockFace.TOP));
+            tick(1);
+        }
+        boolean respawned = waitFor(() -> end.getEntities().stream()
+                .anyMatch(e -> e.getEntityType() == EntityType.ENDER_DRAGON && !e.isRemoved()), 3000);
+        check("placing the 4th crystal on the portal edges respawns the dragon", respawned);
+        long pillars = end.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.END_CRYSTAL && !e.isRemoved()).count();
+        check("respawn regenerated the pillar crystals (got " + pillars + ")", pillars >= 10);
+
+        // ---- repeat kill: 500 XP, no second egg ----
+        moveTo(world, new Pos(0.5, Y + 1, 0.5));
+        for (Entity e : end.getEntities()) if (e.getEntityType() == EntityType.EXPERIENCE_ORB) e.remove();
+        Entity dragon2 = end.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.ENDER_DRAGON && !e.isRemoved())
+                .findFirst().orElse(null);
+        check("respawned dragon is present", dragon2 != null);
+        if (dragon2 instanceof net.minestom.server.entity.LivingEntity ld) ld.setHealth(0f);
+        boolean xp2seen = waitFor(() -> sumEndXp(end) > 0, 5000);
+        tick(2);
+        int xp2 = sumEndXp(end);
+        check("repeat kill drops only 500 XP (got " + xp2 + ")", xp2seen && xp2 == 500);
+        check("repeat kill does NOT drop a second dragon egg", !end.getBlock(0, 70, 0).compare(Block.DRAGON_EGG));
+    }
+
+    /** Put the player at {@code pos} in {@code target}, switching instances only when it actually changes. */
+    private static void moveTo(net.minestom.server.instance.Instance target, Pos pos) {
+        if (player.getInstance() == target) player.teleport(pos).join();
+        else player.setInstance(target, pos).join();
+    }
+
+    /** Total XP carried by all experience orbs currently in {@code end}. */
+    private static int sumEndXp(net.minestom.server.instance.Instance end) {
+        return end.getEntities().stream()
+                .filter(e -> e.getEntityType() == EntityType.EXPERIENCE_ORB)
+                .mapToInt(e -> ((net.minestom.server.entity.ExperienceOrb) e).getExperienceCount())
+                .sum();
     }
 
     /** Enderman: neutral until the player's crosshair rests on it, then it targets the player. */

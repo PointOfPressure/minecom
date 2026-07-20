@@ -124,9 +124,12 @@ public final class Bootstrap {
         endGenStatic = endGen;
         overworld.setTag(END_TAG, end);
         if (!config.flatWorld()) {
-            end.eventNode().addListener(net.minestom.server.event.instance.InstanceChunkLoadEvent.class, event ->
-                    dev.pointofpressure.minecom.worldgen.vanilla.VChorus.placeChunk(
-                            end, event.getChunkX(), event.getChunkZ(), worldSeed(), endGenF));
+            end.eventNode().addListener(net.minestom.server.event.instance.InstanceChunkLoadEvent.class, event -> {
+                dev.pointofpressure.minecom.worldgen.vanilla.VChorus.placeChunk(
+                        end, event.getChunkX(), event.getChunkZ(), worldSeed(), endGenF);
+                dev.pointofpressure.minecom.worldgen.vanilla.EndCityDecorations.placeChunk(
+                        end, event.getChunkX(), event.getChunkZ(), endGenF);
+            });
         }
         dev.pointofpressure.minecom.worldgen.vanilla.EndGateways.register(end);
 
@@ -211,6 +214,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.blocks.Signs.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Banners.register(events, overworld);
         dev.pointofpressure.minecom.blocks.ArmorStands.register(events);
+        dev.pointofpressure.minecom.blocks.EndCrystals.register(events);
         dev.pointofpressure.minecom.blocks.Beacons.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Conduits.register(events, overworld);
         dev.pointofpressure.minecom.blocks.Beehives.register(events, overworld);
