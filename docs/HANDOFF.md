@@ -14,6 +14,43 @@ of what got escalated and why.
 
 ---
 
+## END-GAME completion: elytra obtainability + dragon respawn (2026-07-20, Opus, branch `endgame-completion`, worktree ~/minecom-endgame) — DONE
+
+Closed audit items #3 (elytra obtainability) and #4 (dragon respawn). Selftest
+285/0; new playtest sections green (`end ship` 7/0, `dragon respawn` 9/0).
+
+**#3 End-ship framed elytra.** VEndGen's end_city gen placed the ship's blocks
+(hull + the two treasure-chest blocks) but skipped every `EndCityPieces.handleDataMarker`
+decoration (documented in VEndGen). The framed elytra — the only in-world elytra source —
+was therefore missing. Ported `handleDataMarker` faithfully into new
+`worldgen/vanilla/EndCityDecorations.java`, driven off the End's existing
+`InstanceChunkLoadEvent` hook (alongside VChorus): for each ship data marker landing in a
+loaded chunk it spawns **Elytra** = an item frame holding an elytra facing
+`rotation.rotate(SOUTH)`, **Sentry** = a shulker guard. **Chest** stays a loot-table skip
+(the empty chest block is placed by the template; loot-table population is the project-wide
+skip). New VEndGen API `shipMarkersInChunk` / `shipElytraMarker` (test hook). Verified: seed
+20260708 city (-78,-55) ship elytra marker = (-1323,90,-866) facing EAST; the 10-piece city
+(-74,42) has no ship (no marker). Item-frame-with-item spawn + eject-on-attack reuse the
+existing v0.28 ItemFrames path.
+
+**#4 Dragon respawn via 4 crystals.** EnderDragonFight was one-shot. Ported
+`EndDragonFight.setDragonKilled`/`tryRespawn`/`respawnDragon` + `EndCrystalItem.useOn`
+(26.2 decompile): first kill drops the egg and 12000 XP; every repeat kill drops 500 XP
+and NO egg (`hasPreviouslyKilledDragon` gate); placing four end crystals on the exit-portal
+edges (new `blocks/EndCrystals.java`, real `PlayerUseItemOnBlockEvent` pipeline) consumes
+them, regenerates the ten pillar crystals, and respawns a fresh (crystal-healed) dragon.
+XP dropped as vanilla-sized orbs (max 2477). Kept the scripted circling flight (perch/charge
+phases remain explicitly out of scope). Fight state is session-scoped tags (the End is not
+covered by RegionStore's overworld-only persistence — see AUDIT).
+
+**Deferred (documented in AUDIT, not attempted):** the exit gateway is still one-way
+(standing in it teleports to the outer islands; no return gateway, no throw-a-pearl-into-it
+mechanic); end-crystal explosion-on-attack (bed/anvil-style detonation) is unimplemented;
+End decoration entities (framed elytra, shulkers, dragon egg-drop state) do not persist
+across restart.
+
+---
+
 ## Gamerule system landed — 26.2 registry + /gamerule + 11 wired consumers (2026-07-20, Fable, main tree)
 
 `GameRules.java` is the project-wide store: the full 26.2 snake_case registry

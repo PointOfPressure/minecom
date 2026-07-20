@@ -131,10 +131,12 @@ public final class VEndGen implements Generator {
      * processors (mossiness/protected-blocks/etc — none of which real vanilla even applies to
      * end_city anyway; its own `BlockIgnoreProcessor` handling is the only per-block processor,
      * already reimplemented via the existing name-check convention used by every other NBT-
-     * template structure this session). NOT ported: `handleDataMarker` decoration (loot chests
-     * via "Chest" markers, shulker "Sentry" spawns, elytra item-frame "Elytra" markers — all
-     * data-marker-driven, matching the established loot-contents/entity-spawn skip precedent
-     * used everywhere else this session).
+     * template structure this session). `handleDataMarker` decoration is split out: its two
+     * entity spawns ("Elytra" item-frame + "Sentry" shulkers) are ported in
+     * {@link EndCityDecorations} (the block-only generate pass can't spawn entities, so they are
+     * decorated on chunk load via {@link #shipMarkersInChunk}); the "Chest" marker only sets a
+     * loot table on the chest block already placed by the template, which stays the established
+     * loot-contents skip.
      */
     /**
      * {@code overwrite}: real vanilla's {@code BlockIgnoreProcessor} choice — true=STRUCTURE_BLOCK
@@ -185,6 +187,73 @@ public final class VEndGen implements Generator {
         if (pieces == null) return null;
         ECPiece base = pieces.get(0);
         return new int[]{pieces.size(), base.baseX, base.baseY, base.baseZ, base.rotation.ordinal()};
+    }
+
+    // ------------------------------------------------------------- end-ship data markers
+
+    /**
+     * A ship data-marker (an {@code EndCityPieces} {@code Blocks.STRUCTURE_BLOCK} in DATA mode)
+     * in world coordinates. {@code kind} is the marker's {@code metadata} string ("Elytra",
+     * "Sentry" or "Chest"); {@code facing} is the ship piece's rotation applied to
+     * {@code Direction.SOUTH}, matching {@code EndCityPieces.handleDataMarker}'s
+     * {@code this.placeSettings.getRotation().rotate(Direction.SOUTH)} for the framed elytra.
+     */
+    public record ShipMarker(int x, int y, int z, String kind, VTemplate.Dir facing) {}
+
+    // How far (in chunks) a ship can sit from its city's root chunk: the ship is attached at the
+    // end of a recursive bridge chain with a fixed {@code -70..-60}-block Z offset, so its markers
+    // can land several chunks away from where {@code isStructureChunk} anchors the city.
+    private static final int SHIP_SEARCH_RADIUS = 8;
+    private static final VTemplate SHIP_TEMPLATE = VTemplate.load("minecraft:end_city/ship");
+
+    /**
+     * Every end-ship data marker (Elytra/Sentry/Chest) whose world position falls inside the
+     * given chunk, across any end city rooted within {@link #SHIP_SEARCH_RADIUS}. Drives
+     * {@link EndCityDecorations}: the framed elytra + shulker guards are entity spawns that the
+     * block-only {@code generate} pass can't place, so they are decorated in on chunk load.
+     */
+    public List<ShipMarker> shipMarkersInChunk(int chunkX, int chunkZ) {
+        List<ShipMarker> out = new ArrayList<>();
+        int r = SHIP_SEARCH_RADIUS;
+        for (int dz = -r; dz <= r; dz++) {
+            for (int dx = -r; dx <= r; dx++) {
+                int ccx = chunkX + dx, ccz = chunkZ + dz;
+                if (!endCityPlacement.isStructureChunk(END_CITY_SET, ccx, ccz)) continue;
+                String key = ccx + ":" + ccz;
+                List<ECPiece> pieces = endCityPieces.containsKey(key) ? endCityPieces.get(key) : assembleEndCity(ccx, ccz);
+                endCityPieces.put(key, pieces);
+                if (pieces == null) continue;
+                for (ECPiece p : pieces) {
+                    if (p.template != SHIP_TEMPLATE) continue;
+                    for (VTemplate.BlockInfo b : p.template.blocks) {
+                        if (b.nbt == null || !b.state.key().asString().equals("minecraft:structure_block")) continue;
+                        String meta = b.nbt.getString("metadata");
+                        if (meta == null || meta.isEmpty()) continue;
+                        int[] wp = VTemplate.transform(b.x, b.y, b.z, p.rotation, 0, 0);
+                        int wx = wp[0] + p.baseX, wy = wp[1] + p.baseY, wz = wp[2] + p.baseZ;
+                        if ((wx >> 4) != chunkX || (wz >> 4) != chunkZ) continue;
+                        out.add(new ShipMarker(wx, wy, wz, meta, p.rotation.rotate(VTemplate.Dir.SOUTH)));
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Test hook: {wx,wy,wz, facingDirOrdinal} of the ship's Elytra marker for the city rooted at (chunkX,chunkZ), or null if that city has no ship. */
+    public int[] shipElytraMarker(int chunkX, int chunkZ) {
+        if (!endCityPlacement.isStructureChunk(END_CITY_SET, chunkX, chunkZ)) return null;
+        List<ECPiece> pieces = assembleEndCity(chunkX, chunkZ);
+        if (pieces == null) return null;
+        for (ECPiece p : pieces) {
+            if (p.template != SHIP_TEMPLATE) continue;
+            for (VTemplate.BlockInfo b : p.template.blocks) {
+                if (b.nbt == null || !"Elytra".equals(b.nbt.getString("metadata"))) continue;
+                int[] wp = VTemplate.transform(b.x, b.y, b.z, p.rotation, 0, 0);
+                return new int[]{wp[0] + p.baseX, wp[1] + p.baseY, wp[2] + p.baseZ, p.rotation.rotate(VTemplate.Dir.SOUTH).ordinal()};
+            }
+        }
+        return null;
     }
 
     /**

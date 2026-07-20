@@ -823,6 +823,16 @@ public final class SelfTest {
         check("end city real generation confirmed at (-78,-55): " + ecMats + " purpur/end_stone_brick/magenta/end_rod/chest blocks placed",
                 ecMats == 8286);
 
+        // End ship elytra: the framed-elytra data marker (EndCityPieces "Elytra") carried by the
+        // ship. World position + facing (rotation.rotate(SOUTH); Dir.EAST=5) drive EndCityDecorations,
+        // which spawns the item frame holding the (only naturally obtainable) elytra. The 109-piece
+        // city has a ship; the 10-piece one at (-74,42) has no ship, so no elytra marker.
+        int[] elytraMarker = endGen.shipElytraMarker(-78, -55);
+        check("end ship at (-78,-55) carries the framed-elytra marker at (-1323,90,-866) facing EAST",
+                elytraMarker != null && elytraMarker[0] == -1323 && elytraMarker[1] == 90
+                        && elytraMarker[2] == -866 && elytraMarker[3] == 5);
+        check("end city without a ship (-74,42) has no elytra marker", endGen.shipElytraMarker(-74, 42) == null);
+
         // Stronghold: the full real branching piece-tree (StrongholdPieces port, ~11 hand-coded
         // procedural piece classes — this project's only non-NBT-template structure). Real
         // vanilla's generatePieces retries with an incrementing feature-seed salt until a portal

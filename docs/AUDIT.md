@@ -1029,9 +1029,22 @@ leftovers.
 - Breeding.java — only same-species pair+item; no baby growth acceleration by
   feeding, no love-mode particles timing nuances, no per-animal breeding items
   beyond spec sets (mostly right), horses/llamas can't breed (no taming). (S)
-- EnderDragonFight.java:17 — bounded fight: verify crystal healing beams,
-  perching phase, breath attacks, dragon egg spawn + teleport-on-click,
-  respawn-the-dragon crystal ritual. (M/L)
+- EnderDragonFight.java:17 — bounded fight. UPDATE 2026-07-20 (Opus,
+  `endgame-completion`): **respawn ritual DONE** — placing 4 end crystals on
+  the exit-portal edges (EndCrystals.java, real EndCrystalItem.useOn pipeline)
+  consumes them, regenerates the pillar crystals, and respawns the dragon;
+  first kill = egg + 12000 XP, every repeat = 500 XP and no egg
+  (hasPreviouslyKilledDragon gate), decompile-verified vs 26.2. Still deferred:
+  perch/charge phases (scripted circling flight kept), crystal healing BEAMS
+  (heal works — health regenerates while a crystal lives — but no beam visual),
+  end-crystal explosion-on-attack, and fight state is session-scoped (End is
+  not persisted through RegionStore). (M/L)
+- EndGateways.java — the exit gateway is one-way: standing in it teleports to
+  the outer islands, but there is no return gateway at the destination and no
+  throw-an-ender-pearl-into-it mechanic (vanilla gateways are bidirectional).
+  End decoration entities (framed elytra, ship shulkers, the dragon egg block's
+  taken/not-taken state) also do not persist across restart — the End is not
+  covered by RegionStore's overworld-only decoration persistence. (M)
 - path/VPathfinder — no door-opening path nodes (villagers can't use doors),
   no water-aware pathing for aquatic mobs (guardians ground-path, admitted).
   (M)
