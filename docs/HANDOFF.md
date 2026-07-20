@@ -14,6 +14,63 @@ of what got escalated and why.
 
 ---
 
+## sculk_patch charge-cursor: RNG-draw shape now bit-exact vs fresh decompile — but r3 REGRESSED, compensating world-interaction bug remains (2026-07-20, Opus, branch `sculk-replay`, worktree `~/minecom-sculk`) — IN PROGRESS, NOT the win
+
+Decompiled the full SculkSpreader family from `server-26.2.jar` per rule 7 and cached it under
+`vanilla-src/net/minecraft/world/level/block/` (SculkSpreader + `$ChargeCursor`, SculkBlock,
+SculkVeinBlock, SculkBehaviour, MultifaceSpreader, MultifaceBlock) — these were NOT previously
+cached. Line-by-line diff of `VSculk.java`'s cursor mechanism (Spreader/Cursor/attemptUseCharge/
+attemptSpreadVein) against ground truth found the port's **RNG-draw sequence was already the right
+SHAPE** (draw counts/bounds/order all matched: nextInt(5) charge-decay, nextInt(50) growth-spawn,
+conditional nextInt(11) growth-state, 5-draw allShuffled in attemptPlaceSculk, 17-draw
+shuffledCopy in getValidMovementPos, nextFloat catalyst + nextInt(5)/nextInt(5) extra-growths in
+the driver). The four divergences found were all PREDICATE/GEOMETRY/STATE, two of which do change
+the draw stream by flipping a branch:
+
+1. **closeToCatalyst comparator (RNG-desync).** `chebyshevWithin` used `distSqr <= r²`; vanilla
+   `Vec3i.closerThan` is STRICT `distSqr < Mth.square(r)`. With worldgen noGrowthRadius=1 this is
+   true ONLY at the exact origin (distSqr==0), never the 6 face-neighbours (distSqr==1). The `<=`
+   wrongly flagged neighbours as close-to-catalyst → flipped the growth/decay branch → spurious/
+   missing `nextInt(11)` draw. Fixed → `<`; method renamed `closerThan`.
+2. **canPlaceGrowth count-box Y off-by-one (RNG-desync).** Scanned `y+1..y+3`; vanilla
+   `betweenClosed(pos.offset(-4,0,-4), pos.offset(4,2,4))` scans `y+0..y+2` (the CHARGE pos, not the
+   placement pos). Miscount flips canPlaceGrowth → growth(1–2 draws) vs decay(1 draw). Fixed → `y+dy`.
+3. **facings after settle (faithfulness, inert here).** Set `null` for non-vein sculk behaviour;
+   vanilla `MultifaceBlock.availableFaces` returns the empty set (SCULK/catalyst aren't multiface).
+   Provably inert in patch-gen (SCULK is never consumed, catalyst never cursor'd during spread) but
+   fixed → `new boolean[6]` to mirror vanilla exactly.
+4. **getRandomGrowthState waterlogged (block-state).** Omitted the waterlogged variant; vanilla
+   waterlogs the sensor/shrieker when the placement pos holds water. Fixed (reads level at y+1).
+
+Build clean, **selftest 282/0**. r3 (seed 20260708, ancient-city-centered, `--work
+~/minecom-region-diff-sculk`, `-Dminecom.sculk=true`), run TWICE identically (deterministic):
+
+- sculk-OFF baseline .......... 99.151922%
+- sculk-ON before this fix ..... 99.084105%
+- **sculk-ON after this fix .... 99.038131%   ← REGRESSED ~0.046%, still < sculk-OFF**
+
+Verdict (honest, per rule 8 / step 6): the fixes are correct against the decompile, so the RNG-draw
+shape is now verified bit-exact — yet parity DROPPED. That means the old `<=`/`y+1` errors were
+partially CANCELLING a deeper divergence; fixing them exposed it. The residual is dominated by
+`sculk_sensor<->air` (163/158, near-symmetric = sensors placed at SHIFTED positions, not
+missing) and `sculk<->{deepslate_bricks/tiles/cobbled/cracked_*, andesite/granite}`. Near-symmetric
+sensor churn + sculk-vs-ancient-city-structure-block churn points NOT at the RNG stream (now
+verified) but at the cursor's **world-interaction**: the charge cursor reads/writes the feature
+`Canvas`, and the substrate it sees (ancient-city deepslate variants, ore blobs) likely differs from
+vanilla's world at the moment sculk_patch runs — a STRUCTURE/FEATURE phase-ordering or
+canvas-visibility issue (exactly the step-6 blocker the task flagged). i.e. the cursor is making
+vanilla-correct RNG decisions over a NON-vanilla substrate, so it lands sculk/sensors in the wrong
+cells.
+
+NEXT (whoever picks up sculk): the RNG replay is DONE — stop re-checking draws. Instead verify what
+the sculk_patch cursor actually reads: (a) does minecom's feature canvas contain the ancient-city
+structure blocks (deepslate_bricks/tiles) and the ore/blob decorations at the moment sculk_patch
+runs, in the SAME cells vanilla would have them? (b) is `#sculk_replaceable_world_gen` tag resolution
+correct (attemptPlaceSculk converts only tagged support blocks → SCULK)? (c) confirm feature/
+structure ordering matches vanilla's placement phases. Decision unchanged: `SCULK_ENABLED` stays
+default OFF (untouched); shipped sculk-off ratchet 99.393668% is unaffected (these edits are gated).
+Do NOT flip the default. Committed to `sculk-replay` (NOT merged); decompiles cached for next session.
+
 ## Fragile-check flake: repro loop verdict — SUITE-WIDE timing fragility, ~45%/run, NOT the crossbow+golem pair (2026-07-20, Fable) — HIGH PRIORITY
 
 Ran the fragile-pair repro loop the v0.38.0 gate entry asked for: 40 sequential

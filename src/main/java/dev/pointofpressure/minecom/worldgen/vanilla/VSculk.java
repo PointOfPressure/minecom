@@ -252,7 +252,11 @@ public final class VSculk {
                     if (dx * dx + dz * dz >= 15.0 * 15.0) { charge = 0; return; }
                     current = level.get(this.x, this.y, this.z);
                 }
-                if (isSculkBehaviour(current)) facings = isSculkVein(current) ? veinFaces(current) : null;
+                // MultifaceBlock.availableFaces: the true faces for a vein; EMPTY (not null) for a
+                // non-multiface sculk behaviour (SCULK/catalyst). null only survives as the field's
+                // pre-first-settle default. (Inert in patch-gen since SCULK is never consumed, but
+                // this mirrors vanilla exactly.)
+                if (isSculkBehaviour(current)) facings = isSculkVein(current) ? veinFaces(current) : new boolean[6];
                 decayDelay = updateDecayDelay(beh, decayDelay);
                 updateDelay = 1;   // getSculkSpreadDelay == 1 (no RNG)
             }
@@ -272,10 +276,10 @@ public final class VSculk {
         // SculkBlock.attemptUseCharge
         int sculkAttemptUseCharge(World level, int ox, int oy, int oz, XWorldgenRandom random) {
             if (charge != 0 && random.nextInt(CHARGE_DECAY_RATE) == 0) {
-                boolean closeToCatalyst = chebyshevWithin(x, y, z, ox, oy, oz, NO_GROWTH_RADIUS);
+                boolean closeToCatalyst = closerThan(x, y, z, ox, oy, oz, NO_GROWTH_RADIUS);
                 if (!closeToCatalyst && canPlaceGrowth(level, x, y, z)) {
                     if (random.nextInt(GROWTH_SPAWN_COST) < charge) {
-                        Block growth = getRandomGrowthState(random);
+                        Block growth = getRandomGrowthState(level, x, y + 1, z, random);
                         level.set(x, y + 1, z, growth);
                     }
                     return Math.max(0, charge - GROWTH_SPAWN_COST);
@@ -318,23 +322,31 @@ public final class VSculk {
 
     // ---------- SculkBlock helpers
 
-    private static Block getRandomGrowthState(XWorldgenRandom random) {
-        // isWorldGen == true
-        if (random.nextInt(11) == 0) {
-            return Block.SCULK_SHRIEKER.withProperty("can_summon", "true");
+    private static Block getRandomGrowthState(World level, int px, int py, int pz, XWorldgenRandom random) {
+        // isWorldGen == true. SculkBlock.getRandomGrowthState also waterlogs the growth when the
+        // placement pos holds water (both SCULK_SENSOR and SCULK_SHRIEKER have the waterlogged property).
+        Block state = random.nextInt(11) == 0
+                ? Block.SCULK_SHRIEKER.withProperty("can_summon", "true")
+                : Block.SCULK_SENSOR;
+        if (is(level.get(px, py, pz), Block.WATER)) {
+            state = state.withProperty("waterlogged", "true");
         }
-        return Block.SCULK_SENSOR;
+        return state;
     }
 
     private static boolean canPlaceGrowth(World level, int x, int y, int z) {
         Block above = level.get(x, y + 1, z);
         boolean okAbove = isAir(above) || is(above, Block.WATER);
         if (!okAbove) return false;
+        // SculkBlock.canPlaceGrowth: box = betweenClosed(pos.offset(-4,0,-4), pos.offset(4,2,4)),
+        // i.e. Y spans the charge pos itself (y+0) through y+2 — NOT the placement pos (y+1).
+        // The prior y+1..y+3 range miscounts nearby sensors/shriekers, which flips canPlaceGrowth
+        // and thus the growth(1-2 draws)/decay(1 draw) branch, desyncing the RNG stream.
         int growth = 0;
         for (int dz = -4; dz <= 4; dz++)
             for (int dy = 0; dy <= 2; dy++)
                 for (int dx = -4; dx <= 4; dx++) {
-                    Block b = level.get(x + dx, y + 1 + dy, z + dz);
+                    Block b = level.get(x + dx, y + dy, z + dz);
                     if (is(b, Block.SCULK_SENSOR) || is(b, Block.SCULK_SHRIEKER)) {
                         if (++growth > 2) return false;
                     }
@@ -352,10 +364,13 @@ public final class VSculk {
         return Math.max(1, (int) (charge * factor * 0.5F));
     }
 
-    private static boolean chebyshevWithin(int x, int y, int z, int ox, int oy, int oz, int r) {
-        // BlockPos.closerThan(origin, radius): euclidean distance <= radius (closerThan uses distSqr <= r*r+... actually closerThan is distSqr < (r+?)); vanilla closerThan(Vec3i, double): distToLowCornerSqr <= dist*dist
+    private static boolean closerThan(int x, int y, int z, int ox, int oy, int oz, int r) {
+        // Vec3i.closerThan(pos, distance) == distSqr(pos) < Mth.square(distance) — STRICT <, euclidean.
+        // With noGrowthRadius==1 this is true ONLY at the exact origin (distSqr==0), never for the 6
+        // face-neighbours (distSqr==1). The prior `<=` wrongly flagged neighbours as close-to-catalyst,
+        // which flips the growth/decay branch and desyncs the RNG stream (a spurious nextInt(11) draw).
         double dx = x - ox, dy = y - oy, dz = z - oz;
-        return dx * dx + dy * dy + dz * dz <= (double) r * r;
+        return dx * dx + dy * dy + dz * dz < (double) r * r;
     }
 
     // ---------- SculkVeinBlock.attemptPlaceSculk (converts substrate to sculk + spreads veins)
