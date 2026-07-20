@@ -1720,3 +1720,46 @@ was measuring an eaten monument.**
     patrols)~~ — DONE 2026-07-15 (v0.23.0, wave counts/composition; the
     patrol-captain Bad Omen trigger itself remains open, see Raid.java
     entry above) — M remaining (patrol captains)
+
+## Villager economy — restock + iron-golem spawning (2026-07-20, Opus, branch `villager-economy`)
+
+Landed the renewable villager economy (audit gaps #2 trade restock, #6 village
+golem spawn). Behavior verified against decompiled `Villager` /
+`MerchantOffer` / `CarvedPumpkinBlock` / `GolemSensor` (26.2). Deliberate
+simplifications, all stated in-source too:
+
+- **Restock trigger (Villagers.restockSweep).** Real vanilla restocks inside the
+  `WorkAtPoi` brain task, which paths the villager to its claimed POI ticket over
+  seconds. This project has no villager brain schedule, so "working" is
+  approximated as being within 4 blocks of a job-site block matching the
+  villager's profession, and "day" as instance day-time < 12000. The restock
+  *bookkeeping* itself (shouldRestock/allowedToRestock: max 2/day, 2400-tick gap,
+  new-day rollover with demand catch-up) is faithful. S.
+- **Uniform trade economics (VillagerTrades.MAX_USES=16, PRICE_MULTIPLIER=0.05).**
+  Vanilla varies maxUses/priceMultiplier per offer factory; the tier-1
+  EmeraldForItems/ItemsForEmerald offers actually in TABLES both use 16 / 0.05, so
+  the uniform constants match those offers but would diverge for higher-tier ones
+  if TABLES ever grows tiers. Demand math (updateDemand, getModifiedCostCount's
+  `base + max(0, floor(base*demand*mult))` clamp) is faithful. S.
+- **Wandering-trader trades never sell out.** Wandering traders have no entity
+  binding in the trade menu, so no per-offer use tracking — they trade
+  indefinitely rather than despawning after limited uses. S.
+- **Golem "slept recently" gate (Villagers.wantsToSpawnGolem).** Villager has no
+  sleep AI, so `Villager.golemSpawnConditionsMet` (LAST_SLEPT within 24000) is
+  treated as always true; the gate reduces to the golem-detected-recently memory,
+  which is fully modelled (599-tick TTL, GolemSensor parity). The 5-villagers-
+  agree / 10-block radius / no-golem-within-16 rules are faithful. M (needs the
+  villager sleep cycle to close).
+- **Golem-spawn trigger cadence.** Vanilla fires `spawnGolemIfNeeded` from
+  `Villager.gossip` (throttled to 1200 ticks) and the PANIC package; modelled as a
+  periodic gossip-cadence sweep. The mission-scoped "20% chance per attempt" is
+  NOT in the 26.2 decompile (the real method has no roll once conditions are met),
+  so it was intentionally not used — the gossip cooldown is the only gate. S.
+- **Golem spawn-spot search (Villagers.findGolemSpawn).** A single-column
+  air-over-solid check within a small box, standing in for
+  `SpawnUtil.trySpawnMob`'s full 10x8x6 LEGACY_IRON_GOLEM bounding-box scan. S.
+- **Player-built golems (blocks/Golems).** Iron + snow patterns are faithful
+  (CarvedPumpkinBlock.trySpawnGolem). Not modelled: the copper golem pattern (its
+  chest/weathering machinery is a separate feature) and IronGolem.setPlayerCreated
+  (village-defense targeting already keys off a fixed hostile whitelist, so the
+  flag has no observable effect here). S.

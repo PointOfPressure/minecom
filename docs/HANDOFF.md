@@ -14,6 +14,44 @@ of what got escalated and why.
 
 ---
 
+## Renewable villager economy — trade restock + iron-golem spawning (2026-07-20, Opus, branch `villager-economy`, worktree ~/minecom-villagers) — DONE
+
+Closed audit gaps #2 (trades never restocked) and #6 (villages never spawned
+golems). Behavior decompile-verified against `Villager` / `MerchantOffer` /
+`CarvedPumpkinBlock` / `GolemSensor` (26.2, freshly decompiled — now cached under
+`vanilla-src/net/minecraft/...`).
+
+**Landed:**
+- **Trade restocking** (`VillagerTrades`): per-villager per-offer use counts capped
+  at MAX_USES(16); a bought-out offer sells out (empty result slot / tradeDisabled)
+  until the villager restocks. `tryRestock` is the faithful `shouldRestock` +
+  `restock`: max 2/day, 2400-tick gap, new-day rollover with `catchUpDemand` decay,
+  `updateDemand` (`demand += uses - (maxUses-uses)`) and `resetUses`. Demand raises
+  the emerald buy-in via `getModifiedCostCount` (`base + max(0, floor(base*demand*
+  0.05))`, clamped). Trade select/complete were extracted to public
+  `selectTrade`/`completeTrade` so the harness drives the real handler path.
+- **Restock work trigger** (`Villagers.restockSweep`, wired to a 40-tick scheduler +
+  driven directly in PlayTest): professioned villagers within 4 blocks of their
+  matching job-site block, during the day, restock. Simplification (no villager brain
+  schedule) stated in-source + AUDIT.
+- **Village iron-golem spawn** (`Villagers.spawnGolemIfNeeded` + `golemSweep`):
+  faithful `Villager.spawnGolemIfNeeded` — 5 villagers within 10 blocks agree, none
+  detected recently (599-tick GOLEM_DETECTED memory, GolemSensor parity), no golem
+  within 16 blocks. Deterministic (no random roll, matching vanilla); trigger cadence
+  is the gossip cooldown (the mission's "20% chance" is not in the decompile).
+  "Slept recently" is treated as always true (no sleep AI yet) — AUDIT M item.
+- **Player-built golems** (`blocks/Golems`): carved-pumpkin (or jack-o'-lantern)
+  atop the iron T (4 iron) → iron golem; atop 2 snow → snow golem; blocks consumed.
+  Wired on `PlayerBlockPlaceEvent` (deferred one tick, since the event fires
+  pre-placement) and from the shear-carving path. Copper golem not modelled (AUDIT).
+
+**Verification:** `--selftest` 283/0; `--playtest villager` 30/0 (6 new restock
+checks); `--playtest golem` 13/0 (3 panic-spawn + 4 build checks + existing iron/snow).
+EXPECTED_CHECK_COUNT 1030 -> 1043 (+13). A regression the new tests caught and fixed:
+`OPEN_VILLAGER.put(uuid, null)` NPE'd for the (entity-less) wandering trader —
+ConcurrentHashMap rejects null values; now `remove` on null. Full suite NOT run (per
+task scope); a green full-suite run on an idle machine is still needed before any tag.
+
 ## END terrain-noise residual SOLVED — r3 97.38% -> 100.000000% bit-exact (2026-07-20, Opus, branch `end-density`, worktree ~/minecom-enddensity) — DONE
 
 **Root cause: the End's `base_3d_noise` (old_blended_noise) was seeded from Xoroshiro,
