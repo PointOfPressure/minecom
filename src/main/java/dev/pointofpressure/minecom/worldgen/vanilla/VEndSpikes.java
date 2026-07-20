@@ -60,6 +60,22 @@ public final class VEndSpikes {
             var crystal = new net.minestom.server.entity.Entity(net.minestom.server.entity.EntityType.END_CRYSTAL);
             crystal.setInstance(end, new net.minestom.server.coordinate.Pos(s.x + 0.5, s.height + 1, s.z + 0.5));
         }
+        placeSpawnPlatform(end::setBlock);
+    }
+
+    /**
+     * The 5x5 obsidian spawn platform: {@code EndPlatformFeature.createEndPlatform} at origin
+     * {@code END_SPAWN_POINT.below() = (100,49,0)} — dz/dx in [-2,2], dy in [-1,3): dy=-1 is
+     * obsidian (y=48), dy 0..2 carved to air (y49-51). Ground truth measured from the vanilla
+     * 26.2 region files (seed 20260708): obsidian exactly at y=48, x98-102, z-2..2. Vanilla
+     * places it at dimension entry; it is present in every vanilla end region file, so
+     * worldgen parity places it too.
+     */
+    public static void placeSpawnPlatform(BlockSink sink) {
+        for (int dz = -2; dz <= 2; dz++)
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dy = -1; dy < 3; dy++)
+                    sink.set(100 + dx, 49 + dy, dz, dy == -1 ? Block.OBSIDIAN : Block.AIR);
     }
 
     /**

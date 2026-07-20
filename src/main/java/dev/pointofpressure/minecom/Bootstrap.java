@@ -115,6 +115,7 @@ public final class Bootstrap {
             for (int cx = -3; cx <= 2; cx++) {
                 for (int cz = -3; cz <= 2; cz++) spikeChunks.add(end.loadChunk(cx, cz));
             }
+            spikeChunks.add(end.loadChunk(6, 0)); // spawn-platform chunk (END_SPAWN_POINT 100,50,0)
             java.util.concurrent.CompletableFuture
                     .allOf(spikeChunks.toArray(new java.util.concurrent.CompletableFuture[0]))
                     .thenRun(() -> dev.pointofpressure.minecom.worldgen.vanilla.VEndSpikes.placeAll(end, worldSeed()));
