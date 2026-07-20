@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.LootTables;
 import dev.pointofpressure.minecom.data.VanillaData;
@@ -117,8 +118,7 @@ public final class TrialChambers {
 
     public static void start(Instance overworld, GlobalEventHandler events) {
         instance = overworld;
-        MinecraftServer.getSchedulerManager().buildTask(TrialChambers::tick)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "trialChambers", TrialChambers::tick);
         events.addListener(PlayerBlockInteractEvent.class, TrialChambers::interact);
         Persist.register(spawnerPersistence());
         Persist.register(vaultPersistence());
@@ -560,10 +560,7 @@ public final class TrialChambers {
     }
 
     private static Entity mobById(int entityId) {
-        for (Entity e : instance.getEntities()) {
-            if (e.getEntityId() == entityId) return e;
-        }
-        return null;
+        return instance.getEntityById(entityId);
     }
 
     // ------------------------------------------------------------------ vault

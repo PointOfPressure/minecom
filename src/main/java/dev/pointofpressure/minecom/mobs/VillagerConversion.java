@@ -1,6 +1,7 @@
 package dev.pointofpressure.minecom.mobs;
 
 import net.kyori.adventure.sound.Sound;
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Entity;
@@ -92,8 +93,7 @@ public final class VillagerConversion {
 
     public static void register(Instance overworld) {
         overworld.eventNode().addListener(PlayerEntityInteractEvent.class, VillagerConversion::interact);
-        MinecraftServer.getSchedulerManager().buildTask(() -> tickAll(overworld))
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.ENTITIES, "villagerConversion", () -> tickAll(overworld));
     }
 
     /**

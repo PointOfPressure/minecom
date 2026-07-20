@@ -1,6 +1,7 @@
 package dev.pointofpressure.minecom.mobs;
 
 import net.kyori.adventure.sound.Sound;
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.EntityCreature;
@@ -51,14 +52,17 @@ public final class Mobs {
         return startVanillaSpawner(instance, biomeAt, false);
     }
 
+    /** Distinct timer name per spawner instance (overworld/nether/end). */
+    private static int spawnerSeq = 0;
+
     public static VNaturalSpawner startVanillaSpawner(Instance instance, VNaturalSpawner.BiomeAt biomeAt, boolean noSkyLight) {
         VNaturalSpawner spawner = new VNaturalSpawner(instance, biomeAt, noSkyLight);
         long[] tick = {0};
-        MinecraftServer.getSchedulerManager().buildTask(() -> {
+        TickPipeline.register(TickPipeline.MOB_SPAWNING, "naturalSpawner" + (spawnerSeq++), () -> {
             long t = tick[0]++;
             spawner.spawnTick(t, true);
             if (t % 20 == 0) spawner.despawnTick();
-        }).repeat(TaskSchedule.tick(1)).schedule();
+        });
         return spawner;
     }
 

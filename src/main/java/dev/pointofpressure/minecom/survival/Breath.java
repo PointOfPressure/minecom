@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.survival;
 
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.entity.EquipmentSlot;
 import net.minestom.server.entity.GameMode;
@@ -30,8 +31,7 @@ public final class Breath {
     private static final Map<UUID, Integer> DROWN_TIMER = new ConcurrentHashMap<>();
 
     public static void start(Instance instance) {
-        MinecraftServer.getSchedulerManager().buildTask(() -> tick(instance))
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.ENTITIES, "breath", () -> tick(instance));
     }
 
     private static void tick(Instance instance) {

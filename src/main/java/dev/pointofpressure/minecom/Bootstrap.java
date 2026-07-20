@@ -296,6 +296,7 @@ public final class Bootstrap {
         commands.register(Commands.gate(new Commands.FillCmd(overworld)));
         commands.register(Commands.gate(new Commands.XpCmd()));
         commands.register(Commands.gate(new Commands.ClearCmd()));
+        commands.register(Commands.gate(new Commands.TickProfile()));
 
         Difficulty.startTracking();
 
@@ -309,6 +310,11 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.regions.Regions.register(end);
 
         dev.pointofpressure.minecom.blocks.EndPortal.register(overworld, end, spawn);
+
+        // P1: all per-tick systems registered above via TickPipeline.register now run
+        // from a single ordered dispatch (see TickPipeline javadoc for phase order).
+        TickPipeline.start();
+
         overworld.setTag(SPAWN_TAG, spawn);
         return overworld;
     }
