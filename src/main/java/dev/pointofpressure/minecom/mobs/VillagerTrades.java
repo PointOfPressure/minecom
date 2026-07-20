@@ -25,9 +25,18 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Villager trading via the vanilla merchant menu: right-clicking a villager opens the
- * trade GUI seeded with a small set of farmer offers; selecting a trade fills the
- * result slot when the player holds the inputs, and taking it consumes them. Multiple
- * professions, prices scaling with reputation, and restocking are refinements.
+ * trade GUI seeded with per-profession offers; selecting a trade fills the result slot
+ * when the player holds the inputs, and taking it consumes them.
+ *
+ * <p>Trade restocking is decompile-verified against {@code Villager.restock /
+ * shouldRestock / allowedToRestock / needsToRestock} and {@code MerchantOffer.updateDemand
+ * / needsRestock / getModifiedCostCount} (26.2): each offer has a per-villager use count
+ * capped at {@link #MAX_USES}; a fully-used offer sells out (result unavailable) until the
+ * villager restocks at its job site (max {@link #MAX_RESTOCKS_PER_DAY}/day,
+ * {@link #RESTOCK_COOLDOWN}-tick gap), which resets uses and recalculates each offer's
+ * demand — {@code demand = demand + uses - (maxUses - uses)} — bumping the emerald buy-in
+ * price of heavily-traded offers (the vanilla "demand bonus", {@code getModifiedCostCount}).
+ * See {@link Villagers#restockSweep} for the job-site work trigger.
  */
 public final class VillagerTrades {
 
@@ -111,6 +120,34 @@ public final class VillagerTrades {
     private static final Map<UUID, Inventory> OPEN = new ConcurrentHashMap<>();
     private static final Map<UUID, List<Offer>> OPEN_OFFERS = new ConcurrentHashMap<>();
     private static final Map<UUID, Offer> SELECTED = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> SELECTED_INDEX = new ConcurrentHashMap<>();
+    // the villager (may be null for a wandering trader) and profession backing an open menu
+    private static final Map<UUID, Entity> OPEN_VILLAGER = new ConcurrentHashMap<>();
+    private static final Map<UUID, String> OPEN_PROFESSION = new ConcurrentHashMap<>();
+
+    // ---- restocking / demand (Villager + MerchantOffer, decompiled) --------------------
+    /** MerchantOffer maxUses for these tier-1 offers. Vanilla varies per offer; the
+     *  EmeraldForItems/ItemsForEmerald tier-1 factories both use 16, so a single uniform
+     *  cap here matches the offers actually in {@link #TABLES}. Simplification (AUDIT.md). */
+    public static final int MAX_USES = 16;
+    /** MerchantOffer priceMultiplier. Vanilla's tier-1 emerald-buying offers use 0.05;
+     *  applied uniformly (see AUDIT.md) since {@link #TABLES} carries no per-offer value. */
+    static final float PRICE_MULTIPLIER = 0.05f;
+    /** Villager.allowedToRestock: at most 2 restocks/day, 2400 game-ticks apart. */
+    static final int MAX_RESTOCKS_PER_DAY = 2;
+    static final long RESTOCK_COOLDOWN = 2400L;
+
+    /** Per-villager use count per offer index (parallel to the profession's TABLES list). */
+    private static final Map<Integer, int[]> USES = new ConcurrentHashMap<>();
+    /** Per-villager demand per offer index (MerchantOffer.demand). */
+    private static final Map<Integer, int[]> DEMAND = new ConcurrentHashMap<>();
+
+    public static final net.minestom.server.tag.Tag<Long> LAST_RESTOCK =
+            net.minestom.server.tag.Tag.Long("minecom:villager_last_restock").defaultValue(0L);
+    public static final net.minestom.server.tag.Tag<Integer> RESTOCKS_TODAY =
+            net.minestom.server.tag.Tag.Integer("minecom:villager_restocks_today").defaultValue(0);
+    public static final net.minestom.server.tag.Tag<Long> LAST_RESTOCK_DAY =
+            net.minestom.server.tag.Tag.Long("minecom:villager_last_restock_day").defaultValue(0L);
 
     private VillagerTrades() {}
 
@@ -127,30 +164,73 @@ public final class VillagerTrades {
         });
 
         // client picks a trade -> fill the output slot if the player has the inputs
-        MinecraftServer.getPacketListenerManager().setListener(ClientSelectTradePacket.class, (packet, player) -> {
-            Inventory inv = OPEN.get(player.getUuid());
-            List<Offer> offers = OPEN_OFFERS.get(player.getUuid());
-            if (inv == null || offers == null || packet.selectedSlot() < 0 || packet.selectedSlot() >= offers.size()) return;
-            Offer offer = offers.get(packet.selectedSlot());
-            SELECTED.put(player.getUuid(), offer);
-            inv.setItemStack(0, offer.input1());
-            inv.setItemStack(1, offer.input2());
-            inv.setItemStack(2, hasInputs(player, offer) ? offer.result() : ItemStack.AIR);
-        });
+        MinecraftServer.getPacketListenerManager().setListener(ClientSelectTradePacket.class,
+                (packet, player) -> selectTrade(player, packet.selectedSlot()));
 
         // taking the result slot completes the trade
         events.addListener(InventoryPreClickEvent.class, event -> {
             if (!(event.getInventory() instanceof Inventory inv) || inv != OPEN.get(event.getPlayer().getUuid())) return;
             if (event.getSlot() != 2) return;
-            Player player = event.getPlayer();
-            Offer offer = SELECTED.get(player.getUuid());
             event.setCancelled(true);
-            if (offer == null || !hasInputs(player, offer)) return;
-            consume(player, offer.input1());
-            consume(player, offer.input2());
-            player.getInventory().addItemStack(offer.result());
-            inv.setItemStack(2, hasInputs(player, offer) ? offer.result() : ItemStack.AIR);
+            completeTrade(event.getPlayer());
         });
+    }
+
+    /**
+     * Client selected a trade: fill the input preview slots and the result slot (empty when
+     * the offer is sold out or the player lacks the inputs). Drives the same path as the
+     * {@code ClientSelectTradePacket} listener; public so PlayTest can select a trade
+     * without synthesising a raw packet.
+     */
+    public static void selectTrade(Player player, int slot) {
+        Inventory inv = OPEN.get(player.getUuid());
+        List<Offer> offers = OPEN_OFFERS.get(player.getUuid());
+        if (inv == null || offers == null || slot < 0 || slot >= offers.size()) return;
+        Offer offer = offers.get(slot);
+        SELECTED.put(player.getUuid(), offer);
+        SELECTED_INDEX.put(player.getUuid(), slot);
+        inv.setItemStack(0, offer.input1());
+        inv.setItemStack(1, offer.input2());
+        inv.setItemStack(2, resultFor(player, slot, offer));
+    }
+
+    /**
+     * Player took the result slot: consume the (demand-adjusted) inputs, hand over the
+     * result, and count the use toward the offer's {@link #MAX_USES} sell-out cap. Drives
+     * the same path as the merchant-menu click listener.
+     */
+    public static void completeTrade(Player player) {
+        UUID id = player.getUuid();
+        Inventory inv = OPEN.get(id);
+        Offer offer = SELECTED.get(id);
+        Integer slot = SELECTED_INDEX.get(id);
+        if (inv == null || offer == null || slot == null) return;
+        Entity villager = OPEN_VILLAGER.get(id);
+        String profession = OPEN_PROFESSION.get(id);
+        if (villager != null && profession != null) {
+            int[] uses = uses(villager, profession);
+            if (slot < uses.length && uses[slot] >= MAX_USES) return; // sold out until restock
+        }
+        if (!hasInputs(player, offer)) return;
+        consume(player, offer.input1());
+        consume(player, offer.input2());
+        player.getInventory().addItemStack(offer.result());
+        if (villager != null && profession != null) {
+            int[] uses = uses(villager, profession);
+            if (slot < uses.length) uses[slot]++;
+        }
+        inv.setItemStack(2, resultFor(player, slot, offer));
+    }
+
+    /** Result-slot contents: empty when the offer is sold out or the player lacks the inputs. */
+    private static ItemStack resultFor(Player player, int slot, Offer offer) {
+        Entity villager = OPEN_VILLAGER.get(player.getUuid());
+        String profession = OPEN_PROFESSION.get(player.getUuid());
+        if (villager != null && profession != null) {
+            int[] uses = uses(villager, profession);
+            if (slot < uses.length && uses[slot] >= MAX_USES) return ItemStack.AIR;
+        }
+        return hasInputs(player, offer) ? offer.result() : ItemStack.AIR;
     }
 
     // one villager per job-site block, matching vanilla's single-ticket PoiType claim
@@ -200,19 +280,118 @@ public final class VillagerTrades {
     }
 
     private static void openTrading(Player player, String profession, Entity villagerEntity) {
-        List<Offer> offers = TABLES.getOrDefault(profession, TABLES.get("farmer"));
-        if (villagerEntity != null) offers = VillagerConversion.discount(offers, villagerEntity, player);
+        List<Offer> base = TABLES.getOrDefault(profession, TABLES.get("farmer"));
+        List<Offer> offers = base;
+        int[] uses = null;
+        if (villagerEntity != null) {
+            // apply the per-villager demand price bump, then the reputation discount slice
+            int[] demand = demand(villagerEntity, profession);
+            uses = uses(villagerEntity, profession);
+            List<Offer> live = new java.util.ArrayList<>(base.size());
+            for (int i = 0; i < base.size(); i++) live.add(demandAdjusted(base.get(i), demand[i]));
+            offers = VillagerConversion.discount(live, villagerEntity, player);
+        }
         Inventory inv = new Inventory(InventoryType.MERCHANT, Component.text(cap(profession)));
         OPEN.put(player.getUuid(), inv);
         OPEN_OFFERS.put(player.getUuid(), offers);
+        // wandering traders have no entity (and don't restock); clear any stale villager binding
+        if (villagerEntity != null) OPEN_VILLAGER.put(player.getUuid(), villagerEntity);
+        else OPEN_VILLAGER.remove(player.getUuid());
+        OPEN_PROFESSION.put(player.getUuid(), profession);
         SELECTED.remove(player.getUuid());
+        SELECTED_INDEX.remove(player.getUuid());
         player.openInventory(inv);
-        List<TradeListPacket.Trade> trades = offers.stream().map(o -> new TradeListPacket.Trade(
-                new TradeListPacket.ItemCost(o.input1()),
-                o.result(),
-                o.input2().isAir() ? null : new TradeListPacket.ItemCost(o.input2()),
-                false, 0, 16, 1, 0, 0.0f, 0)).toList();
+        final int[] useCounts = uses;
+        List<TradeListPacket.Trade> trades = new java.util.ArrayList<>(offers.size());
+        for (int i = 0; i < offers.size(); i++) {
+            Offer o = offers.get(i);
+            int u = useCounts != null && i < useCounts.length ? useCounts[i] : 0;
+            trades.add(new TradeListPacket.Trade(
+                    new TradeListPacket.ItemCost(o.input1()),
+                    o.result(),
+                    o.input2().isAir() ? null : new TradeListPacket.ItemCost(o.input2()),
+                    u >= MAX_USES, u, MAX_USES, 1, 0, 0.0f, 0));
+        }
         player.sendPacket(new TradeListPacket(inv.getWindowId(), trades, 1, 0, true, false));
+    }
+
+    // ---- restock + demand machinery (Villager / MerchantOffer, decompiled) -------------
+
+    static int[] uses(Entity villager, String profession) {
+        int n = TABLES.getOrDefault(profession, TABLES.get("farmer")).size();
+        return USES.computeIfAbsent(villager.getEntityId(), id -> new int[n]);
+    }
+
+    static int[] demand(Entity villager, String profession) {
+        int n = TABLES.getOrDefault(profession, TABLES.get("farmer")).size();
+        return DEMAND.computeIfAbsent(villager.getEntityId(), id -> new int[n]);
+    }
+
+    /** MerchantOffer.getModifiedCostCount on baseCostA: base + max(0, floor(base*demand*mult)),
+     *  clamped to [1, maxStackSize]. Only the first buy-in item scales, as in vanilla. */
+    private static Offer demandAdjusted(Offer base, int demand) {
+        ItemStack in1 = base.input1();
+        if (in1.isAir() || demand <= 0) return base;
+        int basePrice = in1.amount();
+        int demandDiff = Math.max(0, (int) Math.floor(basePrice * (double) demand * PRICE_MULTIPLIER));
+        int count = Math.max(1, Math.min(basePrice + demandDiff, in1.material().maxStackSize()));
+        return count == basePrice ? base : new Offer(in1.withAmount(count), base.input2(), base.result());
+    }
+
+    /** MerchantOffer.updateDemand: demand += uses - (maxUses - uses), per offer. */
+    private static void updateDemand(int[] demand, int[] uses) {
+        for (int i = 0; i < demand.length && i < uses.length; i++) {
+            demand[i] = demand[i] + uses[i] - (MAX_USES - uses[i]);
+        }
+    }
+
+    /** MerchantOffer.needsRestock aggregated over the villager's offers (any use > 0). */
+    private static boolean needsToRestock(int[] uses) {
+        for (int u : uses) if (u > 0) return true;
+        return false;
+    }
+
+    /**
+     * Villager.shouldRestock + restock (decompiled): if a new day/half-day has passed, roll
+     * the restock counter over (catching up missed demand decay); then, if allowed
+     * ({@link #MAX_RESTOCKS_PER_DAY}/day, {@link #RESTOCK_COOLDOWN}-tick gap) and any offer
+     * has been used, recalculate demand and reset every offer's uses. Returns true iff a
+     * restock happened. {@code gameTime} is the monotonic instance world age.
+     */
+    public static boolean tryRestock(Entity villager, long gameTime) {
+        String profession = villager.getTag(PROFESSION);
+        if (profession == null) return false;
+        int[] uses = uses(villager, profession);
+        int[] demand = demand(villager, profession);
+        long lastRestock = villager.getTag(LAST_RESTOCK);
+        int restocksToday = villager.getTag(RESTOCKS_TODAY);
+        long lastDay = villager.getTag(LAST_RESTOCK_DAY);
+
+        long currentDay = Math.floorDiv(gameTime, 24000L);
+        boolean isNewDay = gameTime > lastRestock + 12000L;
+        isNewDay |= lastDay > 0 && currentDay > lastDay;
+        villager.setTag(LAST_RESTOCK_DAY, currentDay);
+        if (isNewDay) {
+            // Villager.resetNumberOfRestocks -> catchUpDemand: reset uses then decay demand
+            // once per missed restock, so an untraded villager's prices drift back down.
+            int missed = MAX_RESTOCKS_PER_DAY - restocksToday;
+            if (missed > 0) java.util.Arrays.fill(uses, 0);
+            for (int k = 0; k < missed; k++) updateDemand(demand, uses);
+            restocksToday = 0;
+            villager.setTag(RESTOCKS_TODAY, 0);
+            lastRestock = gameTime;
+            villager.setTag(LAST_RESTOCK, gameTime);
+        }
+
+        boolean allowed = restocksToday == 0
+                || restocksToday < MAX_RESTOCKS_PER_DAY && gameTime > lastRestock + RESTOCK_COOLDOWN;
+        if (!allowed || !needsToRestock(uses)) return false;
+
+        updateDemand(demand, uses);
+        java.util.Arrays.fill(uses, 0);
+        villager.setTag(LAST_RESTOCK, gameTime);
+        villager.setTag(RESTOCKS_TODAY, restocksToday + 1);
+        return true;
     }
 
     private static String cap(String s) {

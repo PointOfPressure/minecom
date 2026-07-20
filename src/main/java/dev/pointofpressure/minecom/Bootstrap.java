@@ -213,6 +213,7 @@ public final class Bootstrap {
         dev.pointofpressure.minecom.mobs.Shearing.register(events);
         dev.pointofpressure.minecom.mobs.Bartering.register(events);
         dev.pointofpressure.minecom.blocks.PumpkinCarving.register(events);
+        dev.pointofpressure.minecom.blocks.Golems.register(events);
         CopperWaxing.register(events);
         dev.pointofpressure.minecom.blocks.Harvesting.register(events);
         dev.pointofpressure.minecom.blocks.NoteBlocks.register(events);

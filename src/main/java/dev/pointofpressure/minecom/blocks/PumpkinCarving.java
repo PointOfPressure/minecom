@@ -48,6 +48,8 @@ public final class PumpkinCarving {
         seeds.setVelocity(new Vec(0.05 * stepX + random.nextDouble() * 0.02, 0.05, 0.05 * stepZ + random.nextDouble() * 0.02));
 
         instance.setBlock(pos, Block.CARVED_PUMPKIN.withProperty("facing", direction));
+        // carving a pumpkin atop a golem pattern spawns the golem too (CarvedPumpkinBlock.onPlace)
+        Golems.tryBuildGolem(instance, pos);
         player.setItemInHand(e.getHand(),
                 dev.pointofpressure.minecom.data.Items.damageItem(player, e.getItemStack(), 1));
     }

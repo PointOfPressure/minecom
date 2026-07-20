@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 1068; // 1030 + 8 gamerules + 7 end-ship elytra + 9 dragon respawn + 14 smithing
+    private static final int EXPECTED_CHECK_COUNT = 1081; // 1030 + 8 gamerules + 16 endgame + 14 smithing + 13 villager economy
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -235,6 +235,7 @@ public final class PlayTest {
         scenario("village: villager entity spawns and wanders", PlayTest::scenarioVillager);
         scenario("village: food economy gates breeding — tossed bread is picked up, eaten, and digested by breeding; farmers harvest and share", PlayTest::scenarioVillagerFood);
         scenario("village: a zombie-family kill converts a villager to a zombie villager (difficulty-scaled), and weakness+golden-apple cures it back with a trade discount", PlayTest::scenarioVillagerConversion);
+        scenario("village: villager restock — a sold-out trade restocks at its job site with demand pricing", PlayTest::scenarioVillagerRestock);
         scenario("raid: three escalating waves, clearing each advances, clearing all wins", PlayTest::scenarioRaid);
         scenario("stronghold: portal room builds, 12 eyes light the end_portal", PlayTest::scenarioStronghold);
         scenario("end portal frame comparator: signal 15 once it has its eye, 0 otherwise", PlayTest::scenarioEndPortalFrameComparator);
@@ -312,6 +313,8 @@ public final class PlayTest {
         scenario("ghast fireball: real damage + explosion on impact, deflectable by a melee hit", PlayTest::scenarioGhastFireball);
         scenario("iron golem: village defender attacks nearby hostile mobs, launches them upward", PlayTest::scenarioIronGolem);
         scenario("snow golem: fragile ranged defender, snowballs deal real damage only to blazes", PlayTest::scenarioSnowGolem);
+        scenario("iron golem: a village panic spawns a defender when 5 villagers agree", PlayTest::scenarioVillagePanicGolem);
+        scenario("golem construction: an iron/snow golem is built from blocks topped with a carved pumpkin", PlayTest::scenarioGolemBuild);
         scenario("boat: floats up to the water surface", PlayTest::scenarioBoat);
         scenario("boat: a rider takes no fall damage from the ride", PlayTest::scenarioBoatFallDamage);
         scenario("natural spawn: vanilla NaturalSpawner + parallel bench", PlayTest::scenarioNaturalSpawn);
@@ -4128,6 +4131,168 @@ public final class PlayTest {
                         && wi.getInventoryType() == net.minestom.server.inventory.InventoryType.MERCHANT);
         player.closeInventory();
         clearEntitiesExceptPlayer();
+    }
+
+    /**
+     * Trade restocking: a farmer's wheat->emerald offer sells out after MAX_USES trades, then
+     * restocks when the villager works at its job site (composter) during the day — resetting
+     * uses and bumping the buy-in via demand pricing (MerchantOffer.updateDemand /
+     * getModifiedCostCount, Villager.restock).
+     */
+    private static void scenarioVillagerRestock() {
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+        world.setTime(1000); // deterministic daytime game-time
+
+        world.setBlock(20, Y, 20, Block.COMPOSTER);
+        var farmer = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(20.5, Y + 1, 21.5));
+        dev.pointofpressure.minecom.mobs.VillagerTrades.assignProfession(farmer, world);
+        check("restock: a villager at a composter claims the farmer profession",
+                "farmer".equals(farmer.getTag(dev.pointofpressure.minecom.mobs.VillagerTrades.PROFESSION)));
+
+        int maxUses = dev.pointofpressure.minecom.mobs.VillagerTrades.MAX_USES;
+        player.getInventory().addItemStack(ItemStack.of(Material.WHEAT, 64).withAmount(64));
+        for (int i = 0; i < 7; i++) player.getInventory().addItemStack(ItemStack.of(Material.WHEAT, 64));
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, farmer, PlayerHand.MAIN, farmer.getPosition()));
+        tick(1);
+        var inv = player.getOpenInventory();
+        int emeraldsBefore = countMaterial(Material.EMERALD);
+        for (int i = 0; i < maxUses; i++) {
+            dev.pointofpressure.minecom.mobs.VillagerTrades.selectTrade(player, 0);
+            dev.pointofpressure.minecom.mobs.VillagerTrades.completeTrade(player);
+        }
+        check("restock: buying out the wheat trade yields exactly MAX_USES emeralds",
+                countMaterial(Material.EMERALD) - emeraldsBefore == maxUses);
+
+        // one more attempt: the trade is sold out, nothing changes
+        dev.pointofpressure.minecom.mobs.VillagerTrades.selectTrade(player, 0);
+        dev.pointofpressure.minecom.mobs.VillagerTrades.completeTrade(player);
+        check("restock: a sold-out trade gives nothing more and shows an empty result slot",
+                countMaterial(Material.EMERALD) - emeraldsBefore == maxUses
+                        && inv instanceof net.minestom.server.inventory.Inventory si && si.getItemStack(2).isAir());
+        player.closeInventory();
+
+        // working at the job site during the day restocks (uses reset, demand raises the price)
+        world.setTime(1000);
+        dev.pointofpressure.minecom.mobs.Villagers.restockSweep(world);
+
+        EventDispatcher.call(new net.minestom.server.event.player.PlayerEntityInteractEvent(
+                player, farmer, PlayerHand.MAIN, farmer.getPosition()));
+        tick(1);
+        var inv2 = player.getOpenInventory();
+        dev.pointofpressure.minecom.mobs.VillagerTrades.selectTrade(player, 0);
+        check("restock: the trade is available again after the villager works its job site",
+                inv2 instanceof net.minestom.server.inventory.Inventory ri && !ri.getItemStack(2).isAir());
+        check("restock: demand pricing raises the sold-out trade's buy-in (20 -> 36 wheat)",
+                inv2 instanceof net.minestom.server.inventory.Inventory di && di.getItemStack(0).amount() == 36);
+        int e1 = countMaterial(Material.EMERALD);
+        dev.pointofpressure.minecom.mobs.VillagerTrades.completeTrade(player);
+        check("restock: a restocked trade can be traded again", countMaterial(Material.EMERALD) == e1 + 1);
+        player.closeInventory();
+
+        world.setBlock(20, Y, 20, Block.AIR);
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    private static int countMaterial(Material material) {
+        int have = 0;
+        for (ItemStack s : player.getInventory().getItemStacks()) {
+            if (s.material() == material) have += s.amount();
+        }
+        return have;
+    }
+
+    private static int countEntities(EntityType type) {
+        return (int) world.getEntities().stream()
+                .filter(e -> e.getEntityType() == type && !e.isRemoved()).count();
+    }
+
+    /**
+     * Village iron-golem defense spawn (Villager.spawnGolemIfNeeded, decompiled): a cluster of
+     * 5 villagers that agree summons one iron golem; a second attempt is suppressed while a
+     * golem is nearby, and fewer than 5 villagers cannot summon one.
+     */
+    private static void scenarioVillagePanicGolem() {
+        clearEntitiesExceptPlayer();
+        world.setTime(1000);
+        var seed = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(30.5, Y + 1, 30.5));
+        for (int i = 1; i < 5; i++) {
+            dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(30.5 + i, Y + 1, 30.5));
+        }
+        tick(2);
+        int golemsBefore = countEntities(EntityType.IRON_GOLEM);
+        boolean spawned = dev.pointofpressure.minecom.mobs.Villagers.spawnGolemIfNeeded(seed, world, world.getTime());
+        tick(2);
+        check("iron golem: a cluster of 5 agreeing villagers spawns a defender",
+                spawned && countEntities(EntityType.IRON_GOLEM) == golemsBefore + 1);
+
+        boolean again = dev.pointofpressure.minecom.mobs.Villagers.spawnGolemIfNeeded(seed, world, world.getTime());
+        check("iron golem: no second golem spawns while one is already nearby",
+                !again && countEntities(EntityType.IRON_GOLEM) == golemsBefore + 1);
+
+        clearEntitiesExceptPlayer();
+        var a = dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(45.5, Y + 1, 45.5));
+        dev.pointofpressure.minecom.mobs.ai.VanillaMobs.villager(world, new Pos(46.5, Y + 1, 45.5));
+        tick(2);
+        boolean tooFew = dev.pointofpressure.minecom.mobs.Villagers.spawnGolemIfNeeded(a, world, world.getTime());
+        check("iron golem: fewer than 5 villagers cannot summon a golem",
+                !tooFew && countEntities(EntityType.IRON_GOLEM) == 0);
+
+        clearEntitiesExceptPlayer();
+        resetPlayer();
+    }
+
+    /**
+     * Player-built golems (CarvedPumpkinBlock.trySpawnGolem, decompiled): a carved pumpkin
+     * placed atop a T of 4 iron blocks builds an iron golem; atop 2 stacked snow blocks builds
+     * a snow golem. The pattern blocks are consumed. Drives the real PlayerBlockPlaceEvent path.
+     */
+    private static void scenarioGolemBuild() {
+        clearEntitiesExceptPlayer();
+
+        // iron golem: central column of 2 iron + two arms flanking the upper block, pumpkin on top
+        int ix = 50, iy = Y + 1, iz = 50;
+        world.setBlock(ix, iy, iz, Block.IRON_BLOCK);
+        world.setBlock(ix, iy + 1, iz, Block.IRON_BLOCK);
+        world.setBlock(ix + 1, iy + 1, iz, Block.IRON_BLOCK);
+        world.setBlock(ix - 1, iy + 1, iz, Block.IRON_BLOCK);
+        int ironBefore = countEntities(EntityType.IRON_GOLEM);
+        var pumpkinPos = new net.minestom.server.coordinate.BlockVec(ix, iy + 2, iz);
+        var ironPlace = new PlayerBlockPlaceEvent(player, world, Block.CARVED_PUMPKIN, BlockFace.TOP,
+                pumpkinPos, new Vec(0.5, 1.0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(ironPlace);
+        world.setBlock(pumpkinPos, ironPlace.getBlock());
+        tick(3); // the deferred (next-tick) pattern check runs
+        check("golem build: 4 iron blocks topped with a carved pumpkin build an iron golem",
+                countEntities(EntityType.IRON_GOLEM) == ironBefore + 1);
+        check("golem build: the iron pattern blocks are consumed",
+                world.getBlock(ix, iy + 2, iz).isAir() && world.getBlock(ix, iy + 1, iz).isAir()
+                        && world.getBlock(ix, iy, iz).isAir() && world.getBlock(ix + 1, iy + 1, iz).isAir());
+
+        // snow golem: pumpkin atop 2 stacked snow blocks
+        int sx = 60, sy = Y + 1, sz = 60;
+        world.setBlock(sx, sy, sz, Block.SNOW_BLOCK);
+        world.setBlock(sx, sy + 1, sz, Block.SNOW_BLOCK);
+        int snowBefore = countEntities(EntityType.SNOW_GOLEM);
+        var snowPumpkin = new net.minestom.server.coordinate.BlockVec(sx, sy + 2, sz);
+        var snowPlace = new PlayerBlockPlaceEvent(player, world, Block.CARVED_PUMPKIN, BlockFace.TOP,
+                snowPumpkin, new Vec(0.5, 1.0, 0.5), PlayerHand.MAIN);
+        EventDispatcher.call(snowPlace);
+        world.setBlock(snowPumpkin, snowPlace.getBlock());
+        tick(3);
+        check("golem build: 2 snow blocks topped with a carved pumpkin build a snow golem",
+                countEntities(EntityType.SNOW_GOLEM) == snowBefore + 1);
+        check("golem build: the snow pattern blocks are consumed",
+                world.getBlock(sx, sy + 2, sz).isAir() && world.getBlock(sx, sy + 1, sz).isAir()
+                        && world.getBlock(sx, sy, sz).isAir());
+
+        clearEntitiesExceptPlayer();
+        world.setBlock(ix, iy, iz, Block.AIR);
+        world.setBlock(sx, sy, sz, Block.AIR);
+        resetPlayer();
     }
 
     /**
