@@ -352,16 +352,16 @@ public final class VFeature {
     // ------------------------------------------------------------------ sculk
 
     /**
-     * Sculk generation is gated OFF by default. The VSculk port is a faithful
-     * reimplementation of SculkSpreader/SculkPatchFeature, but sculk is a STOCHASTIC,
-     * CROSS-CHUNK, order-dependent feature that spreads over the fully-placed world
-     * (structures + ores). Under this generator's per-chunk, base-terrain feature
-     * canvas the spread diverges enough to place net-harmful spurious sculk:
-     * measured -0.06% overall exact-match on the ancient_city box. Enable with
-     * -Dminecom.sculk=true once a persistent multi-chunk post-structure feature
-     * buffer exists (the true prerequisite for sculk parity).
+     * Sculk generation is ON by default since 2026-07-20: with the decompile-verified
+     * charge-cursor predicates (VSculk, vs SculkSpreader ground truth) and sculk_vein
+     * routed through the faithful multiface port, sculk-ON measures ABOVE sculk-OFF at
+     * r18 (99.396014% vs 99.393668%, seed 20260708) — the up-only ratchet rule flips
+     * the gate. Residual sculk churn (~64k over / ~54k under at r18) is the cursor's
+     * world-interaction reading a non-vanilla substrate from the feature canvas
+     * (structures/cross-chunk state) — see HANDOFF; that pass may lift this further.
+     * Disable diagnostically with -Dminecom.sculk=false.
      */
-    static final boolean SCULK_ENABLED = "true".equals(System.getProperty("minecom.sculk"));
+    static final boolean SCULK_ENABLED = !"false".equals(System.getProperty("minecom.sculk"));
     static final boolean VEIN_ENABLED = !"false".equals(System.getProperty("minecom.vein"));
 
     /** Adapter: VFeature.Canvas -> VSculk.World (null<->AIR conversion). */
