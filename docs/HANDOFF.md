@@ -14,6 +14,62 @@ of what got escalated and why.
 
 ---
 
+## Fragile-check backlog: crossbow piercing — NO REPRO under CONVENTIONS §10 contention, closed as such (2026-07-20, Sonnet 5, branch `crossbow-hardening`, worktree `~/minecom-crossbow`)
+
+Picked up the top of the fragile-check backlog (`docs/HANDOFF.md`'s "Fragile-check
+hardening: allay deposit + totem" entry lists crossbow piercing as a known member,
+last observed flaky in Tier 3 batch 2's full-suite reruns on 2026-07-17). Reproduced
+under the CONVENTIONS §10 method exactly (a `nice -n 0` busy loop pinned to one core,
+the suite itself at `nice -n 15`, `MINECOM_TEST_PORT=25575`):
+
+- **30/30 clean isolated runs** of `--playtest "crossbow"` under one-core contention
+  (`test-logs/crossbow_piercing_iso30_20260720-004410.log`) — `[crossbow] piercing
+  level 1 hits both the near and far target with one arrow` passed every time, no
+  variance in any of the section's 21 checks.
+- **1 full unfiltered `--playtest` run under the same contention**
+  (`test-logs/crossbow_fullsuite_contention_20260720-005433.log`, 1029/1030) — the
+  piercing check passed clean (line 99). The one failure in that run,
+  `[slime sizes] killing the size-2 tier yields size-1 children`, is unrelated (a
+  known stochastic-family check, not touched by this session, and this was under
+  deliberate one-core contention, not an idle-machine gate run) — **not chased**,
+  logged here as a load-observed item for the central idle-machine gate per rule 8,
+  same handling the coordinator directed.
+
+**Verified against the decompiled reference** (`vanilla-src/net/minecraft/world/
+entity/projectile/arrow/AbstractArrow.java`, cached 2026-07-17 — postdates the
+2026-07-13 26.2 bump, no re-decompile needed): real vanilla's piercing gate is
+`piercingIgnoreEntityIds.size() >= getPierceLevel() + 1` (an entity-ID set, arrow
+spent once it's hit `pierceLevel + 1` total targets). `Crossbow.java`/`Combat.java`'s
+port (a decrementing `PIERCE` tag, entity removed once the budget hits 0 after a
+hit) is behaviorally equivalent for pierce level 1: exactly 2 total hits, matching
+the scenario's near+far assertion. **No product bug found.**
+
+**Verdict: could not reproduce.** Two candidate explanations, neither confirmed
+(left for whoever picks this up if it fires again):
+1. The scenario's `waitFor`/`tick()` already count real server ticks, not wall
+   time (commit 3c2ba90, 2026-07-13, "PlayTest waits count real server ticks") —
+   this predates the 2026-07-17 flaky observation, so it did NOT fix whatever was
+   seen then, but it's possible the specific occurrences were never re-verified
+   after that refactor landed and were stale reports.
+2. The original 2026-07-17 sightings (Tier 3 batch 2 HANDOFF entry) explicitly
+   note the machine was NOT idle — "an active desktop session with several Brave
+   tabs + another Claude instance running... load average up to 4.85" (near
+   nproc=4, i.e. all cores contended, plus multi-process/GC pressure from a
+   second concurrent JVM) — meaningfully heavier and differently-shaped load than
+   a single `nice -n 0` busy loop stealing one of four cores. If this resurfaces,
+   try reproducing under multi-process contention (two concurrent playtest JVMs,
+   or `stress-ng --cpu 3`) rather than iterating further on single-core steal,
+   and arm a failure-only DIAG dump (mob positions/health, arrow alive-ticks,
+   tick count at each `ProjectileCollideWithEntityEvent`) before touching the
+   test's assertions — per rule 8, no code changed this session since nothing
+   reproduced to root-cause.
+
+No source changes. Branch `crossbow-hardening` carries only this HANDOFF entry
+and the two evidence logs (test-logs/ is intentionally tracked per `.gitignore`'s
+`!test-logs/*.log`). Cherry-pickable, not merged to `main`.
+
+---
+
 ## Persistent world-scan-order decoration buffer BUILT + MEASURED net-neutral — ties (a hair below) the window ratchet, does NOT unlock sculk; ratchet stands at 99.381792% (2026-07-20, Opus 4.8) — DONE (negative result)
 
 Picked up the named "true fix" from AUDIT ROOT #1 / the deco-radius entry below: replace

@@ -1,0 +1,1260 @@
+00:54:38 [INFO] ServerProcessImpl: Starting Minestom (2026.07.12-26.2) server.
+00:54:38 [INFO] ServerProcessImpl: Running in offline mode. Beware that this is not secure and players can impersonate each other.
+00:54:38 [INFO] ServerProcessImpl: Minestom server started successfully.
+[playtest] join
+PASS [join] join: in world, survival, full stats
+[playtest] break+drops+durability
+PASS [break+drops+durability] stone + pickaxe drops cobblestone item entity
+PASS [break+drops+durability] pickaxe took 1 durability
+[playtest] tool gating
+PASS [tool gating] diamond ore + bare hand drops nothing
+[playtest] ore xp
+PASS [ore xp] diamond ore -> diamond + xp orb
+[playtest] item pickup
+PASS [item pickup] dropped stack picked up into inventory
+[playtest] 2x2 crafting via clicks
+PASS [2x2 crafting via clicks] log in 2x2 -> click result -> cursor holds 4 planks
+PASS [2x2 crafting via clicks] grid consumed (slot now: air x0)
+[playtest] crafting table via interact
+PASS [crafting table via interact] crafting table opens window
+PASS [crafting table via interact] 2 planks vertical in table -> 4 sticks on cursor
+PASS [crafting table via interact] table grid consumed
+[playtest] furnace smelts + lit + xp
+PASS [furnace smelts + lit + xp] furnace opens window
+PASS [furnace smelts + lit + xp] furnace lights up
+PASS [furnace smelts + lit + xp] raw iron smelted to ingots
+PASS [furnace smelts + lit + xp] taking smelt output grants xp
+[playtest] blast furnace and smoker: real halved cook times, actually functional
+PASS [blast furnace and smoker] blasting recipe data has the real halved cookingtime baked in (raw_iron: got 100)
+PASS [blast furnace and smoker] smoking recipe data has the real halved cookingtime baked in (beef: got 100)
+PASS [blast furnace and smoker] blast furnace opens its own window
+PASS [blast furnace and smoker] blast furnace smelts raw iron to an ingot
+PASS [blast furnace and smoker] smoker opens its own window
+PASS [blast furnace and smoker] smoker cooks raw beef
+[playtest] eating
+PASS [eating] cooked beef: 10 -> 18 food, saturation gained, item consumed
+[playtest] fall damage
+PASS [fall damage] 14-block fall deals ~11 damage (got 11.0)
+[playtest] armor reduction + durability
+PASS [armor reduction + durability] zombie hits for 3 unarmored (got 3.0)
+PASS [armor reduction + durability] diamond chestplate reduces damage (got 2.184)
+PASS [armor reduction + durability] chestplate took durability
+[playtest] mob drops + xp orbs
+PASS [mob drops + xp orbs] 6 zombie kills -> rotten flesh dropped (got 6) + xp orbs
+[playtest] mob xp: baby zombie 2.5x, blaze/husk now drop xp
+PASS [mob xp] baby zombie drops 2.5x xp (5 -> 12)
+PASS [mob xp] blaze (previously-uncovered) now drops xp on death
+[playtest] enchant: feather falling + fire/blast/projectile protection
+PASS [enchant] feather falling IV cuts the ~11-damage fall (got 5.7199993)
+PASS [enchant] fire protection IV reduces fire-tagged damage specifically (8.4 -> 5.712)
+[playtest] elytra: deploy gating, durability wear, firework boost, fall-distance capping while gliding
+PASS [elytra] starting elytra flight without one equipped is reverted
+PASS [elytra] starting elytra flight while standing on the ground is reverted
+PASS [elytra] a real elytra equipped, airborne, sticks
+PASS [elytra] gliding wears elytra durability over time (25 ticks, got damage=1)
+PASS [elytra] using a firework rocket while gliding boosts velocity (before=0.0, after=1.950590695789355)
+PASS [elytra] the firework rocket is consumed
+PASS [elytra] leveling out on an elytra glide caps fall distance so a 30-block drop doesn't hurt (got 0.0)
+PASS [elytra] the same drop without gliding at all still deals real fall damage (got 20.0)
+[playtest] enchant: thorns reflects damage onto the attacker
+PASS [enchant] thorns III reflects damage back onto the attacker
+[playtest] enchant: mending repairs the held item using xp
+PASS [enchant] experience orb is auto-collected by the player
+PASS [enchant] mending repairs the held item 2 durability/xp instead of leveling up (damage 100 -> 80, xp 0 -> 0)
+[playtest] combat: sword sweep attack grazes nearby entities; sweeping edge boosts it
+PASS [combat] sweep attack grazes a nearby entity for exactly the base 1.0 (got 1.0)
+PASS [combat] sweeping edge III boosts the sweep damage to exactly 5.5 (1.0 -> 5.5)
+[playtest] combat: attack-cooldown model — charge scales damage quadratically, sprint+full-charge adds knockback, full recharge after the weapon's delay
+PASS [combat] a full-charge iron sword hit deals the real 6 damage (got 6.0)
+PASS [combat] re-swinging with (almost) no recharge deals well under half the full-charge damage (got 1.2691193, full=6.0)
+PASS [combat] after the real ~12.5-tick recharge delay, damage returns to full (got 6.0)
+PASS [combat] a sprinting full-charge hit adds real extra knockback over a standing hit (sprint=13.661686658859253, standing=7.806678295135498)
+[playtest] snow: layers accumulate on exposed ground up to 8, not on liquid
+PASS [snow] snow: builds up to the 8-layer cap (got 8)
+PASS [snow] snow: does not accumulate on liquid
+PASS [snow] snow: melts back down to nothing, one layer at a time
+[playtest] drowning: air drains underwater, refills on surfacing, damages when depleted
+PASS [drowning] air drains while the eyes are submerged (got 290/300)
+PASS [drowning] air refills once surfaced (got 300/300)
+PASS [drowning] drowning deals damage once air is depleted
+PASS [drowning] water breathing bypasses drowning entirely
+[playtest] wither skeleton: melee hit inflicts the Wither effect
+PASS [wither skeleton] wither skeleton melee hit applies the Wither effect
+[playtest] skeleton bow + arrows
+PASS [skeleton bow + arrows] skeleton holds a bow
+PASS [skeleton bow + arrows] skeleton shoots real arrows at player 8 blocks away
+[playtest] player bow: draw-charge fires an arrow, consumes ammo, power/punch/flame apply
+PASS [player bow] a fully-drawn bow fires a real arrow
+PASS [player bow] shooting consumes one arrow from inventory (5 -> 4)
+PASS [player bow] a too-short draw fires nothing (arrows still 9)
+[playtest] bow/crossbow: an arrow held in the offhand is found and consumed before the inventory
+PASS [bow/crossbow] a bow fires using an arrow held only in the offhand
+PASS [bow/crossbow] firing consumes the offhand arrow (3 -> 2)
+[playtest] crossbow: load-then-fire, multishot triples arrows, piercing passes through
+PASS [crossbow] completing the load consumes one arrow and marks the crossbow charged
+PASS [crossbow] firing a charged crossbow launches a real arrow
+PASS [crossbow] firing clears the charged flag
+PASS [crossbow] releasing early loads nothing (arrows still 4)
+PASS [crossbow] multishot fires 3 arrows (got 3) for the cost of 1 (4 -> 3)
+PASS [crossbow] piercing level 1 hits both the near and far target with one arrow
+[playtest] tipped/spectral arrows: bow and crossbow can fire either, potion/glowing applies on hit
+PASS [tipped/spectral arrows] a bow can fire a tipped arrow, consuming it like any other (5 -> 4)
+PASS [tipped/spectral arrows] the tipped arrow's carried potion (slowness) applies on hit
+PASS [tipped/spectral arrows] a bow can fire a spectral arrow as its own real entity type
+PASS [tipped/spectral arrows] a spectral arrow grants Glowing on hit
+PASS [tipped/spectral arrows] a plain arrow still fires normally
+PASS [tipped/spectral arrows] a plain arrow still applies no potion/glowing effect
+PASS [tipped/spectral arrows] a crossbow can load and fire a tipped arrow
+PASS [tipped/spectral arrows] the potion survives riding the crossbow's tags from load() to shoot()
+PASS [tipped/spectral arrows] crafting_imbue: 8 arrows + a lingering potion (center) yields 8 tipped arrows carrying the potion's effect
+PASS [tipped/spectral arrows] crafting_imbue rejects a non-material item in a surrounding cell
+PASS [tipped/spectral arrows] crafting_imbue never matches the player's 2x2 grid (real recipe needs a full 3x3)
+[playtest] trident: melee + throw, riptide launches instead on wet ground, loyalty returns, impaling vs aquatic
+PASS [trident] trident melee hit deals ~8 damage from its real attribute component (took 9.0)
+PASS [trident] a held-then-released trident launches a real projectile
+PASS [trident] throwing empties the hand
+PASS [trident] a too-short hold throws nothing (trident still in hand)
+PASS [trident] riptide in water launches the player instead of throwing (velocity delta 32.76000130176544)
+PASS [trident] riptide keeps the trident in hand (not thrown)
+PASS [trident] riptide on dry land does nothing (no push, trident still in hand)
+PASS [trident] impaling V connects on an aquatic target with a large bonus (hit=true, healthBefore=3.0, healthAfter=0.0, dead=true)
+PASS [trident] the thrown item actually carries Loyalty III (got level 3)
+PASS [trident] loyalty-enchanted throw connects with the target (hit=true)
+PASS [trident] loyalty returns the thrown trident to the owner's inventory (free slots at throw time=45)
+[playtest] channeling: thunderstorm melee/throw strikes lightning, clear weather doesn't
+PASS [channeling] a direct lightning strike damages a nearby entity
+PASS [channeling] a lightning-struck villager converts directly to a witch
+PASS [channeling] lightning redirects to a nearby sky-exposed entity instead of just the ground
+PASS [channeling] channeling melee hit during a thunderstorm summons a lightning bolt
+PASS [channeling] channeling melee hit under clear weather summons nothing
+[playtest] water spread + decay
+PASS [water spread + decay] one source spreads to vanilla diamond of 113 (got 113)
+PASS [water spread + decay] scooping the source decays all water (got 0)
+[playtest] fluids: sideways spread weights toward the nearest hole, not evenly
+PASS [fluids] nearest-hole weighting: spreads toward the closer hole (east, 2 away)
+PASS [fluids] nearest-hole weighting: the farther hole's side (west, 4 away) gets nothing this step
+PASS [fluids] nearest-hole weighting: perpendicular directions (no nearby hole) get nothing either
+[playtest] bucket place
+PASS [bucket place] water bucket places source + returns empty bucket
+[playtest] farming full cycle + sapling/grass bonemeal
+PASS [farming full cycle + sapling/grass bonemeal] hoe tills grass to farmland
+PASS [farming full cycle + sapling/grass bonemeal] seeds plant wheat age 0
+PASS [farming full cycle + sapling/grass bonemeal] bone meal advances growth (age 3)
+PASS [farming full cycle + sapling/grass bonemeal] ripe wheat drops wheat
+PASS [farming full cycle + sapling/grass bonemeal] bone meal on a stage-0 sapling only advances it to stage 1, doesn't grow a tree
+PASS [farming full cycle + sapling/grass bonemeal] a second bone meal application on a stage-1 sapling grows an actual tree
+PASS [farming full cycle + sapling/grass bonemeal] bone meal on a grass block scatters a burst of short_grass nearby (18 placed)
+[playtest] door placement + toggle
+PASS [door placement + toggle] door placement creates upper half
+PASS [door placement + toggle] door toggles open (both halves)
+[playtest] bed sleep skips night
+PASS [bed sleep skips night] sleeping at night skips to morning (time 1)
+PASS [bed sleep skips night] bed sets respawn point
+PASS [bed sleep skips night] plain daytime rain does NOT let you sleep (real vanilla requires thundering specifically)
+PASS [bed sleep skips night] a real thunderstorm DOES let you sleep during the day (advanced 23000 ticks)
+PASS [bed sleep skips night] sleeping in the Nether explodes the FOOT half
+PASS [bed sleep skips night] sleeping in the Nether also explodes the paired HEAD half
+[playtest] death drops + respawn
+PASS [death drops + respawn] death drops inventory
+PASS [death drops + respawn] respawn restores health and hunger
+[playtest] combat: killed mobs sometimes drop their worn equipment
+PASS [combat] killed mobs sometimes drop their worn equipment (8.5%/kill; 4/60 kills dropped a helmet)
+[playtest] combat: a tamed wolf's kill credits its owner, and a player's hit still credits a kill finished by something else within 100 ticks (but not after)
+PASS [combat] a tamed wolf's own kill credits its owner for equipment drops (8.5%/kill; 3/60)
+PASS [combat] a player's non-lethal hit still credits a kill finished by fire shortly after (8.5%/kill; 7/60)
+PASS [combat] the credit expires after 100 ticks — a kill finished by fire that long after the player's hit drops nothing (0/40)
+[playtest] redstone: lever-wire-lamp + decay
+PASS [redstone] lever through 3 wire lights lamp
+PASS [redstone] wire decays 15,14,13 (got 15,14,13)
+PASS [redstone] lever off darkens lamp
+[playtest] trapped chest: opening/closing directly powers redstone, still comparator-readable for fullness
+PASS [trapped chest] trapped chest: unpowered while nobody has it open
+PASS [trapped chest] trapped chest: right-clicking opens a 27-slot inventory
+PASS [trapped chest] trapped chest: opening it powers the wire and lights the lamp with no comparator
+PASS [trapped chest] trapped chest: closing it de-powers the wire again
+PASS [trapped chest] trapped chest: still comparator-readable for item fullness like a plain chest
+[playtest] double chest: placing a matching chest alongside merges into one shared 54-slot inventory
+PASS [double chest] a lone placed chest starts single
+PASS [double chest] placing a matching chest alongside it merges both into a left/right pair
+PASS [double chest] opening either half opens one merged 54-slot inventory
+PASS [double chest] both halves resolve to the exact same shared inventory instance
+PASS [double chest] breaking one half resets the surviving half back to a single chest
+PASS [double chest] breaking either half spills the whole merged inventory's contents
+[playtest] cauldron: bucket/bottle fills and empties across water/lava/powder_snow states, lava fizzles under water
+PASS [cauldron] water bucket on an empty cauldron fills it to level 3
+PASS [cauldron] the water bucket returns as an empty bucket
+PASS [cauldron] comparator reads a full water cauldron's raw level (3, not scaled)
+PASS [cauldron] a glass bottle collects a water potion and drops the level to 2
+PASS [cauldron] an empty bucket refuses a non-full (level 2) water cauldron
+PASS [cauldron] emptying a water bottle back in bumps the level up to 3
+PASS [cauldron] an empty bucket collects a full (level 3) water cauldron back to plain empty
+PASS [cauldron] pouring lava fizzles with water directly above the cauldron
+PASS [cauldron] lava bucket on an empty cauldron (nothing above) fills it with lava
+PASS [cauldron] a lava cauldron always reads a comparator signal of 3 (no level property)
+PASS [cauldron] an empty bucket collects a lava cauldron regardless of level (it has none)
+PASS [cauldron] powder snow bucket fills an empty cauldron to level 3
+PASS [cauldron] empty bucket collects the full powder snow cauldron
+[playtest] bell: right-click, a redstone rising edge, and an arrow hit all ring it
+PASS [bell] right-clicking a bell rings it
+PASS [bell] a lever powering the bell rings it once on the rising edge
+PASS [bell] holding the redstone signal doesn't ring it again
+PASS [bell] shooting an arrow at a bell rings it
+[playtest] shulker box: contents travel with the dropped item and survive a break-and-replace round trip
+PASS [shulker box] a plain shulker_box item places as an empty shulker box
+PASS [shulker box] opening it gives a 27-slot inventory
+PASS [shulker box] a non-empty shulker box is comparator-readable for fullness
+PASS [shulker box] breaking a non-empty shulker box drops an item carrying its contents
+PASS [shulker box] re-placing that dropped item hydrates the same contents back
+PASS [shulker box] breaking an empty shulker box drops a plain item with no contents component
+[playtest] redstone: 16th block signal dies
+PASS [redstone] 15th wire has power 1, 16th has 0 (got 1,0)
+PASS [redstone] lamp beyond 15 blocks stays dark
+[playtest] redstone: torch inversion
+PASS [redstone] torch starts lit
+PASS [redstone] powering its block turns the torch off
+PASS [redstone] unpowering turns the torch back on
+[playtest] redstone: repeater delay
+PASS [redstone] repeater delays then powers lamp (early=false)
+[playtest] redstone: piston push + sticky pull
+PASS [redstone] sticky piston pushes gold block
+PASS [redstone] sticky piston pulls it back
+[playtest] redstone: quasi-connectivity BUD
+PASS [redstone] QC-powered piston stays retracted without an update (BUD)
+PASS [redstone] block update makes the QC piston extend
+[playtest] redstone: piston slime T-branch push + full pull-back
+PASS [redstone] slime T-structure pushes as one unit (perpendicular branches)
+PASS [redstone] sticky retraction pulls the whole T back (back-pull through slime)
+[playtest] redstone: piston honey-slime boundary + glazed terracotta
+PASS [redstone] honey above slime is NOT dragged (honey-slime never stick)
+PASS [redstone] slime pulls back alone, honey untouched
+PASS [redstone] glazed terracotta above slime is not dragged (push-only)
+[playtest] redstone: piston 12-limit on branched slime column
+PASS [redstone] 13-block slime column exceeds the push limit, piston stays retracted
+PASS [redstone] exactly 12 branched blocks push fine (whole column moves)
+[playtest] redstone: copper bulb toggles on rising edges only
+PASS [redstone] copper bulb lights on the first rising edge
+PASS [redstone] copper bulb stays lit when power is removed
+PASS [redstone] second rising edge turns the bulb off
+[playtest] redstone: weighted plates emit analog entity counts
+PASS [redstone] gold plate reads 3 entities as power 3
+PASS [redstone] iron plate reads 3 entities as power 1 (ceil(3/150*15))
+PASS [redstone] weighted plates fall back to 0 when entities leave
+[playtest] redstone: lightning rod redirects strikes and pulses
+PASS [redstone] nearby strike redirects to the rod and powers it
+PASS [redstone] rod pulse ends after 8gt
+[playtest] redstone: crafter auto-crafts on a pulse
+PASS [redstone] pulse sets the crafter triggered
+PASS [redstone] crafter ejects a crafting table out its east face
+PASS [redstone] each grid slot consumed one ingredient
+[playtest] redstone: sculk sensor hears a note block, wool blocks it
+PASS [redstone] sensor activates from a note block 4 blocks away with distance power
+PASS [redstone] sensor returns to inactive through the cooldown phase
+PASS [redstone] wool on the path keeps the sensor silent
+[playtest] vibrations: a sensor hears container open/close, door open, eating, and drinking
+PASS [vibrations] a sensor hears a chest being opened 4 blocks away
+PASS [vibrations] a sensor also hears that chest closing again
+PASS [vibrations] a sensor hears a door opening 4 blocks away
+PASS [vibrations] a sensor hears the player eating 4 blocks away
+PASS [vibrations] a sensor hears the player drinking a potion 4 blocks away
+[playtest] redstone: calibrated sculk sensor filters frequencies
+PASS [redstone] calibrated sensor with no filter hears the note (radius-16 power)
+PASS [redstone] calibrated sensor recovers (10gt active + 10gt cooldown)
+PASS [redstone] filter 15 rejects the frequency-10 note vibration
+[playtest] redstone: dispenser spawn egg + minecart placement
+PASS [redstone] dispensed spawn egg places a pig in front
+PASS [redstone] spawn egg was consumed
+PASS [redstone] dispensed minecart lands on the rail in front
+[playtest] redstone: powered rails carry power 8 rails down the line
+PASS [redstone] power reaches the 8th rail down the line
+PASS [redstone] the 9th rail stays unpowered
+PASS [redstone] removing the source darkens the whole line
+[playtest] thrown potions: splash scales with distance, lingering leaves a cloud
+PASS [thrown potions] splash poison hits the pig next to the impact
+PASS [thrown potions] lingering impact leaves an area effect cloud
+PASS [thrown potions] a pig walking into the cloud gets the 1/4-duration effect
+[playtest] ender pearl: throw teleports the thrower with armor-bypassing damage, resets fall tracking, and rolls an endermite spawn
+PASS [ender pearl] throwing an ender pearl spawns a real projectile and consumes one from the stack
+PASS [ender pearl] landing teleports the thrower to the impact point (pos=Pos[x=304.5, y=41.0, z=300.5, yaw=30.0, pitch=0.0])
+PASS [ender pearl] the teleport keeps the player's own look direction instead of resetting it
+PASS [ender pearl] landing deals 5 damage that bypasses armor (diamond chestplate worn; hp=15.0)
+PASS [ender pearl] the spent pearl projectile is removed
+PASS [ender pearl] landing resets fall-distance tracking (no extra fall damage on the next ground contact at the new, lower position; hp stayed 15.0 -> 15.0)
+PASS [ender pearl] hitting an entity lands the pearl the same way as hitting a block (teleported to Pos[x=304.5, y=41.0, z=301.5, yaw=0.0, pitch=0.0], pos=Pos[x=304.5, y=41.0, z=301.5, yaw=0.0, pitch=0.0])
+PASS [ender pearl] creative mode doesn't consume the thrown pearl
+PASS [ender pearl] landing rolls a real endermite spawn roughly 5% of the time (4/110)
+[playtest] sculk shrieker: player vibration shrieks + darkness
+PASS [sculk shrieker] player step vibration makes the shrieker shriek
+PASS [sculk shrieker] shrieking state clears after 90gt
+PASS [sculk shrieker] finished warning shriek applies Darkness to the nearby player
+[playtest] warden: warning 4 summons it out of the ground; anger, roar, sonic boom, dig-despawn
+PASS [warden] warning-3 player's vibration shrieks the can_summon shrieker
+PASS [warden] warning level 4 summons a warden near the shrieker
+PASS [warden] summoned warden burrows up in the emerging pose
+PASS [warden] summoning shriek applies Darkness to the causing player
+PASS [warden] warden finishes emerging and stands
+PASS [warden] hurting the warden angers it past the ANGRY threshold (80)
+PASS [warden] warden roars, then locks the attacker as its fight target
+PASS [warden] unreachable perch: the sonic boom lands 10 damage through the air gap
+PASS [warden] a calm warden digs back down and despawns
+[playtest] persistence: region-shard save/wipe/reload round-trips chests (with NBT), hoppers, mobs, inhabited time, a live sensor, the small-block-entity tail (campfire/jukebox/lectern/pot/bookshelf/shulker), per-mob extras (sheep color/sheared, breeding cooldown, baby state, slime size), item frames + armor stands (flags/pose/equipment), and fire's own scheduled-tick countdown
+PASS [persistence] wipe empties the chest registry
+PASS [persistence] wipe also drops fire's own scheduled-tick tracking
+00:57:18 [INFO] RegionStore: Restored 25 block-entity entries, 5 mobs, 2 item frames/armor stands from region shards
+PASS [persistence] fire's scheduled tick is re-armed after reload
+PASS [persistence] chest inventory returns from the region shard
+PASS [persistence] item NBT (custom name) survives the round trip
+PASS [persistence] hopper contents return (17 cobblestone)
+PASS [persistence] mob snapshot respawns the zombie with its health
+PASS [persistence] sheep color + sheared state survive the round trip
+PASS [persistence] breeding cooldown survives the round trip
+PASS [persistence] baby state survives the round trip
+PASS [persistence] slime size survives the round trip (spawns via the sized factory, not a fresh roll)
+PASS [persistence] chunk inhabited time survives
+PASS [persistence] restored sculk sensor still activates on a vibration
+PASS [persistence] campfire's cooking item survives the round trip
+PASS [persistence] jukebox disc survives the round trip (comparator output back)
+PASS [persistence] lectern book + page state survives the round trip
+PASS [persistence] decorated pot contents survive the round trip
+PASS [persistence] chiseled bookshelf slot state survives the round trip
+PASS [persistence] shulker box contents survive the round trip
+PASS [persistence] item frame's held item + rotation survive the round trip
+PASS [persistence] armor stand flags/pose/equipment survive the round trip
+[playtest] random ticks: grass spread/death, ice melt, cane growth via live dispatch, copper oxidation, farmland moisture, amethyst buds, bamboo growth, vine spread, crop growth, sapling growth
+PASS [random ticks] random tick: grass spreads to adjacent dirt in daylight
+PASS [random ticks] random tick: smothered grass dies back to dirt
+PASS [random ticks] random tick: ice melts to water at block light > 11
+PASS [random ticks] random tick engine: age-15 sugar cane grows via the live dispatch
+PASS [random ticks] random tick: copper block weathers to exposed_copper
+PASS [random ticks] random tick: dry farmland loses moisture
+PASS [random ticks] random tick: bare dry farmland reverts to dirt
+PASS [random ticks] random tick: budding amethyst sprouts a small bud
+PASS [random ticks] random tick: a bamboo stalk grows a new segment directly above
+PASS [random ticks] the new segment carries small leaves (first crown above a lone stalk)
+PASS [random ticks] random tick: a height-15 tip always finishes growing
+PASS [random ticks] the height-16 cap segment is marked done growing
+PASS [random ticks] random tick: a vine wraps a corner onto a continuing wall
+PASS [random ticks] random tick: a fully-wrapped vine copies faces onto the block below
+PASS [random ticks] random tick: a vine attaches an up face against a solid ceiling
+PASS [random ticks] random tick: a crop below light 9 never grows
+PASS [random ticks] random tick: wheat on unmoistened farmland grows (growth speed 2.0 branch)
+PASS [random ticks] random tick: wheat on moistened farmland grows (growth speed 4.0 branch)
+PASS [random ticks] random tick: beetroots stop at their own maxAge (3, not wheat's 7)
+PASS [random ticks] random tick: a sapling's first successful roll only advances to stage 1
+PASS [random ticks] random tick: a stage-1 sapling's second successful roll grows an actual tree
+PASS [random ticks] random tick: a sapling below light 9 never advances
+[playtest] creaking: night heart wakes + spawns the protector, gaze freezes it, damage redirects into resin, breaking the heart tears it down
+PASS [creaking] night heart with matching logs wakes up
+PASS [creaking] awake heart spawns a creaking protector near a player
+PASS [creaking] comparator reads a distance-scaled signal while linked
+PASS [creaking] a watched creaking freezes in place
+PASS [creaking] hitting a heart-bound creaking never kills it (damage redirects to the heart)
+PASS [creaking] the hurt call grows resin clumps on the pale-oak trunk
+PASS [creaking] looking away unfreezes it
+PASS [creaking] destroying the heart tears the creaking down
+[playtest] happy ghast: harness equips + mounts, rider input flies it, sneak dismounts
+PASS [happy ghast] a harness right-clicked onto the ghast equips its body slot
+PASS [happy ghast] the harness leaves the survival player's hand
+PASS [happy ghast] right-clicking the harnessed ghast mounts the player
+PASS [happy ghast] holding forward flies the mounted ghast (moved 65.3)
+PASS [happy ghast] sneaking dismounts the rider
+[playtest] silverfish: infested-block ambush, silk-touch bypass, wake-up-friends, merge-into-stone
+PASS [silverfish] silverfish spawns with real vanilla stats (8 HP, 1 attack damage)
+PASS [silverfish] mining infested stone without silk touch springs a silverfish ambush
+PASS [silverfish] the infested block drops no item without silk touch
+PASS [silverfish] silk touch takes the host block item instead
+PASS [silverfish] silk touch never springs the ambush
+PASS [silverfish] a hurt silverfish wakes friends out of nearby infested blocks (~1s delay)
+PASS [silverfish] each destroyed infested block released a fresh silverfish
+PASS [silverfish] an idle silverfish merges into adjacent stone (mob discarded)
+PASS [silverfish] the merged wall block became its infested variant
+[playtest] taming: wolf bone-taming + health boost + sit/collar/feed + owner-defense, cat fish-taming, despawn persistence
+PASS [taming] a freshly spawned wolf starts untamed
+PASS [taming] a wild wolf starts at 8 health
+PASS [taming] feeding bones tames a wolf on a 1-in-3 roll (retried up to 30x)
+PASS [taming] taming sets the player as owner
+PASS [taming] taming jumps a wolf's max health from 8 to 40
+PASS [taming] a freshly tamed wolf starts sitting
+PASS [taming] an empty-hand right-click toggles a tamed wolf's sit off
+PASS [taming] feeding a hurt tamed wolf heals it (now 36.0)
+PASS [taming] dyeing a tamed wolf's collar changes its color
+PASS [taming] an unsat tamed wolf follows its distant owner
+PASS [taming] a tamed wolf targets whatever its owner just attacked
+PASS [taming] a tamed wolf retaliates against whatever hurt its owner
+PASS [taming] a tamed wolf survives the despawn sweep far from every player
+PASS [taming] a freshly spawned cat starts untamed
+PASS [taming] cats have no attack goal (0 attack damage, unlike wolves)
+PASS [taming] feeding raw fish tames a cat on a 1-in-3 roll (retried up to 30x)
+PASS [taming] cat taming does not change its max health (stays 10, unlike wolves)
+PASS [taming] an empty-hand right-click toggles a tamed cat's sit off
+[playtest] riding: horse taming-by-riding, saddle, player-steered movement + jump, donkey chest cargo, horse x donkey -> mule breeding with attribute inheritance
+PASS [riding] a freshly spawned horse starts untamed
+PASS [riding] a wild horse's max health lands in vanilla's [15,30] roll (got 27.0)
+PASS [riding] an empty-hand right-click mounts an untamed horse
+PASS [riding] a temper-100 roll always tames (100 never rolls under nextInt(100))
+PASS [riding] taming sets the rider as owner
+PASS [riding] taming doesn't eject the rider on success
+PASS [riding] sneaking dismounts a ridden horse
+PASS [riding] a saddle right-clicked onto a tamed horse equips it
+PASS [riding] the saddle leaves the survival player's hand
+PASS [riding] right-clicking a tamed saddled horse mounts it
+PASS [riding] holding forward steers the mounted horse (moved 13.0)
+PASS [riding] a jump tap gives the horse upward velocity (resting -1.568, peak 7.603822685357051)
+PASS [riding] sneaking dismounts the tamed rider
+PASS [riding] the donkey tamed too
+PASS [riding] a chest right-clicked onto a tamed donkey equips it
+PASS [riding] sneak right-clicking a chested tamed donkey opens its cargo inventory
+PASS [riding] a golden-carrot-fed tamed horse + donkey breed a mule
+PASS [riding] the mule foal is a baby
+PASS [riding] the mule foal is already tamed (inherits ownership)
+PASS [riding] the foal's jump strength is inherited from its parents, not copied wholesale (parents 0.7272776936776477/0.5, foal 0.6402309095587001)
+[playtest] leads + name tags + pig/strider saddles: attach/detach, fence knot, pull/break distance, name-tag persistence, forward-steered saddle riding with a boost
+PASS [leads + name tags + pig/strider saddles] a lead right-clicked onto an unleashed animal attaches it
+PASS [leads + name tags + pig/strider saddles] the lead leaves the survival player's hand
+PASS [leads + name tags + pig/strider saddles] an empty-hand right-click detaches a leashed animal
+PASS [leads + name tags + pig/strider saddles] detaching drops a lead item
+PASS [leads + name tags + pig/strider saddles] right-clicking a fence with a leashed animal nearby spawns a leash knot
+PASS [leads + name tags + pig/strider saddles] the animal stays leashed after re-homing onto the knot
+PASS [leads + name tags + pig/strider saddles] a leashed animal past 12 blocks gets pulled toward its holder
+PASS [leads + name tags + pig/strider saddles] a leashed animal past 16 blocks snaps free
+PASS [leads + name tags + pig/strider saddles] a named name tag applies its custom name to the target
+PASS [leads + name tags + pig/strider saddles] the target's custom name becomes visible
+PASS [leads + name tags + pig/strider saddles] naming marks the target persistent
+PASS [leads + name tags + pig/strider saddles] the name tag leaves the survival player's hand
+PASS [leads + name tags + pig/strider saddles] a named mob survives the despawn sweep far from every player
+PASS [leads + name tags + pig/strider saddles] an unnamed name tag does nothing
+PASS [leads + name tags + pig/strider saddles] a saddle right-clicked onto a pig equips it (no taming needed)
+PASS [leads + name tags + pig/strider saddles] right-clicking a saddled pig mounts it
+PASS [leads + name tags + pig/strider saddles] a mounted saddled pig walks forward on its own, steered by where the rider looks (moved 2.4)
+PASS [leads + name tags + pig/strider saddles] a forced boost window moves the pig further than its unboosted pace over an equal window (unboosted 2.42/20t, boosted 4.19/20t)
+PASS [leads + name tags + pig/strider saddles] a carrot-on-a-stick right-click while riding damages the stick by 1 (armed the boost)
+PASS [leads + name tags + pig/strider saddles] boosting again mid-boost doesn't restack (no second durability hit)
+PASS [leads + name tags + pig/strider saddles] sneaking dismounts a ridden pig
+PASS [leads + name tags + pig/strider saddles] a saddled strider can be mounted the same way as a pig
+PASS [leads + name tags + pig/strider saddles] sneaking dismounts a ridden strider
+[playtest] slime sizes: setSize attributes, split-on-death chain, tiny-slime pacifism, magma armor
+PASS [slime sizes] size-4 slime: setSize attributes (16 HP, 0.6 speed, 4 attack, 2.08 hitbox)
+PASS [slime sizes] a dying size-4 slime splits into 2-4 children
+PASS [slime sizes] the children are half the parent's size (2)
+FAIL [slime sizes] killing the size-2 tier yields size-1 children
+PASS [slime sizes] size-1 slimes die without splitting (chain ends)
+PASS [slime sizes] a tiny slime never deals touch damage
+PASS [slime sizes] a size-2 slime's touch damages the player
+PASS [slime sizes] tiny magma cube: armor 3, attack 3 (size+2 — still bites unlike tiny slimes)
+[playtest] sulfur cube: split-on-death is always exactly 2 children, terminal at size 1
+PASS [sulfur cube] a spawned sulfur cube is size 2
+PASS [sulfur cube] a dying size-2 sulfur cube splits into exactly 2 children (not slime/magma's 2-4)
+PASS [sulfur cube] the children are half the parent's size (1)
+PASS [sulfur cube] size-1 sulfur cubes die without splitting (terminal — MIN_SIZE=1)
+[playtest] sulfur cube archetypes: swallowing an item assigns its data-driven attribute modifiers/explosion/contact-damage, re-swallowing removes the old set first
+PASS [sulfur cube archetypes] swallowing oak planks assigns the bouncy archetype
+PASS [sulfur cube archetypes] bouncy's real BOUNCINESS modifier applies (archetype(2.0,0.9,...)'s bounce param, ADD_VALUE +0.9)
+PASS [sulfur cube archetypes] the swallowed item is the BODY equipment
+PASS [sulfur cube archetypes] bouncy carries no explosion or contact damage
+PASS [sulfur cube archetypes] re-swallowing magma block replaces bouncy with the hot archetype (not both)
+PASS [sulfur cube archetypes] bouncy's BOUNCINESS modifier was removed, not stacked underneath hot's own (+0.5, not +1.4)
+PASS [sulfur cube archetypes] hot carries a real contact-damage entry (SulfurCube.hot's DamageTypes.SULFUR_CUBE_HOT, amount 1.0)
+PASS [sulfur cube archetypes] swallowing tnt assigns the explosive archetype with its real fuse/power (power=3, fuse=120)
+PASS [sulfur cube archetypes] an item matching no archetype tag assigns none, and clears the previous archetype's state
+PASS [sulfur cube archetypes] BOUNCINESS is back to base with no archetype assigned
+[playtest] sulfur cube: explosive archetype fuse-priming — thread-confined arm/countdown/detonate (fire=full fuse, explosion=short fuse), never resets while armed
+PASS [sulfur cube] a cube with no explosive archetype is never armed by fire or explosion damage
+PASS [sulfur cube] swallowing tnt is not primed yet
+PASS [sulfur cube] a plain (non-fire, non-explosion) hit does not arm the fuse
+PASS [sulfur cube] fire damage arms the fuse (request consumed by the mob's own tick thread)
+PASS [sulfur cube] fuse reads are monotonically non-increasing once armed (f0=117 -> f1=97)
+PASS [sulfur cube] a second hit while already primed/invulnerable is rejected outright (no re-arm/reset)
+PASS [sulfur cube] a full (fire-armed) fuse detonates within its ~120-tick budget
+PASS [sulfur cube] the detonated cube is removed from the world (no split — getSplitCount=0 while primed)
+PASS [sulfur cube] explosion damage arms the fuse too
+PASS [sulfur cube] the short/imminent fuse also reads monotonically non-increasing (g0=31 -> g1=21)
+PASS [sulfur cube] a short (explosion-armed) fuse detonates well inside the full-fuse budget (<=44 ticks, not ~120)
+[playtest] bubble columns: soul sand grows push-up, item + boat launch, magma flips to drag, revert to water
+PASS [bubble columns] soul sand under source water grows a push-up column to the surface
+PASS [bubble columns] the column pushes an item up and launches it over the surface
+PASS [bubble columns] a floating boat pops off the column after the 60gt armed timer
+PASS [bubble columns] swapping the driver to magma flips the whole column to drag-down
+PASS [bubble columns] the drag column pulls the boat under instead of floating it
+PASS [bubble columns] removing the driver reverts the column to plain water
+[playtest] piston: reorder-at-collision rig (late honey line walks into an earlier-claimed cell)
+PASS [piston] collision rig: the late honey line and the earlier-claimed cells all moved
+PASS [piston] collision rig: reorderListAtCollision actually fired (execution witness)
+PASS [piston] collision rig: every one of the 12 blocks shifted exactly +1 east, none lost or duplicated
+PASS [piston] collision rig: retraction conserves the structure (6 slime, 5 honey, 1 stone)
+[playtest] piston: differential vs real vanilla 26.1.2 (slime/honey fixture incl. reorder-collision family)
+PASS [piston] piston differential case 0 (rig-baseline): extend + retract layouts match vanilla
+PASS [piston] piston differential case 1 (rig-mirror-z): extend + retract layouts match vanilla
+PASS [piston] piston differential case 2 (rig-materials-swapped): extend + retract layouts match vanilla
+PASS [piston] piston differential case 3 (rig-vertical): extend + retract layouts match vanilla
+PASS [piston] piston differential case 4 (rig-mid-honey): extend + retract layouts match vanilla
+PASS [piston] piston differential case 5 (rig-mid-slime): extend + retract layouts match vanilla
+PASS [piston] piston differential case 6 (rig-no-d3): extend + retract layouts match vanilla
+PASS [piston] piston differential case 7 (rig-overlimit-a4): extend + retract layouts match vanilla
+PASS [piston] piston differential case 8 (rig-blocked-obsidian): extend + retract layouts match vanilla
+PASS [piston] piston differential case 9 (rig-overlimit-e4): extend + retract layouts match vanilla
+PASS [piston] piston differential case 10 (rig-e-gap): extend + retract layouts match vanilla
+PASS [piston] piston differential case 11 (rig-overlimit-two-layer): extend + retract layouts match vanilla
+PASS [piston] piston differential case 12 (rows-0): extend + retract layouts match vanilla
+PASS [piston] piston differential case 13 (rows-1): extend + retract layouts match vanilla
+PASS [piston] piston differential case 14 (rows-2): extend + retract layouts match vanilla
+PASS [piston] piston differential case 15 (rows-3): extend + retract layouts match vanilla
+PASS [piston] piston differential case 16 (rows-4): extend + retract layouts match vanilla
+PASS [piston] piston differential case 17 (rows-5): extend + retract layouts match vanilla
+PASS [piston] piston differential case 18 (rows-6): extend + retract layouts match vanilla
+PASS [piston] piston differential case 19 (rows-7): extend + retract layouts match vanilla
+PASS [piston] piston differential case 20 (rows-8): extend + retract layouts match vanilla
+PASS [piston] piston differential case 21 (rows-9): extend + retract layouts match vanilla
+PASS [piston] piston differential case 22 (rows-10): extend + retract layouts match vanilla
+PASS [piston] piston differential case 23 (rows-11): extend + retract layouts match vanilla
+PASS [piston] piston differential case 24 (rows-12): extend + retract layouts match vanilla
+PASS [piston] piston differential case 25 (rows-13): extend + retract layouts match vanilla
+PASS [piston] piston differential case 26 (rows-14): extend + retract layouts match vanilla
+PASS [piston] piston differential case 27 (rows-15): extend + retract layouts match vanilla
+PASS [piston] piston differential case 28 (random-0): extend + retract layouts match vanilla
+PASS [piston] piston differential case 29 (random-1): extend + retract layouts match vanilla
+PASS [piston] piston differential case 30 (random-2): extend + retract layouts match vanilla
+PASS [piston] piston differential case 31 (random-3): extend + retract layouts match vanilla
+PASS [piston] piston differential case 32 (random-4): extend + retract layouts match vanilla
+PASS [piston] piston differential case 33 (random-5): extend + retract layouts match vanilla
+PASS [piston] piston differential case 34 (random-6): extend + retract layouts match vanilla
+PASS [piston] piston differential case 35 (random-7): extend + retract layouts match vanilla
+PASS [piston] piston differential case 36 (random-8): extend + retract layouts match vanilla
+PASS [piston] piston differential case 37 (random-9): extend + retract layouts match vanilla
+PASS [piston] piston differential case 38 (random-10): extend + retract layouts match vanilla
+PASS [piston] piston differential case 39 (random-11): extend + retract layouts match vanilla
+piston differential: reorderListAtCollision fired 10 times across the fixture
+PASS [piston] piston differential: the reorder-at-collision path was exercised (fired 10x)
+[playtest] redstone: button pulse
+PASS [redstone] button press lights lamp
+PASS [redstone] button releases after ~20 ticks
+[playtest] redstone: iron door
+PASS [redstone] redstone opens iron door (both halves)
+PASS [redstone] door closes when unpowered
+[playtest] redstone: comparator reads chest
+PASS [redstone] comparator reads chest fullness and lights lamp
+[playtest] redstone: dispenser shoots arrows
+PASS [redstone] powered dispenser shoots an arrow
+PASS [redstone] powered dispenser scoops adjacent water into an empty bucket
+PASS [redstone] powered dispenser places a boat on adjacent water
+[playtest] tnt: crater + drops
+PASS [tnt] redstone primes TNT entity
+PASS [tnt] TNT explosion craters the ground
+[playtest] redstone: observer pulse
+PASS [redstone] observer pulses its back when watched block changes [fffftt]
+PASS [redstone] observer pulse ends (lamp off again)
+[playtest] redstone: torch burnout
+PASS [redstone] rapidly toggled torch burns out (stays dark, lit=false)
+[playtest] hopper: vacuum + chest transfer + disable
+PASS [hopper] hopper vacuums dropped items
+PASS [hopper] hopper transfers everything into the chest below
+PASS [hopper] redstone disables the hopper
+[playtest] enchant: silk touch through real loot tables
+PASS [enchant] silk touch stone drops stone (not cobblestone)
+PASS [enchant] silk touch diamond ore drops the ore block
+[playtest] enchant: fortune multiplies ore drops
+PASS [enchant] fortune III diamonds avg ~2.2 (got 2.35)
+[playtest] enchant: sharpness + unbreaking
+PASS [enchant] sharpness V iron sword deals 9 (got 9.0)
+PASS [enchant] unbreaking III absorbs ~75% of wear (took 15/60)
+[playtest] enchant: fire aspect ignites the target for damage over time
+PASS [enchant] fire aspect II ignites the target
+PASS [enchant] burning deals damage over time after the initial hit (from 17.17792)
+[playtest] breeding: two fed cows make a calf
+PASS [breeding] two fed cows produce a calf
+[playtest] combat: falling crit 1.5x
+PASS [combat] falling fist crit deals 1.5 (got 1.5)
+[playtest] saturation fast regen: full food + saturation heals every 10 ticks, not just the 80-tick path
+PASS [saturation fast regen] full food + spare saturation heals via the fast 10-tick path within 20 ticks (health 11.5)
+PASS [saturation fast regen] food>=18 with no saturation does NOT heal yet in the same short window (slow path needs 80 ticks, health 10.0)
+[playtest] admin commands: /seed /effect /setblock /fill(+cap) /xp /clear /kill <target> /tp <player>
+PASS [admin commands] /seed runs without error
+PASS [admin commands] /effect resolves a real selector-matched entity without erroring
+PASS [admin commands] /setblock places the exact block requested
+PASS [admin commands] /fill fills the whole requested cuboid (3x1x3)
+PASS [admin commands] /fill refuses a region over the 32768-block cap (doesn't touch the world)
+PASS [admin commands] /xp runs against a real command string without erroring (target resolution untestable in this harness — see class javadoc)
+PASS [admin commands] /clear with no target empties the sender's own inventory
+PASS [admin commands] /tp <player> runs against a real command string without erroring (target resolution untestable in this harness — see class javadoc)
+PASS [admin commands] /kill <target> kills the real selector-matched entity
+[playtest] security: public-mode gates operator commands to ops, /fill cooldown-limits even an op
+PASS [security] gating: a non-op in public mode cannot run /setblock (block untouched)
+PASS [security] gating: an op in public mode can run the same /setblock
+PASS [security] gating: an op's first /fill lands
+PASS [security] gating: an op's immediate second /fill is cooldown-blocked (cell untouched)
+[playtest] leaf decay after logging
+PASS [leaf decay after logging] orphaned leaves decay after the log is cut
+[playtest] potions: drink + effects + combat modifiers
+PASS [potions] healing potion restores 4 hearts (health 14.0)
+PASS [potions] strength I fist deals 4 (got 4.0)
+[playtest] brewing: wart -> awkward -> swiftness
+PASS [brewing] nether wart brews water into awkward
+PASS [brewing] sugar brews awkward into swiftness
+PASS [brewing] gunpowder converts a potion into a splash potion, keeping its effect
+PASS [brewing] dragon breath converts a splash potion into a lingering potion, keeping its effect
+[playtest] brewing stand comparator: reads slot fullness the same way a chest does
+PASS [brewing stand comparator] comparator reads brewing stand fullness and lights the lamp
+[playtest] chiseled bookshelf: face+position selects one of 6 slots, comparator tracks the last-touched slot (not a book count)
+PASS [chiseled bookshelf] right-clicking the facing side inserts a book into the targeted slot
+PASS [chiseled bookshelf] comparator reads lastInteractedSlot+1 = 1 after touching slot 0
+PASS [chiseled bookshelf] the book was consumed from the player's hand
+PASS [chiseled bookshelf] clicking a face other than FACING never selects a slot (nothing consumed)
+PASS [chiseled bookshelf] a different slot on the same face inserts independently
+PASS [chiseled bookshelf] comparator reads lastInteractedSlot+1 = 6 after touching slot 5
+PASS [chiseled bookshelf] inserting on an already-occupied slot is a no-op (book not consumed)
+PASS [chiseled bookshelf] empty-hand right-click on an occupied slot removes its book
+PASS [chiseled bookshelf] the removed enchanted book is given back to the player
+PASS [chiseled bookshelf] comparator STILL reads 6 after removing slot 5 (it tracks the last-touched slot, not a book count)
+PASS [chiseled bookshelf] breaking the bookshelf drops its one remaining stored book
+[playtest] shield blocks frontal attack
+PASS [shield blocks frontal attack] raised shield negates frontal zombie hit (health 20.0)
+PASS [shield blocks frontal attack] blocking knocks the shield-holder back (horizontal speed 6.55)
+[playtest] lava hurts, fire resistance saves
+PASS [lava hurts, fire resistance saves] standing in lava hurts
+PASS [lava hurts, fire resistance saves] fire resistance negates lava damage
+[playtest] piston pushes entities
+PASS [piston pushes entities] extending piston pushes the pig east
+[playtest] anvil combines durability + enchants
+PASS [anvil combines durability + enchants] anvil: durabilities add with bonus (damage 120)
+PASS [anvil combines durability + enchants] anvil: equal enchants bump a level (efficiency 4)
+PASS [anvil combines durability + enchants] anvil: enchant level is capped at its OWN real max, not a flat 5 (Unbreaking III+III got 3, must stay 3)
+PASS [anvil combines durability + enchants] anvil: a never-combined pair costs no repair-cost tax (cost 2)
+PASS [anvil combines durability + enchants] anvil: the result's REPAIR_COST becomes max(0,0)*2+1 = 1 after one combine
+PASS [anvil combines durability + enchants] anvil: re-combining that item taxes the next combine's cost (base 2 + tax 1 = 3, got 3)
+PASS [anvil combines durability + enchants] anvil: a heavily-repair-cost-taxed item pushes total cost past the 40 cap (got 52)
+[playtest] anvil rename costs exactly 1 level via PlayerAnvilInputEvent
+PASS [anvil rename costs exactly 1 level via PlayerAnvilInputEvent] anvil (rename) opens window
+PASS [anvil rename costs exactly 1 level via PlayerAnvilInputEvent] anvil: renaming alone previews a result named Excalibur
+PASS [anvil rename costs exactly 1 level via PlayerAnvilInputEvent] anvil: rename-only costs exactly 1 level and the taken item carries the custom name
+[playtest] enchanting table: real block flow, seed-deterministic offer, buttonId+1 xp cost
+PASS [enchanting table] enchanting table opens window
+PASS [enchanting table] enchanting table: clicking the top offer enchants the pickaxe (got {RegistryKeyImpl[key=minecraft:efficiency]=1})
+PASS [enchanting table] enchanting table: clicking slot 0 costs exactly 1 level (buttonId+1, NOT the displayed cost)
+PASS [enchanting table] enchanting table: clicking slot 0 consumes exactly 1 lapis
+[playtest] grindstone: disenchant keeps curses, refunds xp
+PASS [grindstone] grindstone opens window
+PASS [grindstone] grindstone previews a disenchant result
+PASS [grindstone] grindstone: taken item lost sharpness but kept vanishing_curse
+PASS [grindstone] grindstone: disenchanting a non-curse enchant refunds real xp (orb or auto-pickup)
+[playtest] stonecutter: material change resets the recipe selection, a button click previews the exact result, taking leaves a same-material remainder ready for a repeat take
+PASS [stonecutter] stonecutter opens window
+PASS [stonecutter] stone has multiple real stonecutting recipes (got 11)
+PASS [stonecutter] placing an uncut input previews no result before a recipe is picked
+PASS [stonecutter] selecting button 0 previews recipe chiseled_stone_bricks_from_stone_stonecutting -> chiseled_stone_bricks
+PASS [stonecutter] taking the result consumes exactly 1 stone and hands back the recipe's real output
+PASS [stonecutter] the same recipe re-populates immediately for a repeat take (no re-click needed)
+PASS [stonecutter] an out-of-range button click is a no-op
+PASS [stonecutter] swapping to a different input material clears the stale preview
+[playtest] fishing loot from real tables
+PASS [fishing loot from real tables] fishing table yields loot (got salmon)
+PASS [fishing loot from real tables] rod cast spawns an active bobber
+PASS [fishing loot from real tables] reeling after the bite lands a catch
+PASS [fishing loot from real tables] lure III shortens the bite-wait ceiling (500 -> 200)
+[playtest] fishing: treasure requires real open water, not just any fishable puddle
+PASS [fishing] a clear, deep 5x5 water pool with open sky above counts as open water
+PASS [fishing] the same pool under a solid ceiling no longer counts as open water
+[playtest] vanilla-ai: hurt zombie alerts the pack
+PASS [vanilla-ai] hurting one zombie makes both target the attacker (alertOthers)
+[playtest] vanilla-ai: melee has 20-tick cadence
+PASS [vanilla-ai] adjacent zombie deals 3-9 damage in 45 ticks, not per-tick spam (lost 4.5)
+[playtest] vanilla-ai: tempt draws cow to wheat
+PASS [vanilla-ai] cow follows the wheat (from 8.0 blocks)
+[playtest] vanilla-ai: panic flees on hurt
+PASS [vanilla-ai] hurt cow panics and bolts
+[playtest] vanilla-ai: A* routes around a wall
+PASS [vanilla-ai] A* finds a route past the wall (11 nodes)
+PASS [vanilla-ai] route never clips through the wall
+PASS [vanilla-ai] route detours around an open end
+PASS [vanilla-ai] route reaches the far side (z>=206)
+[playtest] vanilla-ai: undead burn in daylight
+PASS [vanilla-ai] zombie burns under the open sun
+PASS [vanilla-ai] a helmeted zombie does not burn in daylight
+PASS [vanilla-ai] a bare-headed zombie standing in rain does not burn
+[playtest] vanilla-ai: creeper swells 30 ticks then explodes
+PASS [vanilla-ai] creeper swells and explodes (took 32 ticks, expect ~30, >=24)
+PASS [vanilla-ai] creeper explosion hurt the player (health=1.9131184, pos=45,-46, inWorld=true, mode=SURVIVAL, dead=false)
+[playtest] lightning charges a creeper; its explosion drops the victim's head
+PASS [lightning charges a creeper; its explosion drops the victim's head] a creeper struck by lightning becomes charged (CreeperMeta.isCharged)
+PASS [lightning charges a creeper; its explosion drops the victim's head] a charged-creeper-style explosion killed the zombie and dropped a zombie_head (charged_creeper/zombie loot)
+[playtest] vanilla-ai: enderman angers only when stared at
+PASS [vanilla-ai] enderman stays neutral while not stared at
+PASS [vanilla-ai] enderman targets the player once stared at
+[playtest] enderman: takes real drown-type damage while in water or rain
+PASS [enderman] an enderman standing in water takes damage
+[playtest] enderman: dodges/is immune to projectile damage
+PASS [enderman] an arrow fired at an enderman is consumed on contact
+PASS [enderman] the arrow deals no damage to the enderman (hp stays 40.0)
+[playtest] enderman: picks up and later places down a holdable block
+PASS [enderman] an enderman picks up a nearby holdable block (sand)
+PASS [enderman] the enderman later places the carried block back down
+[playtest] end: dragon spawns, dies, forms the exit portal
+PASS [end] End instance exists
+PASS [end] ender dragon spawns with 200 HP
+PASS [end] dragon takes player melee damage (200.0 -> 191.0)
+PASS [end] dragon breathes a fireball at nearby players
+PASS [end] dragon death forms the exit portal (dragon egg on top)
+[playtest] end: portal travel there and back
+PASS [end] end portal sends the player to The End
+PASS [end] exit portal returns the player to the overworld
+[playtest] village: villager entity spawns and wanders
+PASS [village] villager spawns as a VILLAGER entity
+PASS [village] right-clicking a villager opens the merchant trade GUI
+PASS [village] breeding: no spare bed nearby -> no offspring (2 -> 2)
+PASS [village] breeding: a spare bed nearby -> two villagers breed an offspring (2 -> 3)
+PASS [village] breeding: the offspring spawns as a baby (grows up in 20 min)
+PASS [village] a villager next to a blast furnace claims the armorer profession
+PASS [village] the armorer's trade GUI opens
+PASS [village] a villager next to a lectern claims librarian, independent of the nearby armorer
+PASS [village] wandering trader opens a merchant GUI
+[playtest] village: food economy gates breeding — tossed bread is picked up, eaten, and digested by breeding; farmers harvest and share
+PASS [village] hungry villagers refuse to breed even with spare beds
+PASS [village] a villager picks up tossed bread into its personal inventory (a=12 pts)
+PASS [village] with 12 food points each the same pair breeds
+PASS [village] breeding digests the food (12 points eaten per parent; a now has 0)
+PASS [village] a farmer harvests a mature wheat crop nearby (replanting from its seeds)
+PASS [village] the harvested wheat lands in the farmer's inventory
+PASS [village] the farmer throws food toward the hungry villager
+PASS [village] a farmer with excess food shares it with a hungry villager
+[playtest] village: a zombie-family kill converts a villager to a zombie villager (difficulty-scaled), and weakness+golden-apple cures it back with a trade discount
+PASS [village] on Hard, a zombie kill always converts the villager into a zombie villager instead of it dying
+PASS [village] the zombie villager retains the original villager's profession
+PASS [village] a husk kill converts a villager too (Husk extends Zombie in real vanilla, doesn't override killedEntity)
+PASS [village] on Normal, roughly half of zombie kills convert the villager (coinflip skip; 30/60)
+PASS [village] on Easy, a zombie kill never converts the villager (it just dies)
+PASS [village] a golden apple does nothing to a zombie villager without weakness (apple not consumed)
+PASS [village] the ENCHANTED golden apple does not cure (real vanilla only checks the plain Items.GOLDEN_APPLE)
+PASS [village] weakness + a plain golden apple starts the cure (apple consumed, Strength applied, converting flag set)
+PASS [village] the cure completes: a villager reappears (nauseous), the zombie villager is gone
+PASS [village] the cured villager keeps its profession
+PASS [village] an uncured villager charges the farmer table's real base price (wheat x20)
+PASS [village] the player who cured this villager gets a real price cut on its trades (125 reputation x 0.05 multiplier = 6 off; 20 -> 14)
+[playtest] raid: three escalating waves, clearing each advances, clearing all wins
+PASS [raid] Easy raids run 3 waves (Raid.getNumGroups)
+PASS [raid] Normal raids run 5 waves (Raid.getNumGroups)
+PASS [raid] Hard raids run 7 waves (Raid.getNumGroups)
+PASS [raid] raid starts
+PASS [raid] raid marked active
+PASS [raid] Normal wave 1 spawns 4-6 raiders (got 5)
+PASS [raid] Normal wave 2 spawns 5-7 raiders (got 7)
+PASS [raid] Normal wave 3 spawns 4-7 raiders (got 6)
+PASS [raid] a wave-with-ravagers spawn has real vanilla stats (100 HP, knockback-resistant)
+PASS [raid] Normal wave 4 spawns 8-10 raiders (got 8)
+PASS [raid] Normal wave 5 spawns 10-13 raiders (got 12)
+PASS [raid] raid ends (victory) after the final (5th, Normal) wave is cleared
+[playtest] stronghold: portal room builds, 12 eyes light the end_portal
+PASS [stronghold] stronghold: real piece-tree assembly always contains a portal room
+PASS [stronghold] stronghold: real portal room's 12 end_portal_frame placed (12/12)
+PASS [stronghold] stronghold: portal core still void before all eyes inserted
+PASS [stronghold] stronghold: portal activates once all 12 eyes are placed
+PASS [stronghold] stronghold: the portal room's silverfish spawner block is placed
+PASS [stronghold] stronghold: the placed spawner is registered with ClassicSpawners
+[playtest] end portal frame comparator: signal 15 once it has its eye, 0 otherwise
+PASS [end portal frame comparator] an eyeless end portal frame gives no signal (lamp stays dark)
+PASS [end portal frame comparator] an end portal frame with its eye lights the lamp (signal 15)
+[playtest] end: chorus plant grows a branching stem on end_stone
+PASS [end] End instance exists for chorus
+PASS [end] chorus plant: base stem placed on end_stone
+PASS [end] chorus plant: branches grew (18 plant/flower blocks)
+[playtest] end: gateway builds on the ring and teleports a standing player
+PASS [end] End instance exists for gateway
+PASS [end] end gateway: END_GATEWAY block placed at the ring position
+PASS [end] end gateway: standing in it teleports the player away
+[playtest] minecart: powered rail launches a cart down the track
+PASS [minecart] minecart accelerates along the powered rail (x 0.5 -> 13.6)
+[playtest] minecart: curved rail turns the cart
+PASS [minecart] minecart rounds the corner and heads south (x=5.5, z=14.1)
+[playtest] minecart: ascending rail climbs a slope
+PASS [minecart] minecart climbs the ascending rail (peak y 45.1 from 41.1)
+[playtest] minecart: chest/furnace/hopper/TNT variants
+PASS [minecart] chest minecart: right-click opens a 27-slot inventory
+PASS [minecart] furnace minecart: fuelled with coal, self-propels with no powered rail (x 20.5 -> 33.6)
+PASS [minecart] hopper minecart: vacuums a nearby dropped item
+PASS [minecart] hopper minecart pulls from a container directly above it
+PASS [minecart] a stationary hopper pushes down into a chest minecart below it
+PASS [minecart] tnt minecart: does not explode instantly (4s fuse, MinecartTNT.primeFuse=80t)
+PASS [minecart] tnt minecart: explodes once its fuse burns out
+[playtest] minecart: cart-to-cart collision queues up instead of passing through
+PASS [minecart] the moving cart approaches the stationary one (moverX=7.6)
+PASS [minecart] the moving cart queues up behind it instead of passing through (mover=7.6 < blocker=8.5)
+[playtest] redstone: detector rail powers a lamp while a cart sits on it
+PASS [redstone] detector rail: unpowered without a cart
+PASS [redstone] detector rail: a cart on it powers the lamp through the wire line
+PASS [redstone] detector rail: unpowers again once the cart leaves
+[playtest] redstone: daylight detector tracks the sun, inverts into a night sensor
+PASS [redstone] clear noon reads the full 15 (got 15)
+PASS [redstone] the signal drives a wire-lamp line
+PASS [redstone] mid-afternoon reads a sun-angle-scaled 11-14 (got 13)
+PASS [redstone] midnight reads 0 (got 0)
+PASS [redstone] the lamp goes dark at night
+PASS [redstone] right-click flips the INVERTED state
+PASS [redstone] inverted at midnight reads 11 = 15 - night brightness 4 (got 11)
+PASS [redstone] the inverted signal lights the lamp at night
+PASS [redstone] inverted at noon reads 0 (got 0)
+PASS [redstone] rain at noon dims the reading to 12 (skyDarken 3; got 12)
+[playtest] difficulty: peaceful nullifies mobs and hunger, easy/hard scale damage, hard calls zombie reinforcements
+PASS [difficulty] a zombie melee hit (attack 3) deals 3.0 on Normal (got 3.0)
+PASS [difficulty] the same hit deals 2.5 on Easy (min(x/2+1, x); got 2.5)
+PASS [difficulty] the same hit deals 4.5 on Hard (x1.5; got 4.5)
+PASS [difficulty] the same hit deals nothing on Peaceful (got 0.0)
+PASS [difficulty] peaceful: the despawn sweep discards hostile mobs instantly
+PASS [difficulty] peaceful: the food bar regenerates on its own (got 13)
+PASS [difficulty] hard: a hurt zombie calls a same-kind reinforcement 7-40 blocks away
+PASS [difficulty] the caller's reinforcement charge drains 5% per call (got 0.95)
+[playtest] trial chambers: the spawner runs a full wave trial and ejects rewards, the vault unlocks once per player with a trial key, wind charges burst, progress survives a save/wipe/reload
+PASS [trial chambers] trial spawner: a player in range flips waiting_for_players -> active
+PASS [trial chambers] trial spawner: the wave mobs (melee/zombie config) start spawning
+PASS [trial chambers] trial spawner: clearing every wave ejects reward loot above the spawner
+PASS [trial chambers] trial spawner: the trial ends in the 30-minute cooldown state
+01:02:10 [INFO] RegionStore: Restored 41 block-entity entries, 0 mobs, 0 item frames/armor stands from region shards
+PASS [trial chambers] trial spawner: cooldown state survives a save/wipe/reload (not reset to waiting_for_players)
+PASS [trial chambers] vault: lights up (active) with a player within 4 blocks
+PASS [trial chambers] vault: inserting a trial key consumes it and starts unlocking
+PASS [trial chambers] vault: the reward loot ejects from the vault
+01:02:16 [INFO] RegionStore: Restored 42 block-entity entries, 0 mobs, 0 item frames/armor stands from region shards
+PASS [trial chambers] vault: the same player still can't unlock twice after a save/wipe/reload
+PASS [trial chambers] wind burst: launches a nearby entity upward (vy=6.5)
+PASS [trial chambers] wind burst: presses a wooden button it engulfs
+PASS [trial chambers] breeze: engages the player with wind charge projectiles
+[playtest] classic spawner: player-range activation, spawn bursts, light-gate reuse, nearby-entity cap, XP-only breaking, definition persistence, and a real mineshaft spider-corridor render
+PASS [classic spawner] classic spawner: no spawn activity while no player is within requiredPlayerRange
+PASS [classic spawner] classic spawner: a player in range triggers a spawn burst (BaseSpawner.serverTick)
+PASS [classic spawner] classic spawner: a burst spawns more than one mob (spawnCount default 4, dark+open room)
+PASS [classic spawner] classic spawner: the live nearby-entity cap (maxNearbyEntities=6) holds the population near the cap (6 -> 6)
+PASS [classic spawner] classic spawner: light (VNaturalSpawner.checkSpawnRules, reused not forked) blocks every attempt
+PASS [classic spawner] classic spawner: breaking it awards 15-43 XP (got 28)
+PASS [classic spawner] classic spawner: breaking it never drops an item, even without Silk Touch
+PASS [classic spawner] classic spawner: breaking it removes the definition (stops ticking)
+PASS [classic spawner] classic spawner: creative-mode breaks award no XP
+PASS [classic spawner] classic spawner: wiping the in-memory registry drops the definition
+01:02:39 [INFO] RegionStore: Restored 41 block-entity entries, 0 mobs, 0 item frames/armor stands from region shards
+PASS [classic spawner] classic spawner: reloading restores the definition after a save/wipe/reload
+PASS [classic spawner] mineshaft: a spiderCorridor piece exists and renders within a 40-chunk search radius
+PASS [classic spawner] mineshaft: the spiderCorridor's cave_spider spawner block is placed (MineShaftCorridor.build)
+PASS [classic spawner] mineshaft: the placed spawner is registered with ClassicSpawners
+[playtest] dungeon: MonsterRoomFeature carves a real room, places a chest against the simple_dungeon loot table, and wires its spawner to ClassicSpawners
+PASS [dungeon] dungeon: the chest's armed loot table is minecraft:chests/simple_dungeon (got minecraft:chests/simple_dungeon)
+PASS [dungeon] dungeon: MonsterRoomFeature validity gate accepts a real solid room with exactly one air-pocket opening (80/80 seeds placed)
+PASS [dungeon] dungeon: the origin spawner is registered with ClassicSpawners after a successful placement
+PASS [dungeon] dungeon: at least one of the tried seeds also placed a loot chest
+PASS [dungeon] dungeon: every registered spawner mob is one of skeleton/zombie/spider (80/80 accounted for)
+PASS [dungeon] dungeon: mob weights favor zombie 2:1 over skeleton and spider individually (MOBS={skeleton,zombie,zombie,spider}) — zombie=39 skeleton=22 spider=19
+[playtest] boat: sneak dismounts the rider, attacking breaks it and drops the item
+PASS [boat] boat: right-click seats the player
+PASS [boat] boat: sneaking dismounts the player
+PASS [boat] boat: attacking it breaks the boat and drops an oak_boat item
+[playtest] chest boat: sneak-click opens its 27-slot inventory instead of riding, breaking spills contents
+PASS [chest boat] sneak-clicking a chest boat opens its 27-slot inventory, not a ride
+PASS [chest boat] chest boat riding is untouched while sneak-interacting
+PASS [chest boat] a non-sneaking click on an empty chest boat seats the player instead
+PASS [chest boat] breaking a chest boat spills its stored contents
+[playtest] mobs: some zombies spawn wearing armor
+PASS [mobs] on a fresh world no zombie spawns with armor (special multiplier 0; 0/40)
+PASS [mobs] in a maxed-out hard region some zombies spawn wearing armor (15/80), but not all
+[playtest] shearing: shears drop wool of the sheep's color, sheared sheep can't be re-sheared
+PASS [shearing] shearing a red sheep drops red_wool (color-matched loot)
+PASS [shearing] the sheep is now marked sheared
+PASS [shearing] the shears took 1 durability damage
+PASS [shearing] an already-sheared sheep can't be sheared again (wool total: 2 -> 2)
+[playtest] pumpkin carving: shears turn a pumpkin into a facing-correct carved_pumpkin + 4 seeds
+PASS [pumpkin carving] shearing the east face carves a carved_pumpkin facing east
+PASS [pumpkin carving] carving drops exactly 4 pumpkin_seeds (carve/pumpkin.json: flat set_count(4))
+PASS [pumpkin carving] shearing the top face carves away from the player's own facing (south-facing player -> north)
+[playtest] copper waxing: honeycomb applies wax (blocking further oxidation), axe scrapes or strips it back off
+PASS [copper waxing] honeycomb waxes a copper block
+PASS [copper waxing] waxing consumes 1 honeycomb outside creative
+PASS [copper waxing] honeycomb does nothing to an already-waxed block
+PASS [copper waxing] an axe strips the wax back off a waxed block
+PASS [copper waxing] wax removal costs 1 axe durability, no item consumed
+PASS [copper waxing] an axe scrapes an unwaxed weathered block back one oxidation stage
+PASS [copper waxing] waxing a shaped copper block keeps its properties (stairs stay facing west)
+PASS [copper waxing] honeycomb does nothing to a non-copper block
+[playtest] fire spread: player-lit flint and steel burns down flammable planks, self-extinguishes unsupported, spreads to a neighbor
+PASS [fire spread] flint and steel lights a fire block on the clicked face
+PASS [fire spread] a fire block eventually consumes a directly-touching flammable neighbor
+PASS [fire spread] an unsupported fire with nothing flammable nearby self-extinguishes
+PASS [fire spread] fire spreads onto an air block near (not touching) a flammable neighbor
+[playtest] lodestone: a single compass binds in place, a larger stack splits off one bound copy
+PASS [lodestone] a lone compass (stack of 1) binds itself in place rather than splitting
+PASS [lodestone] a stack of 3 compasses keeps 2 unbound in the original stack
+PASS [lodestone] splitting off a bound compass adds exactly one new bound copy to the inventory
+[playtest] bundle: cursor-holds-bundle and slot-holds-bundle click insert/remove, shulker boxes rejected, a bare right-click pops and drops the top entry
+PASS [bundle] left-clicking a slot with a bundle on the cursor inserts the WHOLE stack
+PASS [bundle] the source slot is emptied by the insert
+PASS [bundle] right-clicking an empty slot with a bundle on the cursor pulls the top entry out
+PASS [bundle] the bundle on the cursor is empty again after giving its only entry back
+PASS [bundle] left-clicking a bundle IN A SLOT with an item on the cursor inserts it
+PASS [bundle] the cursor is emptied by the insert (5 sticks fit easily under 64 units)
+PASS [bundle] right-clicking a bundle in a slot with an empty cursor pulls its entry onto the cursor
+PASS [bundle] the bundle's own slot contents are empty again
+PASS [bundle] a shulker box offered to a bundle is rejected: the slot still holds it
+PASS [bundle] ...and nothing landed in the bundle
+PASS [bundle] a bare right-click (no block/entity target) pops exactly the top entry, leaving the other behind
+PASS [bundle] the popped entry (3 glass bottles, the top/most-recently-added one) is dropped on the ground
+[playtest] archaeology: brushing a suspicious block through 10 strokes reveals real loot and turns it to sand/gravel, no loot table means no drop, abandoned progress decays back to 0
+PASS [archaeology] a few brush strokes advance progress but don't finish the block (1)
+PASS [archaeology] the dusted blockstate property advances off 0 as progress accrues
+PASS [archaeology] 10 completed brush strokes turn suspicious_sand into real sand
+PASS [archaeology] the real desert_pyramid loot table drops one of its own items, picked up into the inventory
+PASS [archaeology] the brush loses exactly 1 durability for the WHOLE dig-out, not per stroke (BrushItem.onUseTick only hurtAndBreak's on the stroke that completes it)
+PASS [archaeology] brushing out a block with no registered loot table still turns it into gravel
+PASS [archaeology] ...but drops nothing (no LootTable NBT, matching a real /setblock'd suspicious block)
+PASS [archaeology] setup: some progress landed before we stop brushing
+PASS [archaeology] abandoned progress decays back to 0 (BrushableBlockEntity.checkReset), block stays suspicious_sand
+PASS [archaeology] the dusted property resets to 0 alongside the decayed count
+[playtest] goat horn: blowing one plays its tune and starts a shared per-player cooldown covering every tune, an untuned horn is inert
+PASS [goat horn] a goat horn pointing at an unresolvable instrument id is inert, not a crash
+PASS [goat horn] blowing a tuned goat horn the first time is not blocked (no cooldown yet)
+PASS [goat horn] blowing it again immediately is blocked by the cooldown it just started
+PASS [goat horn] a DIFFERENT tune still shares the one per-player cooldown (real vanilla: the cooldown group is the base minecraft:goat_horn item, not the instrument)
+PASS [goat horn] once the 140-tick cooldown elapses, blowing it again is allowed
+[playtest] structure loot: chest/barrel/dispenser roll a real vanilla loot table on first open, not before, not twice; barrel lid blockstate toggles open/close
+PASS [structure loot] LootTables.chest resolves a bundled structure loot table directly
+PASS [structure loot] a registered structure chest holds nothing before it's ever opened
+PASS [structure loot] opening it for the first time rolls real loot into the inventory
+PASS [structure loot] opening it a second time does not reroll or duplicate the contents
+PASS [structure loot] a structure-placed barrel also rolls loot on first open
+PASS [structure loot] opening a barrel flips its "open" blockstate (ContainerOpenersCounter, drives the lid model)
+PASS [structure loot] closing a barrel flips "open" back to false
+PASS [structure loot] a structure-placed dispenser also rolls loot on first access
+[playtest] item frame: mounts an item, rotates when filled, attacking ejects the item before breaking the frame
+PASS [item frame] using an item_frame on a solid block's north face spawns a frame entity
+PASS [item frame] a freshly-placed frame starts empty
+PASS [item frame] right-clicking an empty frame with a held item mounts exactly 1 of it
+PASS [item frame] mounting the item consumes 1 from the player's stack (had 5, now 4)
+PASS [item frame] right-clicking a filled frame rotates its display instead of swapping the item
+PASS [item frame] attacking a filled frame ejects its item into the world
+PASS [item frame] attacking an already-empty frame breaks it and drops the item_frame item
+[playtest] item frame: comparator reads it like a container (0 empty, rotation-based signal when filled)
+PASS [item frame] a comparator reading an empty item frame stays dark
+PASS [item frame] a comparator reading a filled item frame lights the lamp
+[playtest] armor stand: place/consume, held-item equip + swap, bare-hand take, NBT flags, marker ignores interaction, two-hit break drops item + gear
+PASS [armor stand] using an armor_stand item on a block's top face spawns an armor stand entity
+PASS [armor stand] placing an armor stand consumes exactly one item (had 3, now 2)
+PASS [armor stand] right-clicking with a chestplate equips the stand's chest slot and empties the hand
+PASS [armor stand] right-clicking with another chestplate swaps it in and returns the old one
+PASS [armor stand] a bare-hand click at chest height takes the chestplate back off the stand
+PASS [armor stand] Invisible/Small/NoBasePlate/Marker flags parse off the placement item onto the entity meta
+PASS [armor stand] a marker armor stand ignores equip interaction
+PASS [armor stand] applyPose drives the head-rotation pose meta
+PASS [armor stand] a single attack does not break the stand
+PASS [armor stand] a second quick attack breaks the stand, dropping the armor_stand item + its equipment
+[playtest] beacon: pyramid levels 1-4, beam needs clear sky (glass passes), menu validates + consumes payment, effects apply in range at the right amp
+PASS [beacon] a single 3x3 base layer reads as a level-1 beacon
+PASS [beacon] a full four-layer pyramid reads as level 4
+PASS [beacon] a clear column above the beacon activates the beam
+PASS [beacon] an opaque block above the beacon breaks the beam
+PASS [beacon] glass above the beacon still lets the beam through
+PASS [beacon] selecting a valid effect through the menu is accepted and consumes the payment item
+PASS [beacon] a regeneration secondary is valid at level 4
+PASS [beacon] a non-regeneration secondary that differs from the primary is rejected
+PASS [beacon] an effect selection with no payment item is rejected
+PASS [beacon] an in-range player gains the beacon's primary effect at amp II (secondary == primary)
+PASS [beacon] a player beyond the (level*10+10) range gains no beacon effect
+PASS [beacon] a beacon with a broken beam applies no effect even at level 4
+[playtest] conduit: 3x3x3 water gate + radius-2 prismarine ring gate activation (16) and hunting (42), power radius size/7*16, in-water power, hostile pulse
+PASS [conduit] a full prismarine-family frame counts 42 blocks (mixed family accepted)
+PASS [conduit] a full frame is active and hunting
+PASS [conduit] a partial frame (36 blocks) is active but not hunting
+PASS [conduit] the conduit power radius follows size/7*16 (36 -> 80)
+PASS [conduit] a frame below 16 blocks is inactive
+PASS [conduit] a non-water block inside the 3x3x3 fails the water gate (size 0, inactive)
+PASS [conduit] an in-water player within range gains Conduit Power
+PASS [conduit] a dry player (not in water or rain) gains no Conduit Power
+PASS [conduit] a hunting conduit damages a hostile mob in its water (4 magic damage)
+[playtest] bee + beehive: pollination gains nectar, hive delivery advances honey, shears/bottle harvest at level 5, campfire sedation, anger + sting-once-then-die
+PASS [bee + beehive] bee spawns with real vanilla stats (10 HP, 2 attack damage) and starts calm
+PASS [bee + beehive] a bee hovering over a bee-attractive flower for long enough gains nectar
+PASS [bee + beehive] a nectar-carrying bee flies home and is stored as a hive occupant (max 3, real MAX_OCCUPANTS)
+PASS [bee + beehive] after MIN_OCCUPATION_TICKS_NECTAR=2400 ticks a nectar occupant is released and honey_level advances
+PASS [bee + beehive] the hive's comparator signal reads its raw honey_level (BeehiveBlock.getAnalogOutputSignal)
+PASS [bee + beehive] shearing a honey_level-5 hive drops 3 honeycomb and resets honey_level to 0
+PASS [bee + beehive] an un-sedated harvest evacuates every occupant (angered onto the harvester)
+PASS [bee + beehive] a lit campfire directly below a hive sedates it (CampfireBlock.isSmokeyPos)
+PASS [bee + beehive] a sedated harvest (glass bottle -> honey bottle) resets honey but leaves occupants undisturbed
+PASS [bee + beehive] the glass bottle harvest returns a honey_bottle
+PASS [bee + beehive] a bee hit by a living entity becomes angry at its attacker (NeutralMob.setTarget)
+PASS [bee + beehive] an angry bee in range stings its target once (2 damage) and stops being angry
+PASS [bee + beehive] a stung bee dies by exactly its 1200-tick STING_DEATH_COUNTDOWN (real vanilla's clamp guarantees the roll at that tick, not just eventually)
+[playtest] allay: give/take remembers a liked player, collects + deposits matching items, dances near a playing jukebox, duplicates via amethyst shard, hears note blocks
+PASS [allay] allay spawns with real vanilla stats (20 HP) and no liked player yet
+PASS [allay] giving an empty-handed allay an item makes it hold that item
+PASS [allay] giving the item consumes it from the player's hand
+PASS [allay] giving the item marks the player as this allay's liked player
+PASS [allay] a matching dropped item within reach is picked up into the allay's carry slot (2 compasses)
+PASS [allay] once back within throw range of its liked player, the allay deposits its carried extras
+PASS [allay] taking an allay's held item empty-handed returns it to the player
+PASS [allay] the allay's hand is now empty
+PASS [allay] taking the item makes the allay forget its liked player
+PASS [allay] an allay idling near an actively playing jukebox starts dancing
+PASS [allay] offering an amethyst shard to a dancing allay spawns a second allay (1 -> 2)
+PASS [allay] the amethyst shard is consumed
+PASS [allay] duplicating puts the original allay on the real 6000-tick cooldown
+PASS [allay] a nearby allay hears a played note block and adopts it as liked (real 16-block listener radius)
+[playtest] map: empty map -> filled on use, live color sampling from the world, the holder's own player marker + heading, zoom crafting
+PASS [map] using an empty map consumes it and hands back a filled_map carrying a map_id tag
+PASS [map] the stone floor under the player samples to MapColors.STONE's id (11, got 11)
+PASS [map] a recompute sends a MapDataPacket with exactly one icon (the holder's own player marker)
+PASS [map] the player marker's heading changes with the player's real yaw (north=0, east=4)
+PASS [map] zooming a scale-0 map (map_extending: 8 paper + a filled map) yields scale 1
+PASS [map] a map already at MAX_SCALE=4 can't be zoomed further (MapExtendingRecipe.matches: scale<4)
+[playtest] cartography table: paper zooms, glass pane locks (only once actually taken, never during preview), another filled map clones
+PASS [cartography table] cartography table opens window
+PASS [cartography table] cartography table + paper previews a scale+1 result
+PASS [cartography table] cartography table: taking the zoom result yields scale 1 (1)
+PASS [cartography table] cartography table: taking consumed exactly 1 map and 1 paper
+PASS [cartography table] cartography table + glass pane previews a locked-tagged result
+PASS [cartography table] previewing a lock does NOT itself lock the shared map data (deferred to take)
+PASS [cartography table] cartography table: taking the lock result actually commits the lock
+PASS [cartography table] re-locking an already-locked map previews nothing
+PASS [cartography table] cartography table + another filled map previews a 2-count clone
+PASS [cartography table] cartography table: taking the clone yields amount 2 sharing the source's map_id
+[playtest] signs + banners: front/back text edit/persistence, dye color, glow, wax-lock; banner duplicate + shield decoration crafting-special recipes
+PASS [signs + banners] a sign's front/back role follows the real vanilla angle formula (a player south of a rotation-0 sign reads its front)
+PASS [signs + banners] placing a sign sends OpenSignEditorPacket for its front face (real client auto-open)
+PASS [signs + banners] editing a sign's front text persists the real lines (Hello/Minecom)
+PASS [signs + banners] the back face is untouched by a front-only edit
+PASS [signs + banners] standing north of a rotation-0 sign reads its back face
+PASS [signs + banners] dye on a sign face WITHOUT text is a no-op (canApplyToSign's hasMessage gate) — color unchanged, dye not consumed
+PASS [signs + banners] dye on a sign face WITH text sets its color and consumes the dye
+PASS [signs + banners] glow ink sac makes the (text-bearing) front face glow
+PASS [signs + banners] a plain ink sac clears the glow back off
+PASS [signs + banners] honeycomb waxes the sign
+PASS [signs + banners] a waxed sign rejects further text edits
+PASS [signs + banners] a waxed sign rejects dye too (item not consumed)
+01:03:26 [INFO] RegionStore: Restored 86 block-entity entries, 0 mobs, 0 item frames/armor stands from region shards
+PASS [signs + banners] a sign's front text/color and waxed state survive a save/wipe/reload
+PASS [signs + banners] BannerDuplicateRecipe: a patterned banner + a blank one of the SAME base color copies the pattern onto the blank one
+PASS [signs + banners] BannerDuplicateRecipe.getRemainingItems: the patterned source survives at qty 1, the blank target is fully consumed (asymmetric — the one recipe in this project that doesn't consume everything)
+PASS [signs + banners] BannerDuplicateRecipe rejects a mismatched base color (red source, blue target)
+PASS [signs + banners] ShieldDecorationRecipe: a banner + a pattern-free shield produces a shield carrying the banner's base color and pattern layers
+PASS [signs + banners] a banner placed from a patterned item captures its patterns at place time
+[playtest] loom: a base pattern needs a button click, a stencil item auto-selects and isn't consumed, the 6-layer cap holds, and a stale selection resets across a pattern-slot round trip
+PASS [loom] loom opens window
+PASS [loom] banner+dye with no pattern item previews nothing until a button is clicked
+PASS [loom] clicking button 3 previews a banner carrying exactly 1 red pattern layer
+PASS [loom] taking the base-pattern result consumes 1 banner + 1 dye and carries the layer
+PASS [loom] a stencil pattern item auto-previews with no button click needed
+PASS [loom] taking a stencil-pattern result does NOT consume the reusable stencil item
+PASS [loom] re-selecting a base pattern (button 2) previews again
+PASS [loom] a selection that doesn't survive a pattern-slot round trip resets instead of staying stale
+PASS [loom] a banner already at the 6-layer cap refuses a 7th, even after a fresh button click
+[playtest] harvesting: sweet berry bush and cave vine glow berries reset after picking
+PASS [harvesting] harvesting a fully-grown (age 3) sweet berry bush drops sweet_berries
+PASS [harvesting] harvesting resets the bush to age 1 (not 0)
+PASS [harvesting] harvesting a berry-bearing cave vine drops glow_berries
+PASS [harvesting] harvesting clears the vine's berries state
+[playtest] note block: instrument follows the block below, right-click cycles the note
+PASS [note block] note block on stone selects BASEDRUM (real vanilla's material-instrument table)
+PASS [note block] note block on gold_block selects BELL
+PASS [note block] right-click cycles the note property from 0 to 1
+PASS [note block] cycling wraps at 25 notes (0-24) back to 0
+[playtest] campfire: cooks raw food into its real recipe result and drops it
+PASS [campfire] a lit campfire cooks raw beef into cooked_beef and drops it (600-tick recipe)
+[playtest] composter: fills toward ready, then empties into bone_meal
+PASS [composter] 7 guaranteed-chance items fill the composter to level 7
+PASS [composter] composter becomes READY (level 8) 20 ticks after reaching level 7
+PASS [composter] emptying a ready composter drops bone_meal and resets to level 0
+[playtest] jukebox: playing emits a direct signal, disc keeps its comparator reading, eject drops it
+PASS [jukebox] inserting a disc sets has_record
+PASS [jukebox] a playing jukebox emits a direct 15-signal (lights the adjacent lamp)
+PASS [jukebox] a comparator reads the disc's real comparator_output (music_disc_cat = 2)
+PASS [jukebox] ejecting resets has_record to false
+PASS [jukebox] ejecting drops the music_disc_cat item
+PASS [jukebox] an empty jukebox no longer emits a direct signal
+[playtest] lectern: books drives a real page-count comparator signal, page-turns pulse redstone, taking returns the book
+PASS [lectern] placing a book sets has_book
+PASS [lectern] page 0 of 3 (progress 0) gives comparator output 1 (has_book alone)
+PASS [lectern] right-clicking a book-bearing lectern opens the reading menu
+PASS [lectern] a page turn pulses a direct redstone signal (lights the adjacent lamp for 2 ticks)
+PASS [lectern] the page-turn pulse clears itself after 2 ticks
+PASS [lectern] on the last page (progress 1.0) the comparator reads its maximum (15)
+PASS [lectern] taking the book clears has_book
+PASS [lectern] taking the book returns it to the player's inventory
+PASS [lectern] an empty lectern's comparator reads 0
+[playtest] tripwire: two facing hooks connect through wire, stepping on it powers a direct signal, shears disarm in place
+PASS [tripwire] two hooks facing each other with tripwire between connect (attached)
+PASS [tripwire] stepping on a connected wire segment powers both hooks
+PASS [tripwire] a powered hook emits a direct signal out its own back (lights the lamp behind it)
+PASS [tripwire] stepping off clears the powered state
+PASS [tripwire] breaking a wire with shears disarms it in place instead of removing it
+PASS [tripwire] a disarmed segment breaks the hook-to-hook connection
+[playtest] respawn anchor: charges with glowstone, explodes outside the nether, sets spawn and depletes a charge on respawn in it
+PASS [respawn anchor] charging 4 times with glowstone reaches the max charge
+PASS [respawn anchor] 4 charges gives comparator output 15 (getScaledChargeLevel: floor(4/4*15))
+PASS [respawn anchor] using a charged anchor outside the Nether explodes it instead of setting spawn
+PASS [respawn anchor] charging the Nether anchor once
+PASS [respawn anchor] using a charged anchor in the Nether sets spawn without consuming its charge
+PASS [respawn anchor] actually respawning at the anchor depletes exactly 1 charge
+[playtest] target block: a bullseye arrow hit gives max signal, a grazing hit gives a low one, and mid-reset hits are ignored
+PASS [target block] a dead-center arrow hit gives the maximum signal (15)
+PASS [target block] a powered target block emits a direct signal (lights the adjacent lamp)
+PASS [target block] a hit while a previous reset is still pending doesn't overwrite the value
+PASS [target block] the signal resets to 0 after the arrow's 20-tick window
+PASS [target block] the lamp turns off once the signal resets
+PASS [target block] a grazing near-corner hit gives a low signal, not the max (got 2)
+[playtest] candle: flint and steel lights it, stacking requires a matching color, empty-hand extinguishes it
+PASS [candle] flint and steel lights the candle
+PASS [candle] a matching-color candle item stacks the count to 2
+PASS [candle] a different-color candle item does not stack (real vanilla: separate block types)
+PASS [candle] an empty-hand right-click extinguishes a lit candle
+[playtest] cake: eating a slice restores hunger and advances bites, the comparator signal follows (7-bites)*2, the last bite removes it
+PASS [cake] a full cake (0 bites) gives comparator output 14 ((7-0)*2)
+PASS [cake] eating a slice restores 2 food (10 -> 12)
+PASS [cake] eating a slice restores saturation (0.1 modifier * 2 nutrition * 2 = 0.4)
+PASS [cake] eating a slice advances bites to 1
+PASS [cake] comparator output drops to 12 ((7-1)*2)
+PASS [cake] 6 total bites eaten, block still present
+PASS [cake] eating the last slice removes the cake block entirely
+[playtest] scaffolding: distance 0 on solid ground, inherits +1 down a chain, and collapses when its support is removed
+PASS [scaffolding] scaffolding placed directly on solid ground gets distance 0
+PASS [scaffolding] scaffolding placed beside distance-0 scaffolding inherits neighbor+1 (got 1)
+PASS [scaffolding] a scaffolding block with none below it is BOTTOM
+PASS [scaffolding] removing the only real support collapses the whole isolated chain
+PASS [scaffolding] the collapsed scaffolding drops as an item
+[playtest] decorated pot: right-click stacks a matching item in, empty-hand never extracts, breaking drops the contents plus 4 bricks
+PASS [decorated pot] right-clicking with an item stores it in the pot
+PASS [decorated pot] repeated right-clicks with a matching item stack further rather than replacing (comparator output rose to 2)
+PASS [decorated pot] an empty-hand right-click doesn't empty the pot
+PASS [decorated pot] breaking the pot drops its full stored contents (5 wheat)
+PASS [decorated pot] breaking the pot also drops its 4 (plain/undecorated) sherds as bricks
+[playtest] flower pot: planting swaps to the potted variant, a held plant on a filled pot is a no-op, empty-hand pops the plant back out
+PASS [flower pot] planting a dandelion into an empty pot swaps it to potted_dandelion
+PASS [flower pot] planting consumes the held item
+PASS [flower pot] holding a DIFFERENT valid plant over an already-filled pot is a pure no-op (real vanilla's CONSUME, no swap)
+PASS [flower pot] the no-op doesn't consume the held item either
+PASS [flower pot] an empty-hand right-click on a filled pot pops the plant back out
+PASS [flower pot] the extracted dandelion lands in the player's inventory
+PASS [flower pot] a non-plant item held on an empty pot is a no-op (still no dandelion planted)
+PASS [flower pot] a sapling (itself a real placeable BLOCK item) still routes through the same interact-first dispatch and pops back out, rather than being swallowed by Minestom's normal block-placement fallthrough
+[playtest] ender chest: inventory is shared across every ender chest the same player opens, and breaking one never spills its contents
+PASS [ender chest] right-clicking an ender chest opens an inventory
+PASS [ender chest] a second, different ender chest also opens
+PASS [ender chest] the SAME player's ender chest inventory is shared across every ender chest block
+PASS [ender chest] breaking an ender chest never spills its contents (they belong to the player)
+PASS [ender chest] the inventory itself still has the diamonds after the block is gone
+[playtest] barrel: opens like a chest, persists across close/reopen, comparator reads fullness, hoppers can push into and pull from it
+PASS [barrel] right-clicking a barrel opens an inventory
+PASS [barrel] a barrel's contents persist across close/reopen
+PASS [barrel] comparator reads barrel fullness and lights the lamp
+PASS [barrel] a hopper pushes items down into a barrel below it
+PASS [barrel] a hopper pulls items down from a barrel above it
+[playtest] mobs: a few zombies/drowned spawn holding a weapon
+PASS [mobs] zombies rarely spawn holding a weapon (15/1500)
+PASS [mobs] baby zombies occasionally spawn with 1.5x movement speed (81/1500)
+PASS [mobs] drowned sometimes spawn holding a trident/fishing_rod (15/150)
+PASS [mobs] drowned never spawn wearing armor (Drowned overrides, no super call)
+[playtest] nether: fortress mobs (blaze + wither skeleton) spawn on nether brick
+PASS [nether] fortress mobs build (blaze + wither_skeleton)
+PASS [nether] blazes spawn from the fortress list (brewing progression)
+PASS [nether] nether fortress: the blaze spawner block is placed at the platform center
+PASS [nether] nether fortress: the placed spawner is registered with ClassicSpawners
+[playtest] phantom: circles above the target then dives in for a melee strike
+PASS [phantom] phantom spawns with real vanilla stats (20 HP, 6 attack damage)
+PASS [phantom] a circling phantom eventually dives and strikes the player
+[playtest] phantom spawner: insomnia + darkness + altitude/sky + difficulty gate a natural spawn
+PASS [phantom spawner] a just-rested player (0 ticks since rest) never spawns a phantom, even forced repeatedly (got 0)
+PASS [phantom spawner] huge insomnia still can't spawn a phantom in broad daylight (darkness gate, got 0)
+PASS [phantom spawner] insomnia + darkness + Hard difficulty lets a phantom spawn above the player within 1 attempts (got 1)
+PASS [phantom spawner] a natural-spawn phantom group is 1-4 on Hard (getPhantomSize stays 0, 6 damage — real vanilla no longer scales size with insomnia; got 1)
+PASS [phantom spawner] every spawned phantom keeps real vanilla base stats (6 attack damage; 1 phantom(s) this run)
+[playtest] pillager: visibly charges its crossbow before firing, unlike a skeleton's bow rhythm
+PASS [pillager] pillager visibly charges its crossbow (setChargingCrossbow) before firing
+PASS [pillager] a pillager with continuous line of sight completes its charge and fires an arrow
+[playtest] guardian: charges a laser beam at a target in continuous line of sight, then fires
+PASS [guardian] guardian spawns with real vanilla stats (30 HP, 6 attack damage)
+PASS [guardian] a guardian in range acquires the player as a target
+PASS [guardian] a guardian with continuous line of sight charges and fires its laser (~4.5s)
+[playtest] elder guardian: tougher stats, faster laser charge than base guardian
+PASS [elder guardian] elder guardian spawns with real vanilla stats (80 HP, 8 attack damage)
+PASS [elder guardian] an elder guardian in range acquires the player as a target
+PASS [elder guardian] an elder guardian with continuous line of sight charges and fires its faster laser (~3.5s)
+[playtest] shulker: stationary, fires a bullet that damages and levitates the target
+PASS [shulker] shulker spawns with real vanilla stats (30 HP)
+PASS [shulker] a shulker fires a bullet that damages the target
+PASS [shulker] the shulker bullet applies Levitation on hit
+[playtest] wither: 300 HP flying boss fires wither skulls that damage the target
+PASS [wither] wither spawns with real vanilla stats (300 HP)
+PASS [wither] a wither fires skulls that damage the target
+[playtest] cave spider: 12 HP (not 16), same AI as a regular spider, bite poisons on Normal/Hard
+PASS [cave spider] cave spider spawns with real vanilla stats (12 HP, not the regular spider's 16)
+PASS [cave spider] a cave spider attacks a nearby player unprompted (same AI as a regular spider)
+PASS [cave spider] a Normal-difficulty cave spider bite poisons the target (7s)
+[playtest] endermite: plain melee AI, real stats
+PASS [endermite] endermite spawns with real vanilla stats (8 HP, 2 attack damage)
+PASS [endermite] an endermite attacks a nearby player unprompted (plain melee AI, day or night)
+[playtest] illusioner: real stats + bow attack
+PASS [illusioner] illusioner spawns with real vanilla stats (32 HP)
+PASS [illusioner] an illusioner fires arrows at a nearby player
+[playtest] piglin brute: always-hostile elite bastion guard, real stats
+PASS [piglin brute] piglin brute spawns with real vanilla stats (50 HP, base 7 attack damage; got hp=50.0 baseAtk=7.0)
+PASS [piglin brute] a piglin brute attacks a nearby player unprompted (always hostile, unlike a regular piglin)
+[playtest] piglin: bartering with a gold ingot rolls the real loot table
+PASS [piglin] bartering consumes one gold ingot (had 3, now 2)
+PASS [piglin] bartering drops exactly one item from the real piglin_bartering table (got 1)
+[playtest] piglin: flees a nearby soul campfire
+PASS [piglin] a piglin flees a nearby soul campfire (started 1.118033988749895 blocks away)
+[playtest] witch: drinks self-preservation potions mid-fight (healing, fire resistance)
+PASS [witch] a hurt witch drinks a healing potion (hp 11.0 -> 15.0)
+PASS [witch] a burning witch drinks fire resistance
+[playtest] zoglin: hoglin's zombified form, real stats
+PASS [zoglin] zoglin spawns with real vanilla stats (40 HP, 0.6 knockback resistance; got hp=40.0 kb=0.6)
+PASS [zoglin] a zoglin attacks a nearby player unprompted
+[playtest] giant: legacy mob, real stats
+PASS [giant] giant spawns with real vanilla stats (100 HP, 50 attack damage; got hp=100.0 atk=50.0)
+PASS [giant] a giant attacks a nearby player unprompted
+[playtest] ghast fireball: real damage + explosion on impact, deflectable by a melee hit
+PASS [ghast fireball] a ghast fireball damages a nearby player on impact
+PASS [ghast fireball] the fireball is consumed on impact (collision wired to Explosions.explode)
+PASS [ghast fireball] attacking an incoming fireball deflects it along the player's look direction (dot=1.0)
+[playtest] iron golem: village defender attacks nearby hostile mobs, launches them upward
+PASS [iron golem] iron golem spawns with real vanilla stats (100 HP, full knockback immunity)
+PASS [iron golem] an iron golem attacks a nearby hostile mob unprompted (village defense)
+PASS [iron golem] golem damage is within the real variable range (~7.5-22.5, got 9.5)
+PASS [iron golem] the hit launches the target upward instead of horizontal knockback (vy=6.365004522931935)
+[playtest] snow golem: fragile ranged defender, snowballs deal real damage only to blazes
+PASS [snow golem] snow golem spawns with real vanilla stats (4 HP)
+PASS [snow golem] a snow golem throws snowballs that deal the real 3 damage to a blaze
+[playtest] boat: floats up to the water surface
+PASS [boat] boat rises to the water surface (y=42.9)
+[playtest] boat: a rider takes no fall damage from the ride
+PASS [boat] riding a boat down a 20-block fall takes no fall damage (health=20.0)
+[playtest] natural spawn: vanilla NaturalSpawner + parallel bench
+PASS [natural spawn] hostiles spawn on the dark night surface (got 70)
+PASS [natural spawn] MONSTER count respects the vanilla cap (<=70, got 70)
+[playtest]   spawn decide/tick over 1249 spawnable chunks (5 players): sequential 4604us, parallel 3350us, speedup 1.37x (4 cores)
+PASS [natural spawn] parallel spawn decision runs and produces work (seq 4603us, par 3349us)
+[playtest] nether: terrain generates
+PASS [nether] nether has netherrack (13193), lava sea (1560), bedrock ceiling (256/256)
+[playtest] nether: portal ignites + travels + returns
+PASS [nether] obsidian frame lights into portal blocks
+PASS [nether] portal travel reaches the nether at /8 coords (x=7)
+PASS [nether] return portal brings you home at x8 coords
+PASS [nether] second frame lights (diagnostic, block=nether_portal)
+PASS [nether] player standing in the second portal (diagnostic, block=nether_portal, gamemode=CREATIVE)
+PASS [nether] a creative player crosses a portal instantly, no standing wait
+[playtest] bed: a nearby real Monster subclass denies sleep, a passive mob or one outside the AABB doesn't, creative bypasses the check
+PASS [bed] a real vanilla Monster (zombie) 4 blocks away, inside the ±8/±5 AABB, denies sleep
+PASS [bed] removing the zombie lets sleep proceed again
+PASS [bed] a zombie 40 blocks away, outside the ±8/±5 AABB, does not deny sleep
+PASS [bed] a nearby cow — a real vanilla Mob, NOT a Monster subclass — does not deny sleep
+PASS [bed] creative mode bypasses the monster-nearby check entirely (real vanilla: !this.isCreative())
+[playtest] totem of undying: a lethal hit with one in either hand survives at 1 HP and grants its real effects, out-of-world damage bypasses it
+PASS [totem of undying] a lethal hit with a totem in the main hand survives at 1 HP instead of dying
+PASS [totem of undying] the totem is consumed (main hand now empty)
+PASS [totem of undying] totem grants Regeneration II (900 ticks)
+PASS [totem of undying] totem grants Absorption II (100 ticks)
+PASS [totem of undying] totem grants Fire Resistance I (800 ticks)
+PASS [totem of undying] an off-hand totem also saves the player (real vanilla checks main then off hand)
+PASS [totem of undying] the off-hand totem is consumed
+PASS [totem of undying] without a totem in either hand, the same lethal hit actually kills the player
+PASS [totem of undying] out_of_world damage bypasses totem protection (bypasses_invulnerability tag)
+[playtest] spyglass: raising it plays item.spyglass.use, releasing (early or at full duration) plays item.spyglass.stop_using, other items are a no-op
+PASS [spyglass] the acting player never gets their own item.spyglass.use packet back (real vanilla's Player.playSound excludes the source player)
+PASS [spyglass] a different nearby player DOES hear item.spyglass.use
+PASS [spyglass] releasing early (PlayerCancelItemUseEvent) is heard by others as item.spyglass.stop_using
+PASS [spyglass] the full 1200-tick duration elapsing (PlayerFinishItemUseEvent) is ALSO heard as item.spyglass.stop_using
+PASS [spyglass] a non-spyglass item's use event is a no-op (no packet sent to anyone)
+1029 passed, 1 failed
+FLAKE SLO (CONVENTIONS §10): every FAIL is a bug — root-cause it; never re-run until green.
+01:05:16 [INFO] ServerProcessImpl: Stopping Minestom server.
+01:05:16 [INFO] ServerProcessImpl: Shutting down all thread pools.
+01:05:16 [INFO] ServerProcessImpl: Minestom server stopped successfully.
+DONE_FULL_RUN
