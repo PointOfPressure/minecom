@@ -14,6 +14,67 @@ of what got escalated and why.
 
 ---
 
+## P2 M0 + M1 DONE — region multi-core design doc + region=world scheduler (2026-07-20, Opus, branch `p2-regions-m0m1`, worktree `~/minecom-p2`)
+
+Delivered the first two milestones of MASTERPLAN §"P2 — Region multi-core (the
+moat)". M2+ NOT attempted (deliberately out of scope).
+
+**M0 — `docs/MULTICORE.md`**: the owner-reviewed design doc the masterplan
+demands, written as decided positions (not options). Answers every P2 bullet:
+ownership unit (region = chunk group; static grid in M2, Folia-style dynamic
+merge/split in M4, merge-always-safe/split-conditional); the full
+border-crossing inventory as next-tick messages with a per-mechanic difference
+sheet (§7 table) — the key parity decisions are **pistons, redstone networks,
+and explosion *outcomes* are 0-skew by forcing a merge** (a connected redstone
+network is a merge unit; a border-spanning piston forces a merge), while the
++1-tick rows (hoppers straddling the static grid, AI targeting, AoE, sound) are
+all mechanics whose vanilla behavior already tolerates a tick and each is
+policed by a cross-border differential fixture (MASTERPLAN §2.2); what stays
+global (player list/connection I/O, persistence coordinator, time/weather —
+region workers a dedicated pool disjoint from network + worldgen per §5.0); the
+verification story (suite-at-every-region-size, region=world A/B baseline,
+jcstress-style message-layer tests, chaos-mode randomized boundaries,
+cross-border fixtures that generate the difference sheet); and sub-tick
+semantics (per-region read-only last-tick snapshot; the Orientation port targets
+a per-region update queue from birth, made tractable precisely because §2.5
+keeps redstone networks single-region). Five genuinely open calls are in the
+final OPEN QUESTIONS section for owner review (hopper merge-unit vs +1 tick;
+merge radius derivation; worker-pool/core budget vs P1; chaos-mode CI placement;
+cross-instance routing owner).
+
+**M1 — region scheduler, region=world** (new package `regions/`): `Regions`
+(static-holder scheduler: `register(Instance)`, once-per-tick `tickBarrier()`,
+`regionOf`, `MINECOM_REGIONS` mode gate — only `world` implemented, others
+rejected so a premature config can't run before M2), `Region` (ownership unit;
+`owns()` always true and `runTick()` drains an empty inbox + advances a counter
+in M1 — gameplay still ticks on the existing subsystem scheduler tasks),
+`RegionExecutor` (interface + `sameThread()` inline impl = the zero-threading-
+change degenerate executor; M2's worker-pool impl slots behind the same
+interface = the A/B switch), `RegionQueue` (the message-queue interface + a
+`ConcurrentLinkedQueue`-backed `concurrent()` impl with the drain-bounded-to-
+start invariant so a re-entrant produce defers to the next boundary),
+`RegionMessage` (the value envelope — exists, zero producers until M3). Wired
+in `Bootstrap.boot` for overworld/nether/end. Behavior-transparent: the barrier
+drives empty region ticks inline on the tick thread.
+
+**CONVENTIONS §6 pre-authorization (M2, per §6's "needs a HANDOFF.md entry")**:
+M2 introduces a real `ExecutorService`-backed `RegionExecutor` (the bounded
+region worker pool). Reason: the whole P2 moat is single-threaded region islands
+ticking in parallel — this is the executor the design exists to add, disjoint
+from Netty I/O and the worldgen executor (MASTERPLAN §5.0). Logged here as the
+design reference `MULTICORE.md` cites.
+
+**Verification**: SelfTest gains 11 server-less region message-layer checks
+(`regionChecks()`: queue FIFO/deterministic order, re-entrant-produce defers,
+empty-drain, sameThread inline execution, default mode = world) → selftest 271.
+No new PlayTest scenario — M1's transparency gate IS the existing playtest (1030)
+passing green with the scheduler wired active in Bootstrap; the boot log line
+`Region scheduler: registered region ... (mode=WORLD, region=world)` is the
+live-server evidence the barrier installed. Suite evidence in the branch's final
+report / `test-logs/`.
+
+---
+
 ## Fragile-check backlog: crossbow piercing — NO REPRO under CONVENTIONS §10 contention, closed as such (2026-07-20, Sonnet 5, branch `crossbow-hardening`, worktree `~/minecom-crossbow`)
 
 Picked up the top of the fragile-check backlog (`docs/HANDOFF.md`'s "Fragile-check

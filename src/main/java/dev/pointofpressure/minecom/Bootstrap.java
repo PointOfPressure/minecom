@@ -299,6 +299,15 @@ public final class Bootstrap {
 
         Difficulty.startTracking();
 
+        // P2 region scheduler (docs/MULTICORE.md). M1 = region=world: each
+        // instance gets one region on the tick thread and a once-per-tick
+        // barrier. Behavior-transparent — the barrier drives empty region ticks
+        // while gameplay still runs on the subsystem scheduler tasks above; the
+        // suite passing with it active is M1's gate (MULTICORE.md §5.2).
+        dev.pointofpressure.minecom.regions.Regions.register(overworld);
+        dev.pointofpressure.minecom.regions.Regions.register(nether);
+        dev.pointofpressure.minecom.regions.Regions.register(end);
+
         dev.pointofpressure.minecom.blocks.EndPortal.register(overworld, end, spawn);
         overworld.setTag(SPAWN_TAG, spawn);
         return overworld;

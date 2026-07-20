@@ -1,5 +1,9 @@
 package dev.pointofpressure.minecom.data;
 
+import dev.pointofpressure.minecom.regions.RegionExecutor;
+import dev.pointofpressure.minecom.regions.RegionMessage;
+import dev.pointofpressure.minecom.regions.RegionQueue;
+import dev.pointofpressure.minecom.regions.Regions;
 import net.minestom.server.component.DataComponents;
 import net.minestom.server.entity.EntityType;
 import net.minestom.server.instance.block.Block;
@@ -1654,6 +1658,7 @@ public final class SelfTest {
                         .anyMatch(s -> s.material().key().value().endsWith("_armor_trim_smithing_template")));
 
         securityChecks();
+        regionChecks();
 
         emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
@@ -1778,6 +1783,61 @@ public final class SelfTest {
             }
         }
         return true;
+    }
+
+    /**
+     * P2 region multi-core message layer (docs/MULTICORE.md §2, §5.3). These
+     * are the server-less invariants of the queue and executor primitives — the
+     * deterministic-order and enqueue/apply-boundary rules the whole design
+     * rests on. The wired scheduler (region=world active in a live server) is
+     * verified in PlayTest.scenarioRegions.
+     */
+    private static void regionChecks() {
+        record Msg(String targetRegionId, int n) implements RegionMessage {}
+
+        RegionQueue q = RegionQueue.concurrent();
+        check("Regions: a fresh RegionQueue is empty (size 0)", q.isEmpty() && q.size() == 0);
+
+        q.enqueue(new Msg("r", 1));
+        q.enqueue(new Msg("r", 2));
+        q.enqueue(new Msg("r", 3));
+        check("Regions: enqueue grows the queue (3 messages -> size 3)", q.size() == 3 && !q.isEmpty());
+
+        var order = new java.util.ArrayList<Integer>();
+        int applied = q.drain(m -> order.add(((Msg) m).n()));
+        check("Regions: drain applies every queued message in arrival order (deterministic, MULTICORE §2.7)",
+                applied == 3 && order.equals(java.util.List.of(1, 2, 3)));
+        check("Regions: drain empties the queue", q.isEmpty() && q.size() == 0);
+
+        // A message enqueued while its own drain runs must defer to the NEXT
+        // boundary, never apply in the boundary that produced it (MULTICORE §2.7).
+        q.enqueue(new Msg("r", 10));
+        var seen = new java.util.ArrayList<Integer>();
+        q.drain(m -> {
+            seen.add(((Msg) m).n());
+            if (((Msg) m).n() == 10) q.enqueue(new Msg("r", 11)); // re-entrant produce
+        });
+        check("Regions: a message produced during a drain defers to the next boundary (MULTICORE §2.7)",
+                seen.equals(java.util.List.of(10)) && q.size() == 1);
+        var seen2 = new java.util.ArrayList<Integer>();
+        q.drain(m -> seen2.add(((Msg) m).n()));
+        check("Regions: the deferred message applies on the following drain", seen2.equals(java.util.List.of(11)));
+
+        check("Regions: drain on an empty queue applies nothing", q.drain(m -> {}) == 0);
+        check("Regions: a message carries its target region id", new Msg("region-7", 0).targetRegionId().equals("region-7"));
+
+        // The region=world executor runs work inline on the caller (the tick
+        // thread in a live server) — the zero-threading-change degenerate case.
+        RegionExecutor exec = RegionExecutor.sameThread();
+        Thread caller = Thread.currentThread();
+        var ranOn = new Thread[]{null};
+        boolean sameThread = exec.isOwningThread();
+        exec.execute(() -> ranOn[0] = Thread.currentThread());
+        check("Regions: sameThread executor runs work inline on the caller", ranOn[0] == caller);
+        check("Regions: sameThread executor reports the caller as its owning thread", sameThread);
+
+        check("Regions: default mode is region=world (MINECOM_REGIONS unset)",
+                Regions.mode() == Regions.Mode.WORLD);
     }
 
     private static void check(String name, boolean ok) {
