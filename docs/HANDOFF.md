@@ -593,6 +593,19 @@ single-feature target on the overworld: a modest alignment flips ~0.2pp positive
 
 ---
 
+## Structure-aware decoration canvas — next-wave worldgen task (2026-07-20, Fable)
+
+The v0.37.0 idle gate caught three structure-count pin drifts; root cause is
+the (pre-existing, now better-exposed) structure-blind decoration canvas —
+see AUDIT "Structure-blind decoration canvas" for evidence and fix shape.
+Task: overlay structure placements into OverlayCanvas.chunkAt reads so
+feature replaceability checks see monument/mansion blocks; ratchet-gated
+(r3 quick cut, then full r18 vs 99.381792% up-only). Expect small positive
+or neutral r18 movement plus restored container cells at the two pinned
+seeds; restore the SelfTest pins toward their pre-pass values if so.
+
+---
+
 ## nether_vibenilla region-diff is NONDETERMINISTIC — driver alignment is now measurement-blocking (2026-07-19, Fable) — RESOLVED (see entry above)
 
 Five r18 measures of the UNCHANGED vibenilla adopt path landed in a ~±0.04pp

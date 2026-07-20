@@ -1663,6 +1663,22 @@ larger design pass. Landed nothing rather than ship a speculative regression.
   where vanilla does; only its decoration diverges, and the 26.2 region-diff
   baseline captures exactly that. Same follow-up as above. (L)
 
+## Structure-blind decoration canvas (2026-07-20, Fable)
+
+The decoration canvas (OverlayCanvas) reads UNDECORATED terrain without
+structures, so decoration features' replaceability checks can't see structure
+blocks — kelp/seagrass can overwrite monument prismarine, tree writes can
+overwrite mansion chests. Vanilla decorates on the real chunk data (structures
+included), so its features protect those cells. Exposed (not introduced) by
+the shared-canvas pass: measured at seed-20260710 monument -9 prismarine
+family and seed-1 mansion -4 chests (SelfTest pins re-pinned to current
+output 2026-07-20 with citing comments; the +38 mansion dark-oak delta in the
+same re-pin is CORRECT cross-chunk canopy spill capture). The r18 ratchet
+region contains no mansion, so this divergence is invisible to the headline
+number. Fix shape: feed structure placements into the decoration canvas's
+read path (chunkAt overlay), then re-measure r18 under the ratchet before
+landing. (M)
+
 ## stale comments to clean up when touched
 
 - VanillaMobs.java witch javadoc (~:708 region) still says "no difficulty

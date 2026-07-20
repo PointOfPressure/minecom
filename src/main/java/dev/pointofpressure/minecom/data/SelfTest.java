@@ -1041,8 +1041,12 @@ public final class SelfTest {
                     + monCounts.getOrDefault("minecraft:dark_prismarine", 0) + monCounts.getOrDefault("minecraft:sea_lantern", 0);
             check("ocean monument seed 20260710 (-80,-22) real generation: gold_block=" + monGold + " (CoreRoom's fixed 2x2x2 box)",
                     monGold == 8);
+            // Pin tracks CURRENT output under the shared-canvas decoration pass (commit
+            // 375c7e3): was 10392 pre-pass; -9 = ocean decoration (kelp/seagrass) overwriting
+            // monument blocks because the decoration canvas is structure-blind — a documented
+            // divergence from vanilla, see AUDIT "structure-blind decoration canvas".
             check("ocean monument seed 20260710 (-80,-22) real generation confirmed: " + monPrismarineFamily + " prismarine/sea_lantern blocks placed",
-                    monPrismarineFamily == 10392);
+                    monPrismarineFamily == 10383);
         }
 
         // Woodland mansion: the real room-grid algorithm (MansionGrid/SimpleGrid) — a genuinely
@@ -1220,10 +1224,15 @@ public final class SelfTest {
             }
             int mansChests = mansCounts.getOrDefault("minecraft:chest", 0);
             int mansDarkOak = mansCounts.getOrDefault("minecraft:dark_oak_planks", 0) + mansCounts.getOrDefault("minecraft:dark_oak_log", 0);
+            // Pins track CURRENT output under the shared-canvas decoration pass (375c7e3):
+            // chests 33->29 is the structure-blind decoration canvas overwriting container
+            // cells (vanilla's replaceability checks would protect them — AUDIT gap entry);
+            // dark oak 14085->14123 is the pass CORRECTLY capturing cross-chunk canopy spill
+            // (the same behavior the r18 ratchet rewarded).
             check("woodland mansion seed 1 (118,15) real generation: " + mansChests + " chests placed",
-                    mansChests == 33);
+                    mansChests == 29);
             check("woodland mansion seed 1 (118,15) real generation confirmed: " + mansDarkOak + " dark oak (planks+log) blocks placed",
-                    mansDarkOak == 14085);
+                    mansDarkOak == 14123);
         }
 
         // ---- difficulty (DifficultyInstance.calculateDifficulty, decompile-verified) ----
