@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.blocks;
 
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import net.kyori.adventure.text.Component;
 import net.minestom.server.MinecraftServer;
@@ -78,8 +79,7 @@ public final class Brewing {
                 }
             }
         });
-        MinecraftServer.getSchedulerManager().buildTask(Brewing::tickAll)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "brewing", Brewing::tickAll);
         Persist.register(persistence());
     }
 

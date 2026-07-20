@@ -292,6 +292,15 @@ public final class Commands {
         }
     }
 
+    /** P1 debug: prints the last-tick per-system TickPipeline nanotime table to the sender. */
+    public static final class TickProfile extends Command {
+        public TickProfile() {
+            super("tickprofile");
+            setDefaultExecutor((sender, context) ->
+                    sender.sendMessage(net.kyori.adventure.text.Component.text(TickPipeline.timingsReport())));
+        }
+    }
+
     /** Travel to/from The End (spawns an obsidian arrival platform near the central island). */
     public static final class End extends Command {
         public End(net.minestom.server.instance.InstanceContainer overworld, Pos spawn) {

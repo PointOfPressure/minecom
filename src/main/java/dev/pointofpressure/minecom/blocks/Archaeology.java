@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.blocks;
 
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.Items;
 import dev.pointofpressure.minecom.data.LootTables;
@@ -106,10 +107,8 @@ public final class Archaeology {
     public static void register(GlobalEventHandler events) {
         Persist.register(persistence());
         events.addListener(PlayerUseItemOnBlockEvent.class, Archaeology::useOnBlock);
-        MinecraftServer.getSchedulerManager().buildTask(Archaeology::tickBrushingPlayers)
-                .repeat(TaskSchedule.tick(1)).schedule();
-        MinecraftServer.getSchedulerManager().buildTask(Archaeology::checkResets)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.ENTITIES, "archaeologyBrush", Archaeology::tickBrushingPlayers);
+        TickPipeline.register(TickPipeline.POST, "archaeologyResets", Archaeology::checkResets);
     }
 
     /** A structure (or a test) marks a suspicious block's eventual loot, rolled on the brush

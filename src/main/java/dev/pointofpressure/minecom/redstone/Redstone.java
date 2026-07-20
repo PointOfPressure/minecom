@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.redstone;
 
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.blocks.Explosions;
@@ -72,8 +73,7 @@ public final class Redstone {
 
     public static void start(Instance overworld) {
         instance = overworld;
-        MinecraftServer.getSchedulerManager().buildTask(Redstone::tick)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.REDSTONE, "redstone", Redstone::tick);
     }
 
     public static void register(GlobalEventHandler events) {

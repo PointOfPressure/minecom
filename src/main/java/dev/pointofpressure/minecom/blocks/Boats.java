@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.blocks;
 
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
@@ -117,8 +118,7 @@ public final class Boats {
             }
         });
 
-        MinecraftServer.getSchedulerManager().buildTask(Boats::tickAll)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.ENTITIES, "boats", Boats::tickAll);
     }
 
     public static Entity spawn(Instance instance, EntityType type, Pos pos) {

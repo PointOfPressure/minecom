@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.mobs;
 
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
@@ -59,7 +60,7 @@ public final class Leashing {
     public static void register(GlobalEventHandler events) {
         events.addListener(PlayerEntityInteractEvent.class, Leashing::interactMob);
         events.addListener(PlayerBlockInteractEvent.class, Leashing::interactFence);
-        MinecraftServer.getSchedulerManager().buildTask(Leashing::tick).repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.ENTITIES, "leashing", Leashing::tick);
     }
 
     private static void interactMob(PlayerEntityInteractEvent e) {

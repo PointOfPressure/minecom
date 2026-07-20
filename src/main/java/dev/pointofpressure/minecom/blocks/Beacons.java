@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.blocks;
 
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.entity.Player;
@@ -103,8 +104,7 @@ public final class Beacons {
             selectEffects(pos, primary, secondary, menu);
         });
 
-        MinecraftServer.getSchedulerManager().buildTask(Beacons::tick)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "beacons", Beacons::tick);
     }
 
     /** Register a beacon placed by tests or world code. */

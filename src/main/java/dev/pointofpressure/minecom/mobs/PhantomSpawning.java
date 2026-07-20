@@ -1,6 +1,7 @@
 package dev.pointofpressure.minecom.mobs;
 
 import dev.pointofpressure.minecom.Difficulty;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.survival.Lightning;
 import dev.pointofpressure.minecom.worldgen.WorldGen;
 import net.minestom.server.MinecraftServer;
@@ -42,8 +43,7 @@ public final class PhantomSpawning {
     private static int nextTick;
 
     public static void start(Instance overworld) {
-        MinecraftServer.getSchedulerManager().buildTask(() -> tick(overworld))
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.MOB_SPAWNING, "phantomSpawning", () -> tick(overworld));
     }
 
     /** Beds.interact calls this after a successful sleep — real vanilla resets

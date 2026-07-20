@@ -3,6 +3,7 @@ package dev.pointofpressure.minecom.blocks;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.VanillaData;
 import net.kyori.adventure.sound.Sound;
@@ -96,7 +97,7 @@ public final class Beehives {
             if (isHive(e.getBlock())) onBroken(e.getInstance(), e.getBlockPosition(), e.getPlayer());
         });
         events.addListener(PlayerUseItemOnBlockEvent.class, Beehives::harvest);
-        MinecraftServer.getSchedulerManager().buildTask(Beehives::tick).repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "beehives", Beehives::tick);
     }
 
     private static boolean isHive(Block block) {

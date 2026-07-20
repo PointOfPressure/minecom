@@ -1,6 +1,7 @@
 package dev.pointofpressure.minecom.blocks;
 
 import net.kyori.adventure.text.Component;
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
@@ -83,8 +84,7 @@ public final class Minecarts {
             }
         });
 
-        MinecraftServer.getSchedulerManager().buildTask(Minecarts::tickAll)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.ENTITIES, "minecarts", Minecarts::tickAll);
     }
 
     private static void openCartInventory(net.minestom.server.entity.Player player, Entity cart,

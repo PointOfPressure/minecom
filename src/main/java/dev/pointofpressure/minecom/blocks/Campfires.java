@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.blocks;
 
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.Recipes;
 import net.minestom.server.MinecraftServer;
@@ -41,9 +42,7 @@ public final class Campfires {
 
     public static void register(GlobalEventHandler events) {
         Persist.register(persistence());
-        MinecraftServer.getSchedulerManager().buildTask(Campfires::tickAll)
-                .repeat(TaskSchedule.tick(1))
-                .schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "campfires", Campfires::tickAll);
         events.addListener(PlayerUseItemOnBlockEvent.class, Campfires::useOnBlock);
     }
 

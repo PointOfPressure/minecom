@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.redstone;
 
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.blocks.Containers;
 import dev.pointofpressure.minecom.blocks.Furnaces;
@@ -38,8 +39,7 @@ public final class Hoppers {
     public static void start(Instance overworld) {
         instance = overworld;
         Persist.register(persistence());
-        MinecraftServer.getSchedulerManager().buildTask(Hoppers::tickAll)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "hoppers", Hoppers::tickAll);
     }
 
     /** Hopper persistence (docs/PERSISTENCE.md): items; cooldown restarts fresh. */

@@ -1,6 +1,7 @@
 package dev.pointofpressure.minecom.blocks;
 
 import dev.pointofpressure.minecom.mobs.ai.CreakingMob;
+import dev.pointofpressure.minecom.TickPipeline;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
@@ -91,8 +92,7 @@ public final class CreakingHearts {
                 e.setCancelled(true);
             }
         });
-        MinecraftServer.getSchedulerManager().buildTask(CreakingHearts::tick)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "creakingHearts", CreakingHearts::tick);
     }
 
     /** Track a heart placed by tests or world code. */

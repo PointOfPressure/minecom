@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.blocks;
 
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.instance.Instance;
@@ -102,8 +103,7 @@ public final class FireSpread {
     public static void start(Instance overworld) {
         instance = overworld;
         dev.pointofpressure.minecom.Persist.register(persistence());
-        MinecraftServer.getSchedulerManager().buildTask(FireSpread::tickAll)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.RANDOM_TICKS, "fireSpread", FireSpread::tickAll);
     }
 
     /**

@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.blocks;
 
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Vec;
@@ -76,8 +77,7 @@ public final class Conduits {
         events.addListener(PlayerBlockBreakEvent.class, e -> {
             if (e.getBlock().key().value().equals("conduit")) CONDUITS.remove(pack(e.getBlockPosition()));
         });
-        MinecraftServer.getSchedulerManager().buildTask(Conduits::tick)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "conduits", Conduits::tick);
     }
 
     /** Register a conduit placed by tests or world code. */

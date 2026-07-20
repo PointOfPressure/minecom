@@ -1,5 +1,6 @@
 package dev.pointofpressure.minecom.blocks;
 
+import dev.pointofpressure.minecom.TickPipeline;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Vec;
@@ -59,8 +60,7 @@ public final class RandomTicks {
     public static void register(Instance overworld) {
         instance = overworld;
         registerHandlers();
-        MinecraftServer.getSchedulerManager().buildTask(RandomTicks::tick)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.RANDOM_TICKS, "randomTicks", RandomTicks::tick);
     }
 
     /** Playtest hook: crank the roll rate so growth becomes observable in seconds. */

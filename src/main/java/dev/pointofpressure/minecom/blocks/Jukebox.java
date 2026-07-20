@@ -2,6 +2,7 @@ package dev.pointofpressure.minecom.blocks;
 
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Persist;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.StateAdapter;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.MinecraftServer;
@@ -75,9 +76,7 @@ public final class Jukebox {
 
     public static void register(GlobalEventHandler events) {
         Persist.register(persistence());
-        MinecraftServer.getSchedulerManager().buildTask(Jukebox::tickAll)
-                .repeat(TaskSchedule.tick(1))
-                .schedule();
+        TickPipeline.register(TickPipeline.BLOCK_ENTITIES, "jukebox", Jukebox::tickAll);
         events.addListener(PlayerUseItemOnBlockEvent.class, Jukebox::useOnBlock);
         events.addListener(PlayerBlockInteractEvent.class, Jukebox::interact);
     }

@@ -3,6 +3,7 @@ package dev.pointofpressure.minecom.blocks;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Difficulty;
+import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.Persist;
 import dev.pointofpressure.minecom.StateAdapter;
 import dev.pointofpressure.minecom.data.VanillaData;
@@ -158,8 +159,7 @@ public final class ClassicSpawners {
     public static void start(GlobalEventHandler events) {
         if (started) return;
         started = true;
-        MinecraftServer.getSchedulerManager().buildTask(ClassicSpawners::tick)
-                .repeat(TaskSchedule.tick(1)).schedule();
+        TickPipeline.register(TickPipeline.MOB_SPAWNING, "classicSpawners", ClassicSpawners::tick);
         events.addListener(PlayerBlockBreakEvent.class, ClassicSpawners::onBreak);
         Persist.register(persistence());
     }
