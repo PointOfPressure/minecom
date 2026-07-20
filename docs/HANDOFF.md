@@ -33,31 +33,48 @@ we were chasing:
   reproduced** — iron-golem-vy did not fail once in 40 runs.
 
 Verdict: this is not per-check logic bugs and not the pair — it is **systemic
-harness timing fragility**. ROOT CAUSE (evidence-grounded, not the first guess):
-the `tick(n)` helper (`PlayTest.java:389`) is already correctly tick-counted (waits
-until `TICKS` advances n, wall-clock only as a stall-guard) — so this is NOT naive
-`Thread.sleep` races and NOT "wall-clock waits" (that earlier hypothesis is
-disproven). The actual shape, confirmed on the 6×-failing conduit check
-(`PlayTest.java:1474-1479`): it calls `player.clearEffects()` + `Conduits.applyEffects()`
-then IMMEDIATELY asserts `CONDUIT_POWER == 0` with **no `tick()`/await barrier in
-between**, while effect state is mutated by a periodically-scheduled potion task
-(`repeat(tick(25))`, see `PlayTest.java:6141` / `Potions.java`). So the test thread
-synchronously reads state that an async/scheduled task mutates, and under scheduling
-jitter it sometimes observes the stale prior grant. The other 14 offenders share this
-family: an action that mutates state asynchronously (scheduled task or tick-thread),
-then an immediate same-thread assertion with no barrier. A ~45%/run green rate means
-v0.38.0's single-green gate passed partly on luck; rule 8's "idle-machine green" is
-necessary but a single green is not sufficient evidence at this flake rate.
+harness timing fragility**. What is PROVEN so far:
+- The `tick(n)` helper (`PlayTest.java:389`) is already correctly tick-counted (waits
+  until `TICKS` advances n, wall-clock only as a stall-guard). So this is NOT naive
+  `Thread.sleep` races / "wall-clock waits" — that first hypothesis is DISPROVEN.
+- It is NOT the potion scheduler either: `Potions.effectLevel` reads Minestom's
+  `getActiveEffects()` directly/synchronously, and the `repeat(tick(25))` task
+  (`Potions.java:29`) only does regen/poison HEALING, not effect-list management —
+  so the "scheduled task mutates the effect state" idea (an earlier draft of this
+  entry) is also WRONG, corrected here.
 
-Fix direction (rule 8: structural, NOT wider tolerances): add a shared
-`awaitUntil(cond, maxTicks)` helper (poll the real state each tick until true or a
-tick-count cap) and insert it between each async-mutating action and its assertion —
-NOT a fixed extra `tick(k)` (that just moves the race). Migrate the 15 offenders
-highest-frequency first (crossbow piercing ×6, conduit power ×6, trident riptide ×2,
-slime sizes ×2, then the singletons). This is a real hardening pass, not a one-liner —
-good delegation candidate. NOTE: the loop script's per-run cb/gl tally column is
-unreliable (its grep matched PASS lines — the golem check description contains
-"vy=0.0"); trust the per-run `.fails.txt` files, not the SUMMARY tally.
+LEADING (unverified) hypothesis for the true cause: a **cross-thread race between the
+test thread and the server tick thread**. The checks run on the test thread, calling
+things like `player.clearEffects()` / `Conduits.applyEffects()` / `teleport().join()`
+and then IMMEDIATELY reading entity state (`getActiveEffects()`, velocity, health)
+with no barrier that guarantees the tick thread has settled — while that same entity
+is being ticked concurrently. Under scheduling jitter the read occasionally observes
+an unsettled state. Example: conduit dry-player (`PlayTest.java:1474-1479`) clears
+effects then asserts `CONDUIT_POWER == 0` with no barrier; crossbow piercing,
+iron-golem-vy, trident, slime-size all likewise assert on freshly-mutated entity
+state. This is a HYPOTHESIS, not confirmed per-check — do not ship a fix on it blind.
+
+Why this is hard to close: the flake is load-jitter-dependent and does NOT reproduce
+under isolated single-scenario runs (consistent with the earlier crossbow "NO REPRO
+under §10 contention" entry). So a fix cannot be cheaply proven by isolated repro,
+and blind test edits risk masking or moving the race. A ~45%/run green rate means
+v0.38.0's single-green gate passed partly on luck; rule 8's "idle-machine green" is
+necessary but a single green is not sufficient at this flake rate.
+
+Fix direction (rule 8: structural, NOT wider tolerances) — a real hardening pass,
+NOT a one-liner, good delegation candidate, but do the ROOT-CAUSE first:
+1. Confirm the cross-thread hypothesis: instrument one offender to log the thread and
+   the observed-vs-expected state at failure (the full-suite repro loop
+   `test-logs/fragile_pair_reprloop.sh` reproduces at ~45%/run — arm failure-only
+   DIAG there).
+2. If confirmed, the robust fix is to MARSHAL each assertion's state-read onto the
+   tick thread (or an `awaitUntil(cond, maxTicks)` barrier that polls settled state),
+   NOT a fixed extra `tick(k)` (that just moves the race). Migrate offenders
+   highest-frequency first: crossbow piercing ×6, conduit power ×6, trident riptide
+   ×2, slime sizes ×2, then the singletons.
+NOTE: the loop script's per-run cb/gl tally column is unreliable (its grep matched
+PASS lines — the golem check description contains "vy=0.0"); trust the per-run
+`.fails.txt` files, not the SUMMARY tally.
 
 ## sculk_vein worldgen: routed off the stub onto the faithful multiface port (2026-07-20, Fable) — DONE, gated (sculk_patch still dominates)
 
