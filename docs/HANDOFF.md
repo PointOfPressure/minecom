@@ -14,6 +14,7 @@ of what got escalated and why.
 
 ---
 
+<<<<<<< HEAD
 ## P1 MASTERPLAN §4 items 1+2: tick pipeline + spatial entity index (2026-07-20, branch `p1-tick-index`, worktree `~/minecom-p1`)
 
 Two separately-committed increments implementing the tick-consolidation and
@@ -130,6 +131,8 @@ report / `test-logs/`.
 
 ---
 
+=======
+>>>>>>> parent of ab56fe4 (P1 increment 2: per-chunk spatial entity index (EntityIndex))
 ## Fragile-check backlog: crossbow piercing — NO REPRO under CONVENTIONS §10 contention, closed as such (2026-07-20, Sonnet 5, branch `crossbow-hardening`, worktree `~/minecom-crossbow`)
 
 Picked up the top of the fragile-check backlog (`docs/HANDOFF.md`'s "Fragile-check
@@ -706,6 +709,26 @@ distortion). VSculk is near-breakeven at scale: it recovers roughly as many of
 the ~262k gated sculk blocks as it mis-places. The sculk-spread RNG replay
 (same Python-replay method as the ore diagnosis) is therefore the highest-value
 single-feature target on the overworld: a modest alignment flips ~0.2pp positive.
+
+---
+
+## P1 bench verdict: pipeline KEPT, spatial index REVERTED pending real hardware (2026-07-20, Fable)
+
+A/B on the dev laptop (2 cores, solo, 10 runs total): spawn is flat within
+noise in every configuration (p50 2.69-2.85). mobfarm p95 is BIMODAL
+run-to-run on this hardware (pipeline-only produced 2.52 then 1.15 on
+back-to-back runs) — the noise floor swamps the effect being measured. The
+EntityIndex runs were 3/3 elevated (p95 2.1-2.8 vs baseline 1.12), which is
+suggestive-not-conclusive against a bimodal floor, and a pure-perf change
+with unproven perf does not ship: **ab56fe4 reverted on main** (revert
+commit retains the +2 parity checks removal; branch p1-tick-index keeps the
+implementation + BENCH.md). Re-evaluate on the Threadripper with
+high-entity-count scenarios (the O(world)->O(local) claim needs N large
+enough to pay the per-query overhead; ~200 entities on 2 cores is below the
+crossover). TickPipeline (db081c1) KEPT: deterministic subsystem ordering +
+per-system nanotime instrumentation (/tickprofile) — the profiling substrate
+for the rest of P1 — at bench-neutral cost. All 10 result JSONs in
+scripts/bench/results/ (20260720T01-02Z).
 
 ---
 

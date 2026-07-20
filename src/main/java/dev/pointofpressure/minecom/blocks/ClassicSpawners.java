@@ -3,7 +3,6 @@ package dev.pointofpressure.minecom.blocks;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.pointofpressure.minecom.Difficulty;
-import dev.pointofpressure.minecom.EntityIndex;
 import dev.pointofpressure.minecom.TickPipeline;
 import dev.pointofpressure.minecom.Persist;
 import dev.pointofpressure.minecom.StateAdapter;
@@ -425,7 +424,7 @@ public final class ClassicSpawners {
         double minY = pos.blockY() - d.spawnRange, maxY = pos.blockY() + 1 + d.spawnRange;
         double minZ = pos.blockZ() - d.spawnRange, maxZ = pos.blockZ() + 1 + d.spawnRange;
         int nearBy = 0;
-        for (Entity e : EntityIndex.near(instance, pos, d.spawnRange + 1)) {
+        for (Entity e : instance.getEntities()) {
             if (e.getEntityType() != type) continue;
             Pos p = e.getPosition();
             if (p.x() >= minX && p.x() <= maxX && p.y() >= minY && p.y() <= maxY && p.z() >= minZ && p.z() <= maxZ) nearBy++;

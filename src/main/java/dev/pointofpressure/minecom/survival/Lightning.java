@@ -1,6 +1,5 @@
 package dev.pointofpressure.minecom.survival;
 
-import dev.pointofpressure.minecom.EntityIndex;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
@@ -128,7 +127,7 @@ public final class Lightning {
         int minZ = ground.blockZ() - 3, maxZ = ground.blockZ() + 3;
         int minY = ground.blockY();
         java.util.List<LivingEntity> candidates = new java.util.ArrayList<>();
-        for (Entity e : EntityIndex.near(instance, ground, 3.0)) {
+        for (Entity e : instance.getEntities()) {
             if (!(e instanceof LivingEntity le) || le.isDead()) continue;
             Pos p = le.getPosition();
             if (p.blockX() < minX || p.blockX() > maxX || p.blockZ() < minZ || p.blockZ() > maxZ) continue;

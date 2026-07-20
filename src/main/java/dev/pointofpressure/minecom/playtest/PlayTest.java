@@ -2,7 +2,6 @@ package dev.pointofpressure.minecom.playtest;
 
 import dev.pointofpressure.minecom.Bootstrap;
 import dev.pointofpressure.minecom.Main;
-import dev.pointofpressure.minecom.EntityIndex;
 import dev.pointofpressure.minecom.mobs.Mobs;
 import dev.pointofpressure.minecom.survival.Experience;
 import net.minestom.server.MinecraftServer;
@@ -61,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 1032; // 1015 + 4 security + 11 sulfur fuse-priming + 2 P1 EntityIndex parity
+    private static final int EXPECTED_CHECK_COUNT = 1030; // 1015 + 4 security + 11 sulfur fuse-priming
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -317,7 +316,6 @@ public final class PlayTest {
         scenario("bed: a nearby real Monster subclass denies sleep, a passive mob or one outside the AABB doesn't, creative bypasses the check", PlayTest::scenarioBedMonsters);
         scenario("totem of undying: a lethal hit with one in either hand survives at 1 HP and grants its real effects, out-of-world damage bypasses it", PlayTest::scenarioTotem);
         scenario("spyglass: raising it plays item.spyglass.use, releasing (early or at full duration) plays item.spyglass.stop_using, other items are a no-op", PlayTest::scenarioSpyglass);
-        scenario("entity index: the per-chunk spatial index returns the same set as a full getEntities() scan (P1)", PlayTest::scenarioEntityIndexParity);
 
         emit(passed + " passed, " + failed + " failed\n");
         int totalChecks = passed + failed;
@@ -357,73 +355,6 @@ public final class PlayTest {
         } catch (Throwable t) {
             check(name + " (threw " + t + " @ " + (t.getStackTrace().length > 0 ? t.getStackTrace()[0] : "?") + ")", false);
         }
-    }
-
-    /**
-     * P1 EntityIndex parity: the per-chunk spatial index must return the same
-     * entity set a full instance-wide getEntities() scan would, once the
-     * caller's identical predicate is applied. Uses stationary no-gravity
-     * entities across several chunks so the cross-check is race-free, then
-     * verifies near() (radius) and inChunk() (single cell) against the scan.
-     */
-    private static void scenarioEntityIndexParity() {
-        clearEntitiesExceptPlayer();
-        int[][] offs = {{0, 0}, {5, 3}, {18, 2}, {-20, 8}, {33, -15}, {-40, -40},
-                {7, -9}, {50, 50}, {19, 19}, {-3, 40}, {18, 18}, {2, 2}};
-        var spawned = new java.util.ArrayList<Entity>();
-        for (int[] o : offs) {
-            var e = new Entity(net.minestom.server.entity.EntityType.ZOMBIE);
-            e.setNoGravity(true); // stationary: no AI, no gravity -> positions never move
-            e.setInstance(world, new Pos(0.5 + o[0], Y + 1, 0.5 + o[1])).join();
-            spawned.add(e);
-        }
-        tick(1);
-
-        // radius queries: near() candidates + distance predicate == full scan + distance predicate
-        net.minestom.server.coordinate.Point[] centers = {
-                new Pos(0.5, Y + 1, 0.5), new Pos(18.5, Y + 1, 2.5),
-                new Pos(-40.5, Y + 1, -40.5), new Pos(50.5, Y + 1, 50.5)};
-        double[] ranges = {4.0, 8.0, 16.0, 32.0, 64.0};
-        boolean radiusMatch = true;
-        for (var c : centers) {
-            for (double r : ranges) {
-                var viaScan = new java.util.HashSet<Entity>();
-                for (var e : world.getEntities()) {
-                    if (e instanceof net.minestom.server.entity.Player) continue;
-                    if (e.getPosition().distance(c) < r) viaScan.add(e);
-                }
-                var viaIndex = new java.util.HashSet<Entity>();
-                for (var e : EntityIndex.near(world, c, r)) {
-                    if (e instanceof net.minestom.server.entity.Player) continue;
-                    if (e.getPosition().distance(c) < r) viaIndex.add(e);
-                }
-                if (!viaScan.equals(viaIndex)) radiusMatch = false;
-            }
-        }
-        check("EntityIndex.near returns the same entity set as a full getEntities() scan "
-                + "for every (center,range) after the distance predicate", radiusMatch);
-
-        // single-cell queries: inChunk() covers every entity sharing a target's block column
-        boolean cellMatch = true;
-        for (var target : spawned) {
-            var tp = target.getPosition();
-            var viaScan = new java.util.HashSet<Entity>();
-            for (var e : world.getEntities()) {
-                if (e instanceof net.minestom.server.entity.Player) continue;
-                var ep = e.getPosition();
-                if (ep.blockX() == tp.blockX() && ep.blockZ() == tp.blockZ()) viaScan.add(e);
-            }
-            var viaIndex = new java.util.HashSet<Entity>();
-            for (var e : EntityIndex.inChunk(world, tp)) {
-                if (e instanceof net.minestom.server.entity.Player) continue;
-                var ep = e.getPosition();
-                if (ep.blockX() == tp.blockX() && ep.blockZ() == tp.blockZ()) viaIndex.add(e);
-            }
-            if (!viaScan.equals(viaIndex)) cellMatch = false;
-        }
-        check("EntityIndex.inChunk covers every entity sharing a target's block column "
-                + "(same-cell scan parity)", cellMatch);
-        clearEntitiesExceptPlayer();
     }
 
     private static void resetPlayer() {

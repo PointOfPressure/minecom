@@ -1,6 +1,5 @@
 package dev.pointofpressure.minecom.mobs.ai;
 
-import dev.pointofpressure.minecom.EntityIndex;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Entity;
@@ -389,7 +388,7 @@ public final class Goals {
             brain.setTarget(brain.lastHurtBy);
             if (alertOthers) {
                 double range = brain.followRange();
-                for (Entity entity : EntityIndex.near(brain.mob.getInstance(), brain.mob.getPosition(), range)) {
+                for (Entity entity : brain.mob.getInstance().getEntities()) {
                     if (entity == brain.mob) continue;
                     if (entity.getEntityType() != brain.mob.getEntityType()) continue;
                     if (entity.getPosition().distanceSquared(brain.mob.getPosition()) > range * range) continue;
