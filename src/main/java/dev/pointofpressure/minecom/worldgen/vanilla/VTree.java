@@ -527,9 +527,19 @@ final class VTree {
         };
     }
 
+    /** FoliagePlacer.tryPlaceLeaf: persistent leaves are never overwritten, and a leaf placed
+     * into a water source gets waterlogged=true (vanilla's isFluidAtPosition source check). */
     private void tryPlaceLeaf(VFeature.Canvas canvas, int x, int y, int z, Block foliageState, Set<Pos> foliage) {
+        Block existing = canvas.get(x, y, z);
+        if (existing != null && "true".equals(existing.getProperty("persistent"))) return;
         if (!validTreePos(canvas, x, y, z)) return;
-        canvas.set(x, y, z, foliageState);
+        Block state = foliageState;
+        if (state.getProperty("waterlogged") != null
+                && existing != null && existing.name().equals("minecraft:water")
+                && "0".equals(existing.getProperty("level"))) {
+            state = state.withProperty("waterlogged", "true");
+        }
+        canvas.set(x, y, z, state);
         foliage.add(new Pos(x, y, z));
     }
 
