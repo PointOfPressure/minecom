@@ -373,6 +373,12 @@ we were chasing:
   fire spread, fire aspect, combat equipment-drop, combat fire-credit, cave spider).
 - **The specific v0.38.0 gate pair (crossbow + iron-golem-vy *together*) never
   reproduced** — iron-golem-vy did not fail once in 40 runs.
+- v0.40.0 gate data point (2026-07-20 ~22:55): run 2 of the tag gate hit the class
+  with `piston pushes entities: pig east` + `fire spread: onto air near flammable` +
+  `conduit: dry player gains no Conduit Power` (`test-logs/v040_gate_playtest2.log`);
+  run 3 immediately after was fully green 1081/0. Piston-push-pig is a NEW member
+  not seen in the 40-run loop — consistent with "any tick-thread-coupled check can
+  fire", reinforcing the suite-wide (not per-check) hypothesis.
 
 Verdict: this is not per-check logic bugs and not the pair — it is **systemic
 harness timing fragility**. What is PROVEN so far:

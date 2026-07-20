@@ -4675,6 +4675,16 @@ public final class PlayTest {
         if (end == null) return;
         end.loadChunk(0, 0).join();
         dev.pointofpressure.minecom.mobs.EnderDragonFight.resetForTest(end);
+        // The earlier dragon-fight scenario builds ITS exit portal in this same column
+        // (onDragonDeath always uses 0,0) and leaves the blocks behind; without clearing
+        // them, this kill's topSolidY lands the new portal on top of the old one, the
+        // hard-coded y=65 ritual crystals miss PORTAL_Y+1, and the egg check below can
+        // pass on the STALE egg (exactly how the first v0.40 full-suite gate failed —
+        // section runs in isolation never see it). Clear the whole podium volume first.
+        for (int dx = -3; dx <= 3; dx++)
+            for (int dz = -3; dz <= 3; dz++)
+                for (int y = 60; y <= 85; y++)
+                    end.setBlock(dx, y, dz, Block.AIR);
         end.setBlock(0, 64, 0, Block.END_STONE); // exit-portal base lands at y=65
 
         // keep the player in the overworld so it never collects the dropped XP orbs
