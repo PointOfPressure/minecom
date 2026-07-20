@@ -14,7 +14,52 @@ of what got escalated and why.
 
 ---
 
-## END dimension worldgen parity: first measurement + spike-geometry fix — r3 97.38% (2026-07-20, Opus) — baseline recorded, terrain-noise residual open
+## END terrain-noise residual SOLVED — r3 97.38% -> 100.000000% bit-exact (2026-07-20, Opus, branch `end-density`, worktree ~/minecom-enddensity) — DONE
+
+**Root cause: the End's `base_3d_noise` (old_blended_noise) was seeded from Xoroshiro,
+but `noise_settings_end.json` sets `legacy_random_source: true`, so vanilla seeds it
+from a `LegacyRandomSource`.** The overworld/nether have `legacy_random_source: false`
+(Xoroshiro), so `VDensity.Builder` hard-wired `new XRandom(seed).forkPositional()` for
+every dimension and nobody had noticed the End is the exception.
+
+Why it presented as "islands slightly too fat": the central island is noise-INSENSITIVE
+(`end_islands` clamps to +0.5625 near origin, so the wrong blended noise can't flip its
+sign) — that's why the narrow SelfTest columns and the island core matched. The blended
+noise only decides solidity at the island SHELL/edge where `end_islands ≈ 0`; there the
+wrong (Xoroshiro) noise mis-shaped the shell → the exact `end_stone<-air 25881` /
+`air<-end_stone 5030` residual the previous entry flagged.
+
+**The wiring (RandomState.NoiseWiringHelper.wrapNew, re-decompiled 26.2):**
+```
+RandomSource terrainRandom = useLegacyInit
+    ? newLegacyInstance(0L)                       // == new LegacyRandomSource(seed + 0)
+    : random.fromHashOf(withDefaultNamespace("terrain"));   // Xoroshiro positional
+```
+Note the legacy branch is a BARE `new LegacyRandomSource(seed)` — NOT the positional
+`fromHashOf("terrain")` fork. (First attempt used a `fromHashOf`-style
+`hashCode ^ factorySeed` derivation; that decorrelated the noise and REGRESSED r3 to
+96.68% with a balanced fat/thin mismatch — the tell-tale of a wrong seed. Corrected to
+the bare-seed form → 100%.)
+
+**Fix (2 files, surgical):**
+- `VDensity`: widened `BlendedNoisePort`/`LegacyPerlin` ctor param `XRandom` ->
+  `VNoise.Rand` (both `XRandom` and `VSurface.LegacyRandom` implement it; the perlin
+  construction is `createLegacyForBlendedNoise` for ALL dimensions anyway — only the
+  source algorithm differs). Added `Builder.setLegacyRandomSource(boolean)` +
+  `terrainRandom()` returning `new VSurface.LegacyRandom(seed)` when legacy, else the
+  Xoroshiro `fromHashOf("minecraft:terrain")`. Scoped to the blended noise because the
+  End's `final_density` references no `noise`/Normal functions — only this + `end_islands`.
+- `VEndGen`: `builder.setLegacyRandomSource(settings.legacy_random_source)`.
+
+**Result:** r3 (seed 20260708) **97.379642% -> 100.000000%** (1179648/1179648, ZERO
+mismatches — every terrain block bit-exact). Selftest **283/0** (end-city geometry
+UNCHANGED: both cached instances still base Y=62; the corrected shell doesn't move those
+corners). Did NOT run r18 (an overworld r18 is serialized on the machine) — r18 re-verify
++ merge left for the orchestrator. Overworld/nether untouched (default flag = false).
+
+---
+
+## END dimension worldgen parity: first measurement + spike-geometry fix — r3 97.38% (2026-07-20, Opus) — baseline recorded, terrain-noise residual RESOLVED (see entry above)
 
 **Branch `end-parity` (worktree ~/minecom-end), NOT merged.** The End had a full
 generator already (`VEndGen` terrain + end cities, `VEndSpikes` obsidian pillars,
