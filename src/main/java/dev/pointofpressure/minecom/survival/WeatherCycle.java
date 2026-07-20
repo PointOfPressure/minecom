@@ -16,6 +16,9 @@ public final class WeatherCycle {
 
     public static void start(Instance instance) {
         MinecraftServer.getSchedulerManager().buildTask(() -> {
+            // advance_weather gamerule: freezes the cycle in place (rain neither starts
+            // nor runs out), matching vanilla's ServerLevel.advanceWeatherCycle gate.
+            if (!dev.pointofpressure.minecom.GameRules.getBool("advance_weather")) return;
             if (rainTicksLeft > 0) {
                 rainTicksLeft -= 100;
                 if (rainTicksLeft <= 0 && instance.getWeather().isRaining()) {

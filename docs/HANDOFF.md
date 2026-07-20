@@ -14,6 +14,34 @@ of what got escalated and why.
 
 ---
 
+## Gamerule system landed — 26.2 registry + /gamerule + 11 wired consumers (2026-07-20, Fable, main tree)
+
+`GameRules.java` is the project-wide store: the full 26.2 snake_case registry
+(58 release rules; 26.2 renamed everything — `doDaylightCycle` is
+`advance_time`, `doInsomnia` is `spawn_phantoms`, and `pvp` moved from
+server.properties into the registry; `max_minecart_speed` omitted as
+feature-flagged). Decompile cached at
+`vanilla-src/net/minecraft/world/level/gamerules/`. `/gamerule` (op-gated)
+gives vanilla query/set feedback, accepts `minecraft:`-qualified ids, and
+persists non-default values through the Persist world snapshot. Wired:
+random_tick_speed (RandomTicks now polls the store; `setSpeedForTest`
+delegates), spread_vines, keep_inventory + show_death_messages
+(Survival.death), natural_health_regeneration (all three regen paths incl.
+Peaceful aiStep), advance_time (1s pin-back poller in Bootstrap — this
+Minestom has no clock-rate hook), advance_weather (WeatherCycle),
+pvp (Combat melee + sweep), spawn_mobs/spawn_monsters (VNaturalSpawner),
+spawn_phantoms (PhantomSpawning), mob_griefing (ghast fireballs via
+Explosions' new breakBlocks=false KEEP path — entity damage intact, blocks
+kept). Unwired rules are stored/settable/persisted
+but inert — ledgered in AUDIT.md (Commands.java entry). Also this session:
+`-Dminecom.nether=vibenilla` opt-in wires the adopted nether generator into
+the live server (default stays NetherGen — fortress-spawner/ClassicSpawners
+integrations hook legacy placement; cutover needs those ported first).
+Suites: selftest +11 (gameruleChecks), playtest +8 (scenarioGamerules,
+EXPECTED_CHECK_COUNT 1030 -> 1038).
+
+---
+
 ## END terrain-noise residual SOLVED — r3 97.38% -> 100.000000% bit-exact (2026-07-20, Opus, branch `end-density`, worktree ~/minecom-enddensity) — DONE
 
 **Root cause: the End's `base_3d_noise` (old_blended_noise) was seeded from Xoroshiro,

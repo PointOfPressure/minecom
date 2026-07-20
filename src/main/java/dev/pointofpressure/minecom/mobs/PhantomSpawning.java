@@ -76,6 +76,8 @@ public final class PhantomSpawning {
 
         if (--nextTick > 0) return;
         nextTick = (60 + RANDOM.nextInt(60)) * 20; // PhantomSpawner: (60 + random(60)) seconds
+        // spawn_phantoms gamerule (26.2's name for doInsomnia): PhantomSpawner's entry gate
+        if (!dev.pointofpressure.minecom.GameRules.getBool("spawn_phantoms")) return;
 
         long dayTime = Math.floorMod(instance.getTime(), 24000L);
         // Level.getSkyDarken() >= 5 collapses to "night or a thunderstorm" absent a tracked

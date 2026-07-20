@@ -53,8 +53,8 @@ public final class RandomTicks {
 
     private static final Map<String, Handler> HANDLERS = new ConcurrentHashMap<>();
     private static final int CHUNK_RADIUS = 8; // same player ring the spawner uses
-    // thread: written by the playtest hook before the engine observes it
-    private static volatile int tickSpeed = 3; // randomTickSpeed gamerule default
+    // random_tick_speed gamerule (GameRules store), polled per tick like vanilla's
+    // ServerLevel.tickChunk; the playtest hook cranks it through the same store.
     private static Instance instance;
 
     public static void register(Instance overworld) {
@@ -65,7 +65,7 @@ public final class RandomTicks {
 
     /** Playtest hook: crank the roll rate so growth becomes observable in seconds. */
     public static void setSpeedForTest(int speed) {
-        tickSpeed = speed;
+        dev.pointofpressure.minecom.GameRules.set("random_tick_speed", String.valueOf(speed));
     }
 
     /** Playtest hook: fire the handler for whatever sits at pos, deterministically. */
@@ -94,8 +94,10 @@ public final class RandomTicks {
         }
     }
 
-    /** ServerLevel.tickChunk's tickBlocks half: tickSpeed rolls per non-empty section. */
+    /** ServerLevel.tickChunk's tickBlocks half: random_tick_speed rolls per non-empty section. */
     private static void tickChunk(Chunk chunk, ThreadLocalRandom rng) {
+        int tickSpeed = dev.pointofpressure.minecom.GameRules.getInt("random_tick_speed");
+        if (tickSpeed <= 0) return;
         int minX = chunk.getChunkX() << 4, minZ = chunk.getChunkZ() << 4;
         for (int sectionY = chunk.getMinSection(); sectionY < chunk.getMaxSection(); sectionY++) {
             var section = chunk.getSection(sectionY);
@@ -202,8 +204,8 @@ public final class RandomTicks {
      * VineBlock.randomTick (decompile-verified), the growth half only — the neighbor-update-
      * driven detach/survival check (canSurvive/updateShape) isn't ported, matching this
      * project's "grow via random tick, no generic support-removal system" scope (AUDIT.md).
-     * SPREAD_VINES gamerule assumed true (no gamerule store in this project — behavioural
-     * default, matches vanilla's own default). 1/4 roll, then a random one of 6 directions:
+     * Gated on the spread_vines gamerule (GameRules store), like vanilla's randomTick
+     * entry check. 1/4 roll, then a random one of 6 directions:
      * horizontal + not-yet-connected -> try to extend outward one block (preferring to wrap
      * around a corner via whichever of the CW/CCW neighbor faces this vine already has, else
      * hang a fresh face off the CW/CCW neighbor block itself, else a rare 5% upward-face poke);
@@ -214,6 +216,7 @@ public final class RandomTicks {
      * established height-bounds accessor elsewhere in this codebase — AUDIT.md).
      */
     private static void spreadVine(Instance in, Point pos, Block block) {
+        if (!dev.pointofpressure.minecom.GameRules.getBool("spread_vines")) return;
         var rng = ThreadLocalRandom.current();
         if (rng.nextInt(4) != 0) return;
         String[] all = {"north", "south", "east", "west", "up", "down"};

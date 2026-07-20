@@ -197,8 +197,9 @@ leftovers.
   world min/max Y bounds (no established height-bounds accessor elsewhere),
   MultifaceBlock.canAttachTo's exact per-face voxel shape (approximated as
   `block.isSolid()`, same coarse-solidity pattern used elsewhere in this
-  file), SPREAD_VINES gamerule (assumed always true — no gamerule store in
-  this project).
+  file). ~~SPREAD_VINES gamerule (assumed always true — no gamerule store in
+  this project)~~ **done 2026-07-20 (Fable)** — spread_vines now gates the
+  handler through the project-wide GameRules store.
 - ~~Copper WAXING (honeycomb interaction, axe scraping)~~ **Done 2026-07-12
   (Sonnet)** — `blocks/CopperWaxing.java`: honeycomb prefixes "waxed_" onto
   any unwaxed copper-family block (RandomTicks.isWeatheringCopper gate,
@@ -930,8 +931,10 @@ leftovers.
   size-0-only (6 damage) mob stats already matched real vanilla and needed
   no change. Not modeled: Nether/End phantom spawning (this spawner only
   runs on the overworld — `.start(overworld)`, matching WeatherCycle/Snow/
-  Lightning's existing precedent) and the `SPAWN_PHANTOMS` gamerule (no
-  gamerule store in this project, same established precedent elsewhere).
+  Lightning's existing precedent). ~~The `SPAWN_PHANTOMS` gamerule (no
+  gamerule store in this project, same established precedent elsewhere)~~
+  **done 2026-07-20 (Fable)** — spawn_phantoms gates the spawner's roll
+  entry through the GameRules store.
 - VanillaMobs.java:868 — iron golem: no village-population auto-spawn (vanilla
   panic-based golem summoning); no flower offering; no crack stages/repair with
   iron ingot. (M)
@@ -1403,8 +1406,21 @@ leftovers.
 
 - Commands.java — useful missing: /effect, /locate (structures generally),
   /setblock, /fill, /xp, /clear, /kill (targets), /teleport to player,
-  /gamerule (naturalRegeneration/keepInventory/mobGriefing are all hardcoded
-  behaviors right now), /seed, /whitelist. (S each)
+  /seed, /whitelist. (S each) ~~/gamerule (naturalRegeneration/keepInventory/
+  mobGriefing are all hardcoded behaviors right now)~~ **done 2026-07-20
+  (Fable)** — `GameRules.java` ports the full 26.2 snake_case registry (58
+  release rules, exact defaults/bounds), `/gamerule` queries/sets with
+  vanilla feedback + minecraft:-qualified ids, values persist via the
+  Persist world snapshot. WIRED to live behavior: random_tick_speed,
+  spread_vines, keep_inventory, show_death_messages,
+  natural_health_regeneration, advance_time, advance_weather, pvp
+  (melee+sweep), spawn_mobs, spawn_monsters, spawn_phantoms, mob_griefing
+  (ghast fireballs take Explosions' new KEEP path — creepers already do no
+  block damage at all here, see Mobs.java, so fireballs are the only
+  mob-explosion consumer). The remaining rules are stored + settable +
+  persisted but not yet consumed (fire_spread_radius_around_player,
+  misc/int caps); wiring them is incremental follow-up as their subsystems
+  gain the hooks.
 - Persist.java — players: verify effects/xp/enderchest are in the "players"
   snapshot; add villager data, mob positions (see cross-cutting). Dimension of
   the player on save (nether/end logout probably respawns overworld). (M)

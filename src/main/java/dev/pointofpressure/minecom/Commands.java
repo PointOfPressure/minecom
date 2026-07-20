@@ -467,6 +467,42 @@ public final class Commands {
         }
     }
 
+    /**
+     * Queries/sets a gamerule, like vanilla's /gamerule (GameRuleCommand). Query
+     * and set feedback mirror the vanilla translation strings
+     * (commands.gamerule.query / commands.gamerule.set); both the bare id and
+     * the minecraft:-qualified form are accepted, matching the vanilla command
+     * tree, and invalid values report the brigadier-style error.
+     */
+    public static final class GameruleCmd extends Command {
+        public GameruleCmd() {
+            super("gamerule");
+            var rule = ArgumentType.Word("rule")
+                    .from(GameRules.rules().keySet().stream()
+                            .flatMap(id -> java.util.stream.Stream.of(id, "minecraft:" + id))
+                            .toArray(String[]::new));
+            var value = ArgumentType.Word("value");
+            addSyntax((sender, context) -> {
+                String id = GameRules.rule(context.get(rule)).id();
+                sender.sendMessage(Component.text("Gamerule " + id
+                        + " is currently set to: " + GameRules.getAsString(id),
+                        NamedTextColor.WHITE));
+            }, rule);
+            addSyntax((sender, context) -> {
+                String id = GameRules.rule(context.get(rule)).id();
+                try {
+                    GameRules.set(id, context.get(value));
+                    Persist.save();
+                    sender.sendMessage(Component.text("Gamerule " + id
+                            + " is now set to: " + GameRules.getAsString(id),
+                            NamedTextColor.WHITE));
+                } catch (IllegalArgumentException e) {
+                    sender.sendMessage(Component.text(e.getMessage(), NamedTextColor.RED));
+                }
+            }, rule, value);
+        }
+    }
+
     /** Grants raw XP points to the target(s), like vanilla's /xp add <target> <amount> points. */
     public static final class XpCmd extends Command {
         public XpCmd() {

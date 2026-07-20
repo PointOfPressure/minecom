@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 1030; // 1015 + 4 security + 11 sulfur fuse-priming
+    private static final int EXPECTED_CHECK_COUNT = 1038; // 1015 + 4 security + 11 sulfur fuse-priming + 8 gamerules
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -200,6 +200,7 @@ public final class PlayTest {
         scenario("saturation fast regen: full food + saturation heals every 10 ticks, not just the 80-tick path", PlayTest::scenarioSaturationFastRegen);
         scenario("admin commands: /seed /effect /setblock /fill(+cap) /xp /clear /kill <target> /tp <player>", PlayTest::scenarioAdminCommands);
         scenario("security: public-mode gates operator commands to ops, /fill cooldown-limits even an op", PlayTest::scenarioCommandGating);
+        scenario("gamerules: /gamerule command surface + keep_inventory and natural_health_regeneration drive live behavior", PlayTest::scenarioGamerules);
         scenario("leaf decay after logging", PlayTest::scenarioLeafDecay);
         scenario("potions: drink + effects + combat modifiers", PlayTest::scenarioPotions);
         scenario("brewing: wart -> awkward -> swiftness", PlayTest::scenarioBrewing);
@@ -10443,6 +10444,80 @@ public final class PlayTest {
         if (player.getInstance() != world) player.setInstance(world, new Pos(0.5, Y + 1, 0.5)).join();
         else player.teleport(new Pos(0.5, Y + 1, 0.5)).join();
         tick(2);
+    }
+
+    /**
+     * The GameRules store wired to live behavior: /gamerule set/query through the
+     * real command tree, keep_inventory suppressing death drops (Survival.death),
+     * and natural_health_regeneration gating the FoodData fast-regen path. The
+     * store is reset in a finally so no later scenario inherits a flipped rule.
+     */
+    private static void scenarioGamerules() {
+        resetPlayer();
+        clearEntitiesExceptPlayer();
+        var commands = MinecraftServer.getCommandManager();
+        try {
+            commands.execute(player, "gamerule keep_inventory true");
+            check("/gamerule <rule> <value> flips the store through the real command tree",
+                    dev.pointofpressure.minecom.GameRules.getBool("keep_inventory"));
+
+            commands.execute(player, "gamerule random_tick_speed banana");
+            check("/gamerule rejects an invalid value and leaves the store untouched",
+                    dev.pointofpressure.minecom.GameRules.getInt("random_tick_speed") == 3);
+
+            commands.execute(player, "gamerule minecraft:pvp false");
+            check("/gamerule accepts the minecraft:-qualified rule name like vanilla's command tree",
+                    !dev.pointofpressure.minecom.GameRules.getBool("pvp"));
+            commands.execute(player, "gamerule pvp true");
+
+            // keep_inventory=true (set above): dying keeps the items and drops nothing
+            player.getInventory().addItemStack(ItemStack.of(Material.EMERALD, 7));
+            player.damage(net.minestom.server.entity.damage.DamageType.GENERIC, 1000);
+            Pos deathPos = player.getPosition();
+            boolean isDead = waitFor(player::isDead, 5000);
+            tick(5);
+            check("keep_inventory: death spawns no item entities", isDead
+                    && countItems(deathPos, 6, Material.EMERALD) == 0);
+            player.respawn();
+            tick(3);
+            boolean kept = false;
+            for (int slot = 0; slot < player.getInventory().getSize(); slot++) {
+                var stack = player.getInventory().getItemStack(slot);
+                if (stack.material() == Material.EMERALD && stack.amount() == 7) kept = true;
+            }
+            check("keep_inventory: the inventory survives the respawn intact", kept);
+
+            // natural_health_regeneration=false: full food + saturation must not heal
+            commands.execute(player, "gamerule natural_health_regeneration false");
+            player.setHealth(16);
+            player.setFood(20);
+            player.setFoodSaturation(10);
+            tick(30);
+            check("natural_health_regeneration off: no heal despite full food + saturation",
+                    player.getHealth() == 16);
+            commands.execute(player, "gamerule natural_health_regeneration true");
+            boolean healed = waitFor(() -> player.getHealth() > 16, 5000);
+            check("natural_health_regeneration back on: the saturation fast path heals again", healed);
+
+            // mob_griefing off -> Explosions' KEEP path (ghast fireballs): entities are
+            // hit, blocks survive. Driven directly for determinism (no ghast aim RNG).
+            int ex = 70, ey = Y + 1, ez = 190;
+            world.setBlock(ex, ey, ez, Block.GLASS); // resistance 0.3: always breaks when breaking is on
+            EntityCreature blastCow = Mobs.spawn("cow", world, new Pos(ex + 1.5, ey, ez + 0.5));
+            tick(2);
+            float hpBefore = blastCow.getHealth();
+            dev.pointofpressure.minecom.blocks.Explosions.explode(world,
+                    new Pos(ex + 1.5, ey + 0.5, ez + 1.5), 2f, 1.0, null, false, null, false);
+            tick(2);
+            check("mob_griefing off: the KEEP explosion damages entities but breaks no blocks",
+                    world.getBlock(ex, ey, ez).compare(Block.GLASS)
+                            && (blastCow.isDead() || blastCow.getHealth() < hpBefore));
+            world.setBlock(ex, ey, ez, Block.AIR);
+        } finally {
+            dev.pointofpressure.minecom.GameRules.resetAll();
+            resetPlayer();
+            clearEntitiesExceptPlayer();
+        }
     }
 
     private static void scenarioDeath() {

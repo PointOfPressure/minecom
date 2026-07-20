@@ -203,6 +203,8 @@ public final class VNaturalSpawner {
      * thread or be benchmarked in isolation.
      */
     public List<SpawnReq> decide(long worldTick, boolean parallel) {
+        // spawn_mobs gamerule (26.2's name for doMobSpawning): kills all natural spawning
+        if (!dev.pointofpressure.minecom.GameRules.getBool("spawn_mobs")) return List.of();
         Set<Player> players = instance.getPlayers();
         if (players.isEmpty()) return List.of();
 
@@ -215,7 +217,8 @@ public final class VNaturalSpawner {
         countMobs();
 
         // 3. which categories may spawn this tick (phase flags + global cap)
-        boolean spawnEnemies = !dev.pointofpressure.minecom.Difficulty.isPeaceful(); // Level.isSpawningMonsters
+        boolean spawnEnemies = !dev.pointofpressure.minecom.Difficulty.isPeaceful() // Level.isSpawningMonsters
+                && dev.pointofpressure.minecom.GameRules.getBool("spawn_monsters");
         boolean spawnFriendlies = worldTick % 400L == 0L; // creatures spawn every 400 ticks (like vanilla)
         List<Cat> categories = new ArrayList<>();
         for (Cat c : Cat.values()) {

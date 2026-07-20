@@ -16,10 +16,10 @@ import java.util.zip.ZipFile;
  * (rocks.minestom:worldgen, Apache-2.0, pinned @ ffaafa1 — see NOTICE,
  * docs/AUDIT.md, docs/TIER4-NETHER-DESIGN.md "ADOPT").
  *
- * <p>Used ONLY by the region-diff harness ({@link GenRegions} "nether_vibenilla"
- * token) to measure an adopted bit-exact Nether against minecom's cached vanilla
- * ground truth. This is NOT wired into the live server (Bootstrap keeps
- * {@link NetherGen}); the cutover is a later, separately-gated step.
+ * <p>Used by the region-diff harness ({@link GenRegions} "nether_vibenilla"
+ * token) and, opt-in via {@code -Dminecom.nether=vibenilla}, by the live server
+ * (Bootstrap defaults to {@link NetherGen} until the fortress-spawner and
+ * structure gameplay integrations are ported to this generator).
  *
  * <p>vibenilla's {@code WorldGenerators(rootPath, seed)} reads a vanilla
  * datapack (the {@code data/} tree from the server jar). Mojang data is never

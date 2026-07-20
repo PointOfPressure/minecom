@@ -95,6 +95,9 @@ public final class Combat {
 
         if (e.getEntity() instanceof Player player) {
             if (player.isDead()) return;
+            // pvp gamerule (26.2 moved the server pvp toggle into the gamerule registry)
+            if (target instanceof Player
+                    && !dev.pointofpressure.minecom.GameRules.getBool("pvp")) return;
             ItemStack weapon = player.getItemInMainHand();
 
             // Player.getAttackStrengthScale(0.5F) (decompile-verified): 0 right after a swing,
@@ -168,6 +171,8 @@ public final class Combat {
                 float sweepDamage = (1f + damage * sweepRatio) * attackStrengthScale;
                 for (Entity nearby : target.getInstance().getNearbyEntities(target.getPosition(), 2.0)) {
                     if (nearby == target || nearby == player || !(nearby instanceof LivingEntity other) || other.isDead()) continue;
+                    if (other instanceof Player
+                            && !dev.pointofpressure.minecom.GameRules.getBool("pvp")) continue;
                     other.damage(Damage.fromPlayer(player, sweepDamage));
                     knockback(other, player.getPosition());
                 }
@@ -451,8 +456,11 @@ public final class Combat {
         Instance instance = fireball.getInstance();
         if (instance != null) {
             Entity shooter = fireball instanceof net.minestom.server.entity.EntityProjectile ep ? ep.getShooter() : null;
+            // mob_griefing gamerule: a mob-caused explosion keeps blocks intact when off
+            // (Level.explode ExplosionInteraction.MOB -> BlockInteraction.KEEP)
             dev.pointofpressure.minecom.blocks.Explosions.explode(
-                    instance, fireball.getPosition(), 1f, 1.0, shooter);
+                    instance, fireball.getPosition(), 1f, 1.0, shooter, false, null,
+                    dev.pointofpressure.minecom.GameRules.getBool("mob_griefing"));
         }
         fireball.remove();
     }

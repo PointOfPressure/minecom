@@ -111,6 +111,13 @@ public final class Persist {
             if (root.has("difficulty")) {
                 Difficulty.set(Difficulty.valueOf(root.get("difficulty").getAsString()));
             }
+            if (root.has("gamerules")) {
+                Map<String, String> rules = new java.util.LinkedHashMap<>();
+                for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("gamerules").entrySet()) {
+                    rules.put(e.getKey(), e.getValue().getAsString());
+                }
+                GameRules.loadSnapshot(rules);
+            }
 
             // legacy v0 sections (chests/furnaces/crops): loaded once here, saved
             // back out as region shards — the sections vanish on the next save
@@ -182,6 +189,13 @@ public final class Persist {
             root.addProperty("time", instance.getTime());
             root.addProperty("raining", WeatherCycle.isRaining(instance));
             root.addProperty("difficulty", Difficulty.current().name());
+
+            Map<String, String> ruleValues = GameRules.snapshot();
+            if (!ruleValues.isEmpty()) {
+                JsonObject gamerules = new JsonObject();
+                ruleValues.forEach(gamerules::addProperty);
+                root.add("gamerules", gamerules);
+            }
 
             JsonObject enderchests = new JsonObject();
             dev.pointofpressure.minecom.blocks.EnderChest.INVENTORIES.forEach((key, inv) -> enderchests.add(key, writeItems(inv)));

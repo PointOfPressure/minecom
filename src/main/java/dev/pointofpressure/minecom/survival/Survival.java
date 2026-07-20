@@ -105,9 +105,12 @@ public final class Survival {
         }
 
         float maxHealth = (float) p.getAttributeValue(net.minestom.server.entity.attribute.Attribute.MAX_HEALTH);
+        // natural_health_regeneration gamerule: vanilla gates BOTH the Peaceful aiStep
+        // heal and both FoodData.tick regen paths on it (hunger drain is unaffected).
+        boolean naturalRegen = dev.pointofpressure.minecom.GameRules.getBool("natural_health_regeneration");
         // Player.aiStep: Peaceful regenerates 1 health/second and 1 food/half-second outright
         if (difficulty == dev.pointofpressure.minecom.Difficulty.PEACEFUL) {
-            if (p.getHealth() < maxHealth && p.getAliveTicks() % 20 == 0) {
+            if (naturalRegen && p.getHealth() < maxHealth && p.getAliveTicks() % 20 == 0) {
                 p.setHealth(Math.min(maxHealth, p.getHealth() + 1));
             }
             if (p.getFood() < 20 && p.getAliveTicks() % 10 == 0) {
@@ -119,7 +122,9 @@ public final class Survival {
         // spending up to 6 saturation for up to 1 HP) than the general food>=18 path (every
         // 80 ticks, flat 1 HP for 6 exhaustion). Previously only the slow path existed, so
         // eating well never sped up healing the way it does in real vanilla.
-        if (p.getFoodSaturation() > 0 && p.getFood() >= 20 && p.getHealth() < maxHealth) {
+        if (!naturalRegen) {
+            s.regenTicks = 0;
+        } else if (p.getFoodSaturation() > 0 && p.getFood() >= 20 && p.getHealth() < maxHealth) {
             if (++s.regenTicks >= 10) {
                 s.regenTicks = 0;
                 // FoodData.tick's fast path never subtracts saturation directly — it only
@@ -289,15 +294,22 @@ public final class Survival {
 
     private static void death(PlayerDeathEvent e) {
         Player p = e.getPlayer();
-        var inventory = p.getInventory();
-        for (int slot = 0; slot < inventory.getSize(); slot++) {
-            ItemStack stack = inventory.getItemStack(slot);
-            if (stack.isAir()) continue;
-            dropItem(p, stack, true);
+        // keep_inventory gamerule (Player.dropAllDeathLoot's dropEquipment gate)
+        if (!dev.pointofpressure.minecom.GameRules.getBool("keep_inventory")) {
+            var inventory = p.getInventory();
+            for (int slot = 0; slot < inventory.getSize(); slot++) {
+                ItemStack stack = inventory.getItemStack(slot);
+                if (stack.isAir()) continue;
+                dropItem(p, stack, true);
+            }
+            inventory.clear();
         }
-        inventory.clear();
-        Component message = Component.text(p.getUsername() + " died", NamedTextColor.GRAY);
-        e.setChatMessage(message);
+        // show_death_messages gamerule (ServerPlayer.die's broadcast gate)
+        if (dev.pointofpressure.minecom.GameRules.getBool("show_death_messages")) {
+            e.setChatMessage(Component.text(p.getUsername() + " died", NamedTextColor.GRAY));
+        } else {
+            e.setChatMessage(null);
+        }
     }
 
     /** Spawn an item entity at the player's location (scatter=death) or thrown from the eyes (Q-drop). */

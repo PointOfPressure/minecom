@@ -73,6 +73,28 @@ public final class Bootstrap {
         }
     }
 
+    /**
+     * Live nether generator. Default stays the legacy {@code NetherGen}:
+     * gameplay integrations (fortress blaze-spawner registration via
+     * ClassicSpawners, the fortress/bastion/fossil playtest probes) hook its
+     * placement directly, so the adopted vibenilla generator (99.42% bit-exact
+     * vs vanilla 26.2 at r18) is opt-in via {@code -Dminecom.nether=vibenilla}
+     * until those integrations are ported. Vibenilla needs the vanilla
+     * datapack ({@code ~/mc-26.2} server jar) — if provisioning fails we warn
+     * and fall back rather than boot an unplayable dimension.
+     */
+    private static Generator netherGenerator(Config config) {
+        if (!config.flatWorld() && "vibenilla".equals(System.getProperty("minecom.nether"))) {
+            try {
+                return dev.pointofpressure.minecom.worldgen.VibenillaNether.generator(worldSeed());
+            } catch (RuntimeException e) {
+                System.err.println("[minecom] -Dminecom.nether=vibenilla unavailable ("
+                        + e.getMessage() + ") — falling back to legacy NetherGen");
+            }
+        }
+        return new dev.pointofpressure.minecom.worldgen.NetherGen();
+    }
+
     public static InstanceContainer boot(Config config) {
         VanillaData.load();
 
@@ -96,7 +118,7 @@ public final class Bootstrap {
                         net.minestom.server.world.DimensionType.THE_NETHER,
                         new AnvilLoader("world_nether"));
         nether.setChunkSupplier(LightingChunk::new);
-        nether.setGenerator(new dev.pointofpressure.minecom.worldgen.NetherGen());
+        nether.setGenerator(netherGenerator(config));
         overworld.setTag(NETHER_TAG, nether);
 
         InstanceContainer end = config.flatWorld()
@@ -298,8 +320,22 @@ public final class Bootstrap {
         commands.register(Commands.gate(new Commands.XpCmd()));
         commands.register(Commands.gate(new Commands.ClearCmd()));
         commands.register(Commands.gate(new Commands.TickProfile()));
+        commands.register(Commands.gate(new Commands.GameruleCmd()));
 
         Difficulty.startTracking();
+
+        // advance_time gamerule (26.2's name for doDaylightCycle): this Minestom
+        // version has no clock-rate hook, so a 1s poller pins the time back to the
+        // moment the rule went false and releases it when it goes true again.
+        final long[] frozenTime = {-1};
+        MinecraftServer.getSchedulerManager().buildTask(() -> {
+            if (GameRules.getBool("advance_time")) {
+                frozenTime[0] = -1;
+                return;
+            }
+            if (frozenTime[0] < 0) frozenTime[0] = overworld.getTime();
+            if (overworld.getTime() != frozenTime[0]) overworld.setTime(frozenTime[0]);
+        }).repeat(net.minestom.server.timer.TaskSchedule.tick(20)).schedule();
 
         // P2 region scheduler (docs/MULTICORE.md). M1 = region=world: each
         // instance gets one region on the tick thread and a once-per-tick

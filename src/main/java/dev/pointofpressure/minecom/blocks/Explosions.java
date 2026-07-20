@@ -59,8 +59,26 @@ public final class Explosions {
      */
     public static void explode(Instance instance, Point center, float power,
                                double dropChance, Entity source, boolean charged, Entity exclude) {
+        explode(instance, center, power, dropChance, source, charged, exclude, true);
+    }
+
+    /**
+     * @param breakBlocks false = vanilla's BlockInteraction.KEEP: full entity
+     *                    damage + knockback but no block destruction — what a
+     *                    mob-caused explosion (ghast fireball) does when the
+     *                    mob_griefing gamerule is off.
+     */
+    public static void explode(Instance instance, Point center, float power,
+                               double dropChance, Entity source, boolean charged, Entity exclude,
+                               boolean breakBlocks) {
         dev.pointofpressure.minecom.redstone.Vibrations.emit("explode", center, source);
         Set<Long> destroyed = new HashSet<>();
+        if (!breakBlocks) {
+            entityHalf(instance, center, power, source, charged, exclude);
+            instance.playSound(Sound.sound(SoundEvent.ENTITY_GENERIC_EXPLODE, Sound.Source.BLOCK, 4f, 1f),
+                    center.x(), center.y(), center.z());
+            return;
+        }
         double cx = center.x(), cy = center.y(), cz = center.z();
 
         for (int rx = 0; rx < 16; rx++) {
@@ -108,6 +126,15 @@ public final class Explosions {
             dev.pointofpressure.minecom.redstone.Redstone.neighborsChanged(new Vec(x, y, z));
         }
 
+        entityHalf(instance, center, power, source, charged, exclude);
+
+        instance.playSound(Sound.sound(SoundEvent.ENTITY_GENERIC_EXPLODE, Sound.Source.BLOCK, 4f, 1f),
+                cx, cy, cz);
+    }
+
+    /** The blast's entity damage + knockback, shared by the breaking and KEEP paths. */
+    private static void entityHalf(Instance instance, Point center, float power,
+                                   Entity source, boolean charged, Entity exclude) {
         double range = power * 2;
         for (Entity entity : instance.getEntities()) {
             if (entity == exclude) continue;
@@ -126,15 +153,12 @@ public final class Explosions {
                     headDrop.setVelocity(new Vec(RANDOM.nextDouble() - 0.5, 2, RANDOM.nextDouble() - 0.5));
                 }
             }
-            Vec push = living.getPosition().asVec().sub(cx, cy, cz);
+            Vec push = living.getPosition().asVec().sub(center.x(), center.y(), center.z());
             if (push.length() > 0.01) {
                 living.setVelocity(living.getVelocity().add(push.normalize().mul(8 * (1 - dist / range))
                         .add(0, 3 * (1 - dist / range), 0)));
             }
         }
-
-        instance.playSound(Sound.sound(SoundEvent.ENTITY_GENERIC_EXPLODE, Sound.Source.BLOCK, 4f, 1f),
-                cx, cy, cz);
     }
 
     /** Replace a TNT block with a primed TNT entity; explodes when the fuse runs out. */

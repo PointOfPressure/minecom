@@ -1690,6 +1690,7 @@ public final class SelfTest {
 
         securityChecks();
         regionChecks();
+        gameruleChecks();
 
         emit(passed + " passed, " + failed + " failed\n");
         if (failed > 0) {
@@ -1869,6 +1870,68 @@ public final class SelfTest {
 
         check("Regions: default mode is region=world (MINECOM_REGIONS unset)",
                 Regions.mode() == Regions.Mode.WORLD);
+    }
+
+    /** The GameRules store (26.2 registry port): registry shape, parse/validate, persistence round-trip. */
+    private static void gameruleChecks() {
+        dev.pointofpressure.minecom.GameRules.resetAll();
+
+        check("gamerules: registry carries the 58 release-enabled 26.2 rules",
+                dev.pointofpressure.minecom.GameRules.rules().size() == 58);
+        check("gamerules: defaults match the decompile (random_tick_speed=3, keep_inventory=false, pvp=true, fire_spread_radius_around_player=128)",
+                dev.pointofpressure.minecom.GameRules.getInt("random_tick_speed") == 3
+                        && !dev.pointofpressure.minecom.GameRules.getBool("keep_inventory")
+                        && dev.pointofpressure.minecom.GameRules.getBool("pvp")
+                        && dev.pointofpressure.minecom.GameRules.getInt("fire_spread_radius_around_player") == 128);
+
+        check("gamerules: set returns the vanilla command result (bool true->1, int->value)",
+                dev.pointofpressure.minecom.GameRules.set("keep_inventory", "true") == 1
+                        && dev.pointofpressure.minecom.GameRules.set("random_tick_speed", "20") == 20);
+        check("gamerules: set is visible through the typed getters and getAsString",
+                dev.pointofpressure.minecom.GameRules.getBool("keep_inventory")
+                        && dev.pointofpressure.minecom.GameRules.getInt("random_tick_speed") == 20
+                        && dev.pointofpressure.minecom.GameRules.getAsString("keep_inventory").equals("true"));
+        check("gamerules: the minecraft:-qualified id resolves like the vanilla command tree",
+                dev.pointofpressure.minecom.GameRules.rule("minecraft:pvp") != null
+                        && dev.pointofpressure.minecom.GameRules.rule("minecraft:pvp").id().equals("pvp"));
+
+        boolean badBool, badInt, belowMin, unknown;
+        try { dev.pointofpressure.minecom.GameRules.set("pvp", "maybe"); badBool = false; }
+        catch (IllegalArgumentException e) { badBool = true; }
+        try { dev.pointofpressure.minecom.GameRules.set("max_snow_accumulation_height", "9"); badInt = false; }
+        catch (IllegalArgumentException e) { badInt = true; }
+        try { dev.pointofpressure.minecom.GameRules.set("random_tick_speed", "-1"); belowMin = false; }
+        catch (IllegalArgumentException e) { belowMin = true; }
+        try { dev.pointofpressure.minecom.GameRules.set("doDaylightCycle", "true"); unknown = false; }
+        catch (IllegalArgumentException e) { unknown = true; }
+        check("gamerules: validation rejects bad bool, out-of-range int (snow height max 8), below-min int, and the pre-26.2 camelCase name",
+                badBool && badInt && belowMin && unknown);
+        check("gamerules: a rejected set leaves the stored value untouched",
+                dev.pointofpressure.minecom.GameRules.getBool("pvp")
+                        && dev.pointofpressure.minecom.GameRules.getInt("random_tick_speed") == 20);
+
+        check("gamerules: fire_spread_radius_around_player accepts its -1 sentinel minimum",
+                dev.pointofpressure.minecom.GameRules.set("fire_spread_radius_around_player", "-1") == -1);
+
+        var snap = dev.pointofpressure.minecom.GameRules.snapshot();
+        check("gamerules: snapshot holds only non-default values (keep_inventory, random_tick_speed, fire radius)",
+                snap.size() == 3 && snap.get("keep_inventory").equals("true")
+                        && snap.get("random_tick_speed").equals("20")
+                        && snap.get("fire_spread_radius_around_player").equals("-1"));
+        dev.pointofpressure.minecom.GameRules.resetAll();
+        check("gamerules: resetAll restores every default",
+                dev.pointofpressure.minecom.GameRules.snapshot().isEmpty()
+                        && !dev.pointofpressure.minecom.GameRules.getBool("keep_inventory"));
+        var withJunk = new java.util.LinkedHashMap<>(snap);
+        withJunk.put("no_such_rule", "true");
+        withJunk.put("pvp", "not-a-bool");
+        dev.pointofpressure.minecom.GameRules.loadSnapshot(withJunk);
+        check("gamerules: loadSnapshot round-trips values and skips unknown/bad entries (forward-compatible saves)",
+                dev.pointofpressure.minecom.GameRules.getBool("keep_inventory")
+                        && dev.pointofpressure.minecom.GameRules.getInt("random_tick_speed") == 20
+                        && dev.pointofpressure.minecom.GameRules.getBool("pvp"));
+
+        dev.pointofpressure.minecom.GameRules.resetAll(); // isolation for later sections
     }
 
     private static void check(String name, boolean ok) {
