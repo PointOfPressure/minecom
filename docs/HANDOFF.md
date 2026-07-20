@@ -14,6 +14,61 @@ of what got escalated and why.
 
 ---
 
+## Tree trunk/foliage placers: 11 of 12 skipped configs now generate; mangrove deferred (2026-07-20, Opus, branch `tree-placers`) — DONE (region-diff pending coordinator)
+
+`VTree.place` used to `return false` BEFORE ANY RNG DRAW for unsupported
+trunk/foliage placer types, so dark-oak forests, cherry groves, savannas, azalea
+patches and jungles generated ZERO signature trees — and any count-loop mixing
+supported + unsupported types desynced RNG for every later attempt. Fresh port
+of the 26.2 decompiles (re-decompiled per rule 7 — the cached placer files were
+Jul-7 26.1.2; TreeFeature.java was already the Jul-13 26.2 cut) into `VTree`.
+
+**Landed (built, selftest green):**
+- Trunk placers: `dark_oak` (5 configs), `cherry` (2), `forking`/acacia (1),
+  `mega_jungle` (1), `bending`/azalea (1). Wired into the `place()` trunk switch.
+- Foliage placers: `dark_oak`, `cherry` (incl. `placeLeavesRowWithHangingLeavesBelow`
+  — the isSet-gated, nextFloat-per-hang extension walk), `acacia`, `bush`,
+  `jungle` (= `MegaJungleFoliagePlacer`, registered under id `jungle_foliage_placer`),
+  `random_spread`.
+- RNG-parity notes: matched draw-for-draw against TreeFeature.doPlace order
+  (getTreeHeight → foliageHeight → foliageRadius → placeTrunk → per-attachment
+  offset + createFoliage). `foliageHeight` switch got dark_oak=4/acacia=0/cherry=
+  height.sample/random_spread=foliage_height.sample cases. Refactored
+  `placeLeavesRow` to go through `shouldSkipLocationSigned` so DarkOak's signed
+  override (and its min-based `shouldSkipLocation`) both reproduce. Cherry's
+  `branch_start_offset_from_top` is a bare UniformInt (no dispatch `type`) →
+  sampled directly; `secondBranchStartOffsetFromTop = UniformInt.of(min,max-1)`
+  (nextInt(1) still draws). MegaJungle radial branches use `VCarver.sin/cos`
+  (Mth's 65536-entry float sine table), NOT Math.sin/cos — this is load-bearing
+  for parity. Added `XWorldgenRandom.nextBoolean()` (= next(1)!=0) for DarkOak's
+  4th-row draw. `tryPlaceLeaf` now returns boolean (cherry hanging needs it).
+
+**Deferred — mangrove (2 configs: `upwards_branching_trunk_placer` +
+`random_spread_foliage_placer` + `mangrove_root_placer`):** VTree models no root
+placer, and TreeFeature.doPlace's `config.rootPlacer` branch draws RNG
+(getTrunkOrigin: trunk_offset_y.sample; placeRoots: a full skew/spread walk).
+Implementing the trunk placer without roots would desync (wrong trunk origin +
+missing root draws + missing root blocks). Gated OUT cleanly via
+`if (config.has("root_placer")) return false;` so it neither generates wrong nor
+desyncs later trees. Scope to finish it: port `MangroveRootPlacer`
+(getTrunkOrigin + placeRoots with MangroveRootPlacement skew/width/length,
+AboveRootPlacement moss carpet), add a rootSetter set fed into the updateLeaves
+bounding box, then implement `UpwardsBranchingTrunkPlacer` (canGrowThrough
+validTreePos widening + per-log branch probability). Also unimplemented on
+mangrove: the `attached_to_leaves` + `leave_vine` decorators.
+
+**Verification:** `mvn -q -DskipTests package` clean. Selftest 282/0 after ONE
+expected re-pin — woodland-mansion (seed 1, chunk 118,15) dark-oak count
+14233 → 18943 (SelfTest.java:~1240, cited in place): natural dark-oak canopy now
+generates across that dark-forest region (~+4710 dark_oak_log); chest count
+unchanged at 33 confirms the delta is tree logs, not structure changes.
+**Region-diff NOT run** (shared machine — coordinator serializes r3/r18). r3
+baseline to beat: 99.151922% (sculk-off); expected to move only if r3 covers
+dark-oak/cherry/jungle/savanna biomes — otherwise verify via a dark-forest-
+centered diff or r18.
+
+---
+
 ## Fragile-check flake: repro loop verdict — SUITE-WIDE timing fragility, ~45%/run, NOT the crossbow+golem pair (2026-07-20, Fable) — HIGH PRIORITY
 
 Ran the fragile-pair repro loop the v0.38.0 gate entry asked for: 40 sequential

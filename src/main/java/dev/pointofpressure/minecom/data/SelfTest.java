@@ -1231,13 +1231,16 @@ public final class SelfTest {
             int mansChests = mansCounts.getOrDefault("minecraft:chest", 0);
             int mansDarkOak = mansCounts.getOrDefault("minecraft:dark_oak_planks", 0) + mansCounts.getOrDefault("minecraft:dark_oak_log", 0);
             // Pins under the structure-aware decoration canvas: chests fully recovered to
-            // the original 33 (tree/forest writes can no longer eat container cells);
-            // dark oak = original 14085 + cross-chunk canopy spill + no-longer-eaten
-            // foundation planks. r18 ratchet authority: 99.393668 with this fix.
+            // the original 33 (tree/forest writes can no longer eat container cells).
+            // Dark oak re-pinned 14233 -> 18943 when VTree gained the dark_oak trunk +
+            // foliage placers (previously skipped before any RNG draw): natural dark oak
+            // canopy trees now generate across this dark-forest mansion region, adding
+            // ~4710 dark_oak_log blocks. Chest count is unchanged, confirming the delta is
+            // tree logs, not structure changes. r3/r18 ratchet re-verified by the coordinator.
             check("woodland mansion seed 1 (118,15) real generation: " + mansChests + " chests placed",
                     mansChests == 33);
             check("woodland mansion seed 1 (118,15) real generation confirmed: " + mansDarkOak + " dark oak (planks+log) blocks placed",
-                    mansDarkOak == 14233);
+                    mansDarkOak == 18943);
         }
 
         // ---- difficulty (DifficultyInstance.calculateDifficulty, decompile-verified) ----
