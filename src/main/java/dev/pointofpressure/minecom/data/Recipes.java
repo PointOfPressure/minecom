@@ -3,8 +3,16 @@ package dev.pointofpressure.minecom.data;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import net.kyori.adventure.key.Key;
+import net.minestom.server.MinecraftServer;
+import net.minestom.server.component.DataComponents;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
+import net.minestom.server.item.armor.TrimMaterial;
+import net.minestom.server.item.armor.TrimPattern;
+import net.minestom.server.item.component.ArmorTrim;
+import net.minestom.server.registry.Holder;
+import net.minestom.server.registry.RegistryKey;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,6 +56,16 @@ public final class Recipes {
      * once every recipe has been collected (see that method's doc for why). */
     public record Stonecut(String id, ItemStack result) {}
 
+    /** A {@code minecraft:smithing_transform} recipe (SmithingTransformRecipe, 26.2): the netherite
+     * gear tier. All three inputs are gated (template + a specific diamond base + the
+     * netherite-material tag), and the result is a plain result {@link Material}. */
+    private record SmithingTransform(Ingredient template, Ingredient base, Ingredient addition, Material result) {}
+
+    /** A {@code minecraft:smithing_trim} recipe (SmithingTrimRecipe, 26.2): stamps a trim pattern
+     * onto trimmable armor. The result isn't a distinct item — {@code pattern} is the trim-pattern
+     * id, the material comes from the addition item's {@code provides_trim_material} component. */
+    private record SmithingTrim(Ingredient template, Ingredient base, Ingredient addition, String pattern) {}
+
     private static final List<Shaped> SHAPED = new ArrayList<>();
     private static final List<Shapeless> SHAPELESS = new ArrayList<>();
     private static final List<Imbue> IMBUE = new ArrayList<>();
@@ -57,6 +75,8 @@ public final class Recipes {
     private static final Map<String, Cook> CAMPFIRE = new HashMap<>();
     private static final Map<String, Integer> FUEL = new HashMap<>();
     private static final Map<String, List<Stonecut>> STONECUTTING = new HashMap<>();
+    private static final List<SmithingTransform> SMITHING_TRANSFORM = new ArrayList<>();
+    private static final List<SmithingTrim> SMITHING_TRIM = new ArrayList<>();
 
     static void index() {
         SHAPED.clear();
@@ -67,6 +87,8 @@ public final class Recipes {
         SMOKING.clear();
         CAMPFIRE.clear();
         STONECUTTING.clear();
+        SMITHING_TRANSFORM.clear();
+        SMITHING_TRIM.clear();
         for (Map.Entry<String, JsonElement> e : VanillaData.recipes.entrySet()) {
             JsonObject r = e.getValue().getAsJsonObject();
             switch (VanillaData.path(r.get("type").getAsString())) {
@@ -78,7 +100,9 @@ public final class Recipes {
                 case "smoking" -> indexSmoking(r);
                 case "campfire_cooking" -> indexCampfireCooking(r);
                 case "stonecutting" -> indexStonecutting(e.getKey(), r);
-                default -> { /* smithing, special: not supported */ }
+                case "smithing_transform" -> indexSmithingTransform(r);
+                case "smithing_trim" -> indexSmithingTrim(r);
+                default -> { /* other special recipes: not supported */ }
             }
         }
         // Sort each ingredient's candidate list by recipe id: this list's order is directly
@@ -119,6 +143,68 @@ public final class Recipes {
      * startup, to declare the full recipe set to Minestom's client-facing RecipeManager. */
     public static java.util.Set<String> stonecuttingInputs() {
         return STONECUTTING.keySet();
+    }
+
+    private static void indexSmithingTransform(JsonObject r) {
+        Material result = result(r).material();
+        if (result == null) return;
+        SMITHING_TRANSFORM.add(new SmithingTransform(
+                ingredient(r.get("template")), ingredient(r.get("base")), ingredient(r.get("addition")), result));
+    }
+
+    private static void indexSmithingTrim(JsonObject r) {
+        SMITHING_TRIM.add(new SmithingTrim(
+                ingredient(r.get("template")), ingredient(r.get("base")), ingredient(r.get("addition")),
+                r.get("pattern").getAsString()));
+    }
+
+    /**
+     * The result of a smithing-table combination, or {@link ItemStack#AIR} if no recipe matches —
+     * covers both smithing recipe kinds, checked transform-first (SmithingMenu.createResult /
+     * getRecipeFor(RecipeType.SMITHING)).
+     *
+     * <ul>
+     * <li><b>transform</b> (netherite upgrade): SmithingTransformRecipe.assemble ->
+     * TransmuteRecipe.createWithOriginalComponents(result, base) — the result material carrying the
+     * base item's whole component <i>patch</i> (enchantments, current damage, custom name, an
+     * existing trim, repair cost…). {@link ItemStack#withMaterial} is exactly that: it re-diffs the
+     * base's componentPatch against the result item's prototype, so max-durability/attributes come
+     * from the netherite item while every player-set component carries over.
+     * <li><b>trim</b>: SmithingTrimRecipe.applyTrim — reads the addition's
+     * {@code provides_trim_material} component for the {@link TrimMaterial}, pairs it with the
+     * recipe's {@link TrimPattern}, and stamps the {@code trim} component onto a 1-count copy of the
+     * base; re-applying an identical trim yields nothing (AIR), matching vanilla's equals-guard.
+     * </ul>
+     */
+    public static ItemStack smithingResult(ItemStack template, ItemStack base, ItemStack addition) {
+        if (template.isAir() || base.isAir() || addition.isAir()) return ItemStack.AIR;
+        String t = template.material().key().asString();
+        String b = base.material().key().asString();
+        String a = addition.material().key().asString();
+        for (SmithingTransform recipe : SMITHING_TRANSFORM) {
+            if (recipe.template().allowed().contains(t) && recipe.base().allowed().contains(b)
+                    && recipe.addition().allowed().contains(a)) {
+                return base.withMaterial(recipe.result());
+            }
+        }
+        for (SmithingTrim recipe : SMITHING_TRIM) {
+            if (recipe.template().allowed().contains(t) && recipe.base().allowed().contains(b)
+                    && recipe.addition().allowed().contains(a)) {
+                return applyTrim(base, addition, recipe.pattern());
+            }
+        }
+        return ItemStack.AIR;
+    }
+
+    /** SmithingTrimRecipe.applyTrim, decompile-verified. */
+    private static ItemStack applyTrim(ItemStack base, ItemStack addition, String pattern) {
+        Holder<TrimMaterial> material = addition.get(DataComponents.PROVIDES_TRIM_MATERIAL);
+        if (material == null) return ItemStack.AIR;
+        RegistryKey<TrimPattern> patternKey = MinecraftServer.getTrimPatternRegistry().getKey(Key.key(pattern));
+        if (patternKey == null) return ItemStack.AIR;
+        ArmorTrim newTrim = new ArmorTrim(material, patternKey);
+        if (newTrim.equals(base.get(DataComponents.TRIM))) return ItemStack.AIR;
+        return base.withAmount(1).with(DataComponents.TRIM, newTrim);
     }
 
     private static ItemStack result(JsonObject recipe) {

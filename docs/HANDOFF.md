@@ -14,6 +14,43 @@ of what got escalated and why.
 
 ---
 
+## Smithing table — netherite upgrade + armor trims LANDED (2026-07-20, Opus, branch `smithing-table`, worktree ~/minecom-smithing) — DONE
+
+**Shipped the entire netherite gear tier + armor trims** (top-ranked gameplay gap: no
+`blocks/Smithing*.java`, `smithing_transform`/`smithing_trim` recipes were being dropped
+on the floor by `Recipes.index()`'s `default -> {}` branch).
+
+- `blocks/Smithing.java` — the SMITHING workstation, same static-holder pattern as
+  `CartographyTable`/`Grindstone`: right-click `smithing_table` opens `InventoryType.SMITHING`,
+  input slots 0/1/2 (template/base/addition) recompute the result into slot 3 on change, taking
+  slot 3 consumes exactly 1 from each of 0/1/2 (SmithingMenu.onTake), close returns the inputs.
+- `data/Recipes.java` — now indexes both smithing recipe kinds from the real bundled
+  `recipes.json` (17 transforms + 13 trims, all data-driven, tags resolved via the existing
+  `ingredient()`/`itemTag()` path incl. nested `#trimmable_armor`). New public
+  `smithingResult(template, base, addition)`:
+  - **transform** = `base.withMaterial(result)`. Verified against
+    `SmithingTransformRecipe.assemble` -> `TransmuteRecipe.createWithOriginalComponents` =
+    `target.apply(count, input.getComponentsPatch())`. Minestom's `ItemStackImpl.withMaterial`
+    re-diffs the base's `componentPatch` against the RESULT item's prototype (decompiled to
+    confirm), so it is bit-equivalent: enchants/current-damage/custom-name/existing-trim carry
+    over while max-durability/attributes come from the netherite item. NB vanilla preserves the
+    *absolute* DAMAGE value, not the durability proportion (diamond@100dmg -> netherite@100dmg
+    out of 592) — the playtest asserts this.
+  - **trim** = `SmithingTrimRecipe.applyTrim` ported exactly: material `Holder` read from the
+    addition's `provides_trim_material` component (Minestom's bundled `data-26.2` item.json
+    already carries it for all 11 trim materials), pattern via
+    `MinecraftServer.getTrimPatternRegistry().getKey(...)`, equals-guard returns AIR on a
+    re-applied identical trim.
+- Loot source: bastion chest tables already roll `netherite_upgrade_smithing_template` in the
+  bundled loot data (verified in all 4 `chests/bastion_*` tables) — no data change needed.
+- Verification: PlayTest scenario "smithing table: netherite upgrade preserves
+  enchants+durability+name, trim applies pattern+material, identical trim + template-less combos
+  yield nothing" — 14 checks via real UI clicks. EXPECTED_CHECK_COUNT 1030 -> 1044. Selftest
+  283/0. Section run 14/0 green.
+- No blockers hit; trims landed fully. No AUDIT gaps opened.
+
+---
+
 ## END terrain-noise residual SOLVED — r3 97.38% -> 100.000000% bit-exact (2026-07-20, Opus, branch `end-density`, worktree ~/minecom-enddensity) — DONE
 
 **Root cause: the End's `base_3d_noise` (old_blended_noise) was seeded from Xoroshiro,

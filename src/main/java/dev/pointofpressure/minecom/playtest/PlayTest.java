@@ -60,7 +60,7 @@ public final class PlayTest {
     // change is legitimate whenever a scenario is added/removed/restructured, so
     // this is a loud "did you mean to change this?" flag, updated deliberately per
     // release, not a gate that blocks a real behavior change.
-    private static final int EXPECTED_CHECK_COUNT = 1030; // 1015 + 4 security + 11 sulfur fuse-priming
+    private static final int EXPECTED_CHECK_COUNT = 1044; // 1030 + 14 smithing table (netherite upgrade + trims)
     private static final int Y = Bootstrap.FLAT_SURFACE; // solid surface; players stand at Y+1
 
     /** Section filter: only scenarios whose name contains this substring run. Null runs all. */
@@ -269,6 +269,7 @@ public final class PlayTest {
         scenario("allay: give/take remembers a liked player, collects + deposits matching items, dances near a playing jukebox, duplicates via amethyst shard, hears note blocks", PlayTest::scenarioAllay);
         scenario("map: empty map -> filled on use, live color sampling from the world, the holder's own player marker + heading, zoom crafting", PlayTest::scenarioMap);
         scenario("cartography table: paper zooms, glass pane locks (only once actually taken, never during preview), another filled map clones", PlayTest::scenarioCartographyTable);
+        scenario("smithing table: netherite upgrade preserves enchants+durability+name, trim applies pattern+material, identical trim + template-less combos yield nothing", PlayTest::scenarioSmithing);
         scenario("signs + banners: front/back text edit/persistence, dye color, glow, wax-lock; banner duplicate + shield decoration crafting-special recipes", PlayTest::scenarioSignsAndBanners);
         scenario("loom: a base pattern needs a button click, a stencil item auto-selects and isn't consumed, the 6-layer cap holds, and a stale selection resets across a pattern-slot round trip", PlayTest::scenarioLoom);
         scenario("harvesting: sweet berry bush and cave vine glow berries reset after picking", PlayTest::scenarioHarvesting);
@@ -1884,6 +1885,108 @@ public final class PlayTest {
                 cloned.amount() == 2 && cloned.getTag(dev.pointofpressure.minecom.survival.Maps.MAP_ID)
                         .equals(cloneSource.getTag(dev.pointofpressure.minecom.survival.Maps.MAP_ID)));
         cart.setCursorItem(player, ItemStack.AIR);
+
+        player.closeInventory();
+        tick(2);
+        clearEntitiesExceptPlayer();
+        world.setBlock(pos, Block.AIR);
+        resetPlayer();
+    }
+
+    /**
+     * Smithing table (SmithingMenu / SmithingTransformRecipe / SmithingTrimRecipe): the netherite
+     * gear tier plus armor trims, driven through the real SMITHING window with UI clicks. Covers a
+     * transform preserving the base item's whole component patch (enchant/damage/name) while
+     * adopting the netherite item's own higher max durability, a trim stamping the recipe's pattern
+     * and the addition's provides_trim_material, the equals-guard no-op on a re-applied identical
+     * trim, and a template-less combo producing nothing.
+     */
+    private static void scenarioSmithing() {
+        clearEntitiesExceptPlayer();
+        BlockVec pos = new BlockVec(172, Y + 1, 170);
+        world.setBlock(pos, Block.SMITHING_TABLE);
+        interact(pos);
+        boolean opened = player.getOpenInventory() instanceof Inventory;
+        check("smithing table opens window", opened);
+        if (!opened) { world.setBlock(pos, Block.AIR); resetPlayer(); return; }
+        Inventory smith = (Inventory) player.getOpenInventory();
+
+        // --- netherite upgrade: preserves enchant + damage + custom name, adopts netherite's max ---
+        ItemStack diamond = ItemStack.of(Material.DIAMOND_CHESTPLATE)
+                .with(b -> b.set(DataComponents.DAMAGE, 100))
+                .withCustomName(net.kyori.adventure.text.Component.text("Heirloom"));
+        diamond = dev.pointofpressure.minecom.data.Enchants.with(diamond,
+                net.minestom.server.item.enchant.Enchantment.PROTECTION, 4);
+        int diamondMax = ItemStack.of(Material.DIAMOND_CHESTPLATE).get(DataComponents.MAX_DAMAGE);
+        int netheriteMax = ItemStack.of(Material.NETHERITE_CHESTPLATE).get(DataComponents.MAX_DAMAGE);
+
+        smith.setItemStack(0, ItemStack.of(Material.NETHERITE_UPGRADE_SMITHING_TEMPLATE));
+        smith.setItemStack(1, diamond);
+        smith.setItemStack(2, ItemStack.of(Material.NETHERITE_INGOT));
+        tick(1);
+        ItemStack preview = smith.getItemStack(3);
+        check("smithing: netherite upgrade previews a netherite_chestplate",
+                preview.material() == Material.NETHERITE_CHESTPLATE);
+        check("smithing: upgrade preserves the absolute damage value (got "
+                        + preview.get(DataComponents.DAMAGE) + ")",
+                Integer.valueOf(100).equals(preview.get(DataComponents.DAMAGE)));
+        check("smithing: upgrade adopts the netherite item's higher max durability ("
+                        + preview.get(DataComponents.MAX_DAMAGE) + " vs diamond " + diamondMax + ")",
+                Integer.valueOf(netheriteMax).equals(preview.get(DataComponents.MAX_DAMAGE))
+                        && netheriteMax > diamondMax);
+        check("smithing: upgrade preserves enchantments (Protection "
+                        + dev.pointofpressure.minecom.data.Enchants.level(preview, "protection") + ")",
+                dev.pointofpressure.minecom.data.Enchants.level(preview, "protection") == 4);
+        check("smithing: upgrade preserves the custom name",
+                net.kyori.adventure.text.Component.text("Heirloom").equals(preview.get(DataComponents.CUSTOM_NAME)));
+
+        click(smith, 3);
+        ItemStack taken = smith.getCursorItem(player);
+        check("smithing: taking the upgrade yields the netherite result to the cursor",
+                taken.material() == Material.NETHERITE_CHESTPLATE
+                        && Integer.valueOf(100).equals(taken.get(DataComponents.DAMAGE)));
+        check("smithing: taking consumed exactly 1 template, 1 base, 1 addition",
+                smith.getItemStack(0).isAir() && smith.getItemStack(1).isAir() && smith.getItemStack(2).isAir());
+        smith.setCursorItem(player, ItemStack.AIR);
+
+        // --- armor trim: stamps the recipe's pattern + the addition's material onto the base ---
+        var expectedPattern = net.minestom.server.MinecraftServer.getTrimPatternRegistry()
+                .getKey(net.kyori.adventure.key.Key.key("minecraft:sentry"));
+        var expectedMaterial = ItemStack.of(Material.REDSTONE).get(DataComponents.PROVIDES_TRIM_MATERIAL);
+        smith.setItemStack(0, ItemStack.of(Material.SENTRY_ARMOR_TRIM_SMITHING_TEMPLATE));
+        smith.setItemStack(1, ItemStack.of(Material.DIAMOND_CHESTPLATE));
+        smith.setItemStack(2, ItemStack.of(Material.REDSTONE));
+        tick(1);
+        ItemStack trimPreview = smith.getItemStack(3);
+        net.minestom.server.item.component.ArmorTrim trim =
+                trimPreview.isAir() ? null : trimPreview.get(DataComponents.TRIM);
+        check("smithing: trim previews the base armor carrying a trim component",
+                trim != null && trimPreview.material() == Material.DIAMOND_CHESTPLATE);
+        check("smithing: trim carries the recipe's pattern (sentry)",
+                trim != null && trim.pattern().equals(expectedPattern));
+        check("smithing: trim material comes from the addition's provides_trim_material (redstone)",
+                trim != null && trim.material().equals(expectedMaterial));
+
+        click(smith, 3);
+        ItemStack trimmed = smith.getCursorItem(player);
+        check("smithing: taking the trimmed armor yields it with its trim intact",
+                !trimmed.isAir() && trimmed.get(DataComponents.TRIM) != null);
+        smith.setCursorItem(player, ItemStack.AIR);
+
+        // --- re-applying the exact same trim is a no-op (SmithingTrimRecipe's equals-guard) ---
+        smith.setItemStack(0, ItemStack.of(Material.SENTRY_ARMOR_TRIM_SMITHING_TEMPLATE));
+        smith.setItemStack(1, trimmed.withAmount(1));
+        smith.setItemStack(2, ItemStack.of(Material.REDSTONE));
+        tick(1);
+        check("smithing: re-applying an identical trim previews nothing", smith.getItemStack(3).isAir());
+
+        // --- a netherite combo with no template produces no result (all three slots gated) ---
+        smith.setItemStack(0, ItemStack.AIR);
+        smith.setItemStack(1, ItemStack.of(Material.DIAMOND_SWORD));
+        smith.setItemStack(2, ItemStack.of(Material.NETHERITE_INGOT));
+        tick(1);
+        check("smithing: a netherite upgrade with no template produces no result",
+                smith.getItemStack(3).isAir());
 
         player.closeInventory();
         tick(2);
